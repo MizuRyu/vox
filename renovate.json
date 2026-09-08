@@ -1,0 +1,28 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "timezone": "Asia/Tokyo",
+  "schedule": ["before 6am on monday"],
+  "labels": ["dependencies"],
+  "prConcurrentLimit": 3,
+  "nix": { "enabled": true },
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on monday"],
+    "commitMessageAction": "Update flake.lock"
+  },
+  "packageRules": [
+    {
+      "matchManagers": ["github-actions"],
+      "groupName": "GitHub Actions"
+    },
+    {
+      "matchManagers": ["swift"],
+      "matchPackageNames": ["FluidAudio"],
+      "groupName": "FluidAudio (benchmarks only)",
+      "prBodyNotes": [
+        "ベンチ専用の依存。マージ前に `just bench-test` と `swift build --package-path benchmarks` を手元で通すこと。本体（root Package.swift）は外部依存なし。"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/lint [--worktree|--staged]
+
+Run the repository's targeted Swift, shell, and Python checks without modifying files.
+EOF
+}
+
+die() {
+  printf 'lint: %s\n' "$1" >&2
+  exit 1
+}
+
+require_tool() {
+  command -v "$1" >/dev/null 2>&1 || die "required tool '$1' is missing; run 'nix develop', then 'just setup'"
+}
+
+for tool in git swiftlint shellcheck python3; do
+  require_tool "$tool"
+done
+
+# Git hooks export GIT_DIR; inside a linked worktree `rev-parse --show-toplevel`
+# then returns the cwd, so take the root from the script's own location.
+project_root="$(cd "$(dirname "$0")/.." && pwd -P)"
+swiftlint_config="$project_root/.swiftlint.yml"
+[[ -f "$swiftlint_config" ]] || die '.swiftlint.yml is missing'
+
+temporary_root="$(mktemp -d "${TMPDIR:-/tmp}/vox-lint.XXXXXX")"
+trap 'rm -rf "$temporary_root"' EXIT
+
+lint_tree() {
+  local label="$1"
+  local target="$2"
+  local swift_paths=()
+  local shell_paths=()
+  local python_paths=()
+  local path
+
+  for directory in Sources Tests Tools scripts benchmarks/Sources benchmarks/Tests; do
+    if [[ -d "$target/$directory" ]]; then
+      while IFS= read -r -d '' path; do
+        swift_paths+=("$path")
+      done < <(find "$target/$directory" -type f -name '*.swift' -print0)
+    fi
+  done
+
+  if [[ "${#swift_paths[@]}" -gt 0 ]]; then
+    swiftlint lint --quiet --no-cache --strict --config "$swiftlint_config" "${swift_paths[@]}"
+  fi
+
+  for directory in scripts benchmarks/scripts; do
+    [[ -d "$target/$directory" ]] || continue
+    while IFS= read -r -d '' path; do
+      if head -n 1 "$path" | grep -Eq '^#!.*(ba|z)?sh'; then
+        shell_paths+=("$path")
+      fi
+    done < <(find "$target/$directory" -type f -print0)
+    while IFS= read -r -d '' path; do
+      python_paths+=("$path")
+    done < <(find "$target/$directory" -type f -name '*.py' -print0)
+  done
+
+  if [[ "${#shell_paths[@]}" -gt 0 ]]; then
+    shellcheck "${shell_paths[@]}"
+  fi
+  if [[ "${#python_paths[@]}" -gt 0 ]]; then
+    python3 -c 'import ast, pathlib, sys; [ast.parse(pathlib.Path(p).read_text(), filename=p) for p in sys.argv[1:]]' \
+      "${python_paths[@]}"
+  fi
+  printf 'lint: %s passed (SwiftLint targeted rules, ShellCheck, Python syntax)\n' "$label"
+}
+
+mode="${1:---worktree}"
+[[ "$#" -le 1 ]] || { usage >&2; exit 2; }
+case "$mode" in
+  --worktree)
+    lint_tree worktree "$project_root"
+    ;;
+  --staged)
+    if [[ -z "$(git -C "$project_root" ls-files --cached)" ]]; then
+      printf 'lint: staged snapshot empty\n'
+      exit 0
+    fi
+    snapshot="$temporary_root/staged"
+    mkdir -p "$snapshot"
+    git -C "$project_root" checkout-index --all --prefix="$snapshot/" \
+      || die 'could not export staged snapshot'
+    lint_tree staged "$snapshot"
+    ;;
+  -h|--help)
+    usage
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac

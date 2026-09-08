@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+
+die() { printf 'make-app-icon: %s\n' "$1" >&2; exit "${2:-1}"; }
+[[ "$#" -eq 2 ]] || die 'usage: scripts/make-app-icon INPUT.png OUTPUT.icns' 64
+input="$1"
+output="$2"
+[[ -f "$input" ]] || die 'input PNG is missing' 66
+[[ "$output" == *.icns ]] || die 'output must end in .icns' 64
+[[ ! -e "$output" && ! -L "$output" ]] || die 'output already exists' 73
+file "$input" | grep -q 'PNG image data' || die 'input is not a PNG image' 65
+width="$(sips -g pixelWidth "$input" | awk '/pixelWidth:/ {print $2}')"
+height="$(sips -g pixelHeight "$input" | awk '/pixelHeight:/ {print $2}')"
+[[ "$width" == "$height" && "$width" -ge 1024 ]] || die 'input must be a square PNG of at least 1024 pixels' 65
+staging="$(mktemp -d "${TMPDIR:-/tmp}/vox-icon.XXXXXX")"
+trap 'rm -rf "$staging"' EXIT
+iconset="$staging/AppIcon.iconset"
+mkdir "$iconset"
+for size in 16 32 128 256 512; do
+  sips -z "$size" "$size" "$input" --out "$iconset/icon_${size}x${size}.png" >/dev/null
+  double=$((size * 2))
+  sips -z "$double" "$double" "$input" --out "$iconset/icon_${size}x${size}@2x.png" >/dev/null
+done
+mkdir -p "$(dirname "$output")"
+iconutil -c icns "$iconset" -o "$output"
+printf 'Created ICNS from approved PNG: %s\n' "$output"

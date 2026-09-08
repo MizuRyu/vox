@@ -1,0 +1,236 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/security [--all|--worktree|--staged|--history]
+
+Run local secret and security checks. Reports never print matched values.
+EOF
+}
+
+die() {
+  printf 'security: %s\n' "$1" >&2
+  exit 1
+}
+
+require_tool() {
+  command -v "$1" >/dev/null 2>&1 || die "required tool '$1' is missing; run 'nix develop', then 'just setup'"
+}
+
+for tool in git gitleaks semgrep jq rg; do
+  require_tool "$tool"
+done
+
+# Git hooks export GIT_DIR; inside a linked worktree `rev-parse --show-toplevel`
+# then returns the cwd, so take the root from the script's own location.
+project_root="$(cd "$(dirname "$0")/.." && pwd -P)"
+gitleaks_config="$project_root/.gitleaks.toml"
+semgrep_config="$project_root/.semgrep/security.yml"
+[[ -f "$gitleaks_config" ]] || die '.gitleaks.toml is missing'
+[[ -f "$semgrep_config" ]] || die '.semgrep/security.yml is missing'
+
+temporary_root="$(mktemp -d "${TMPDIR:-/tmp}/vox-security.XXXXXX")"
+trap 'rm -rf "$temporary_root"' EXIT
+
+run_gitleaks_directory() {
+  local label="$1"
+  local target="$2"
+  local report="$temporary_root/gitleaks-$label.json"
+  local log="$temporary_root/gitleaks-$label.log"
+  local status=0
+
+  gitleaks dir "$target" \
+    --config "$gitleaks_config" \
+    --redact=100 \
+    --no-banner \
+    --no-color \
+    --exit-code 3 \
+    --report-format json \
+    --report-path "$report" >"$log" 2>&1 || status=$?
+
+  if [[ "$status" -eq 3 ]]; then
+    local count
+    count="$(jq 'length' "$report" 2>/dev/null || printf '?')"
+    printf 'security: %s contains %s potential secret(s); matched values are withheld\n' "$label" "$count" >&2
+    return 1
+  fi
+  [[ "$status" -eq 0 ]] || {
+    printf 'security: Gitleaks failed while scanning %s; scanner output is withheld\n' "$label" >&2
+    return 1
+  }
+  printf 'security: Gitleaks %s clean\n' "$label"
+}
+
+run_gitleaks_history() {
+  local report="$temporary_root/gitleaks-history.json"
+  local log="$temporary_root/gitleaks-history.log"
+  local status=0
+
+  if ! git -C "$project_root" rev-parse --verify HEAD >/dev/null 2>&1; then
+    printf 'security: Gitleaks history skipped (repository has no commits)\n'
+    return
+  fi
+
+  gitleaks git "$project_root" \
+    --log-opts=--all \
+    --config "$gitleaks_config" \
+    --redact=100 \
+    --no-banner \
+    --no-color \
+    --exit-code 3 \
+    --report-format json \
+    --report-path "$report" >"$log" 2>&1 || status=$?
+
+  if [[ "$status" -eq 3 ]]; then
+    local count
+    count="$(jq 'length' "$report" 2>/dev/null || printf '?')"
+    printf 'security: Git history contains %s potential secret(s); matched values are withheld\n' "$count" >&2
+    return 1
+  fi
+  [[ "$status" -eq 0 ]] || {
+    printf 'security: Gitleaks failed while scanning history; scanner output is withheld\n' >&2
+    return 1
+  }
+  printf 'security: Gitleaks history clean\n'
+}
+
+run_semgrep() {
+  local label="$1"
+  local target="$2"
+  local report="$temporary_root/semgrep-$label.json"
+  local log="$temporary_root/semgrep-$label.log"
+  local status=0
+
+  SEMGREP_SEND_METRICS=off SEMGREP_ENABLE_VERSION_CHECK=0 \
+    semgrep scan \
+      --config "$semgrep_config" \
+      --metrics=off \
+      --disable-version-check \
+      --no-git-ignore \
+      --strict \
+      --error \
+      --json \
+      --output "$report" \
+      --exclude='.git' \
+      --exclude='.build' \
+      --exclude='benchmarks/m0/audio' \
+      --exclude='benchmarks/m0/models' \
+      --exclude='benchmarks/m0/results' \
+      "$target" >"$log" 2>&1 || status=$?
+
+  if [[ ! -s "$report" ]] || ! jq -e 'type == "object"' "$report" >/dev/null 2>&1; then
+    printf 'security: Semgrep failed while scanning %s; scanner output is withheld\n' "$label" >&2
+    return 1
+  fi
+
+  local findings errors
+  findings="$(jq '.results | length' "$report")"
+  errors="$(jq '.errors | length' "$report")"
+  if [[ "$status" -ne 0 || "$errors" -ne 0 || "$findings" -ne 0 ]]; then
+    printf 'security: Semgrep %s rejected: findings=%s scan_errors=%s; matched code is withheld\n' \
+      "$label" "$findings" "$errors" >&2
+    return 1
+  fi
+  printf 'security: Semgrep %s clean (local rules, scan_errors=0)\n' "$label"
+}
+
+run_public_info_check() {
+  local label="$1"
+  local target="$2"
+  local matches="$temporary_root/public-info-$label.files"
+
+  rg --hidden --files-with-matches --pcre2 \
+    --glob='!.git/**' \
+    --glob='!.build/**' \
+    --glob='!benchmarks/m0/audio/**' \
+    --glob='!benchmarks/m0/models/**' \
+    --glob='!benchmarks/m0/results/**' \
+    '/Users/(?!vox(?:/|\b)|me(?:/|\b)|example(?:/|\b))[[:alnum:]_.-]+' \
+    "$target" >"$matches" 2>/dev/null || {
+      local status=$?
+      [[ "$status" -eq 1 ]] || {
+        printf 'security: public-info scan failed for %s\n' "$label" >&2
+        return 1
+      }
+    }
+
+  if [[ -s "$matches" ]]; then
+    local count
+    count="$(wc -l <"$matches" | tr -d ' ')"
+    printf 'security: %s contains personal absolute paths in %s file(s); values are withheld\n' \
+      "$label" "$count" >&2
+    return 1
+  fi
+  printf 'security: public-info %s clean\n' "$label"
+}
+
+scan_tree() {
+  local label="$1"
+  local target="$2"
+  local failed=0
+  run_gitleaks_directory "$label" "$target" || failed=1
+  run_semgrep "$label" "$target" || failed=1
+  run_public_info_check "$label" "$target" || failed=1
+  [[ "$failed" -eq 0 ]]
+}
+
+scan_staged() {
+  if [[ -z "$(git -C "$project_root" ls-files --cached)" ]]; then
+    printf 'security: staged snapshot empty\n'
+    return
+  fi
+
+  local snapshot="$temporary_root/staged"
+  mkdir -p "$snapshot"
+  git -C "$project_root" checkout-index --all --prefix="$snapshot/" \
+    || die 'could not export staged snapshot'
+  scan_tree staged "$snapshot"
+}
+
+scan_worktree() {
+  local snapshot="$temporary_root/worktree"
+  local relative_path
+
+  mkdir -p "$snapshot"
+  while IFS= read -r -d '' relative_path; do
+    # A cached path may have been deleted from the worktree. The worktree scan
+    # intentionally reflects the files that currently exist.
+    if [[ -e "$project_root/$relative_path" || -L "$project_root/$relative_path" ]]; then
+      mkdir -p "$snapshot/$(dirname "$relative_path")"
+      cp -pPR "$project_root/$relative_path" "$snapshot/$relative_path"
+    fi
+  done < <(git -C "$project_root" ls-files --cached --others --exclude-standard -z)
+  scan_tree worktree "$snapshot"
+}
+
+mode="${1:---all}"
+[[ "$#" -le 1 ]] || { usage >&2; exit 2; }
+
+started_at="$(date +%s)"
+case "$mode" in
+  --all)
+    scan_worktree
+    scan_staged
+    run_gitleaks_history
+    ;;
+  --worktree)
+    scan_worktree
+    ;;
+  --staged)
+    scan_staged
+    ;;
+  --history)
+    run_gitleaks_history
+    ;;
+  -h|--help)
+    usage
+    exit 0
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac
+elapsed_seconds=$(( $(date +%s) - started_at ))
+printf 'security: passed in %ss\n' "$elapsed_seconds"

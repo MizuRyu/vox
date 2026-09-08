@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+
+die() { printf 'make-dmg: %s\n' "$1" >&2; exit "${2:-1}"; }
+[[ "$#" -eq 2 ]] || die 'usage: scripts/make-dmg INPUT.app OUTPUT.dmg' 64
+app="$1"
+output="$2"
+[[ -d "$app" ]] || die 'input app is missing' 66
+[[ "$output" == *.dmg ]] || die 'output must end in .dmg' 64
+project_root="$(cd "$(dirname "$0")/.." && pwd)"
+version="$(tr -d '[:space:]' <"$project_root/VERSION")"
+output_checksum="$output.sha256"
+output_parent="$(dirname "$output")"
+[[ ! -L "$output_parent" ]] || die 'output directory must not be a symbolic link' 73
+mkdir -p "$output_parent"
+output_parent_real="$(cd "$output_parent" && pwd -P)"
+output_parent_identity="$(/usr/bin/stat -f '%d:%i' "$output_parent")"
+validate_output_parent() {
+  [[ ! -L "$output_parent" ]] || die 'output directory must not be a symbolic link' 73
+  [[ "$(cd "$output_parent" && pwd -P)" == "$output_parent_real" ]] \
+    || die 'output directory changed during DMG generation' 73
+  [[ "$(/usr/bin/stat -f '%d:%i' "$output_parent")" == "$output_parent_identity" ]] \
+    || die 'output directory identity changed during DMG generation' 73
+}
+app_absolute="$(cd "$(dirname "$app")" && pwd -P)/$(basename "$app")"
+output_absolute="$(cd "$output_parent" && pwd -P)/$(basename "$output")"
+replace_existing=false
+if [[ -d "$project_root/dist" && ! -L "$project_root/dist" ]]; then
+  stable_parent="$(cd "$project_root/dist" && pwd -P)"
+  build_info="$app/Contents/Resources/BUILD-INFO.txt"
+  for candidate_label in local-development local-adhoc; do
+    stable_app="$stable_parent/Vox-$version.app"
+    stable_output="$stable_parent/Vox-$version.dmg"
+    if [[ "$app_absolute" == "$stable_app" && "$output_absolute" == "$stable_output" ]] \
+      && grep -Fqx "candidate: $candidate_label" "$build_info" \
+      && grep -Fqx 'Developer ID signed: no' "$build_info" \
+      && grep -Fqx 'notarization ticket stapled to this app: no' "$build_info"; then
+      if [[ "$candidate_label" == local-development ]]; then
+        grep -Eq '^signing certificate sha1: [[:xdigit:]]{40}$' "$build_info" || continue
+      fi
+      replace_existing=true
+      break
+    fi
+  done
+fi
+
+check_publish_target() {
+  [[ ! -L "$output" && ! -L "$output_checksum" ]] \
+    || die 'output and checksum must not be symbolic links' 73
+  if $replace_existing; then
+    if [[ -e "$output" || -e "$output_checksum" ]]; then
+      [[ -f "$output" && -f "$output_checksum" ]] || die 'existing output and checksum must both be regular files' 73
+      (cd "$(dirname "$output")" && shasum -a 256 -c "$(basename "$output_checksum")") >/dev/null \
+        || die 'existing output checksum does not match' 73
+    fi
+  else
+    [[ ! -e "$output" && ! -e "$output_checksum" ]] || die 'output or checksum already exists' 73
+  fi
+}
+
+check_publish_target
+"$project_root/scripts/validate-app" "$app"
+validate_output_parent
+staging="$(mktemp -d "$output_parent/.vox-dmg.XXXXXX")"
+payload="$staging/payload"
+mkdir "$payload"
+cp -R "$app" "$payload/Vox.app"
+ln -s /Applications "$payload/Applications"
+candidate="$staging/$(basename "$output")"
+candidate_checksum="$candidate.sha256"
+backup_dmg=""
+backup_checksum=""
+dmg_backed_up=false
+checksum_backed_up=false
+new_dmg_published=false
+new_checksum_published=false
+cleanup() {
+  status="$?"
+  rollback_failed=false
+  if $new_dmg_published && [[ -e "$output" ]]; then
+    mv "$output" "$staging/failed-new.dmg" || rollback_failed=true
+  fi
+  if $dmg_backed_up; then
+    if mv "$backup_dmg" "$output"; then
+      dmg_backed_up=false
+    else
+      rollback_failed=true
+    fi
+  fi
+  if $new_checksum_published && [[ -e "$output_checksum" ]]; then
+    mv "$output_checksum" "$staging/failed-new.dmg.sha256" || rollback_failed=true
+  fi
+  if $checksum_backed_up; then
+    if mv "$backup_checksum" "$output_checksum"; then
+      checksum_backed_up=false
+    else
+      rollback_failed=true
+    fi
+  fi
+  if $rollback_failed || $dmg_backed_up || $checksum_backed_up; then
+    printf 'make-dmg: rollback artifacts preserved at %s\n' "$staging" >&2
+  else
+    rm -rf "$staging"
+  fi
+  exit "$status"
+}
+trap cleanup EXIT
+hdiutil create -quiet -fs HFS+ -format UDZO -volname Vox -srcfolder "$payload" "$candidate"
+(cd "$staging" && shasum -a 256 "$(basename "$candidate")" >"$(basename "$candidate_checksum")")
+validate_output_parent
+check_publish_target
+if [[ -e "$output" ]]; then
+  backup_dmg="$staging/previous.dmg"
+  backup_checksum="$staging/previous.dmg.sha256"
+  mv "$output" "$backup_dmg"
+  dmg_backed_up=true
+  mv "$output_checksum" "$backup_checksum"
+  checksum_backed_up=true
+fi
+mv "$candidate" "$output"
+new_dmg_published=true
+mv "$candidate_checksum" "$output_checksum"
+new_checksum_published=true
+dmg_backed_up=false
+checksum_backed_up=false
+new_dmg_published=false
+new_checksum_published=false
+rm -f "$backup_dmg" "$backup_checksum"
+backup_dmg=""
+backup_checksum=""
+printf 'Created DMG candidate and checksum:\n%s\n%s\n' "$output" "$output.sha256"

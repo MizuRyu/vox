@@ -1,0 +1,17 @@
+min_version: 2.1.10
+
+pre-commit:
+  parallel: false
+  commands:
+    security-staged:
+      run: scripts/security --staged
+    lint-staged:
+      run: scripts/lint --staged
+
+pre-push:
+  parallel: false
+  commands:
+    security:
+      run: scripts/security --all
+    lint:
+      run: scripts/lint --worktree

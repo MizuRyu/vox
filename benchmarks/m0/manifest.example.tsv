@@ -1,0 +1,2 @@
+id	dataset	audio	reference	speech_start_ms	speech_end_ms
+V001	custom	audio/custom/V001.wav	RingBuffer.swiftの保持長を30秒にして	120	1840

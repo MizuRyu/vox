@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+
+die() { printf 'sign-app: %s\n' "$1" >&2; exit "${2:-1}"; }
+[[ "$#" -eq 2 ]] || die 'usage: VOX_SIGNING_IDENTITY=... scripts/sign-app INPUT.app OUTPUT.app' 64
+input="$1"
+output="$2"
+identity="${VOX_SIGNING_IDENTITY:-}"
+[[ -n "$identity" ]] || die 'VOX_SIGNING_IDENTITY is required' 64
+[[ "$identity" == 'Developer ID Application: '* && "$identity" != *$'\n'* ]] \
+  || die 'a Developer ID Application identity is required' 64
+[[ -d "$input" && ! -L "$input" ]] || die 'input app is missing or unsafe' 66
+[[ ! -e "$output" && ! -L "$output" ]] || die "output already exists: $output" 73
+project_root="$(cd "$(dirname "$0")/.." && pwd)"
+"$project_root/scripts/validate-app" "$input" >/dev/null
+build_info="$input/Contents/Resources/BUILD-INFO.txt"
+[[ -f "$build_info" ]] || die 'BUILD-INFO.txt is missing' 65
+[[ "$(awk -F ': ' '$1 == "provenance" { print $2 }' "$build_info")" == 'verified-clean-build' ]] \
+  || die 'custom binary provenance cannot be used for Developer ID signing' 65
+[[ -z "$(git -C "$project_root" status --porcelain --untracked-files=normal)" ]] \
+  || die 'Developer ID signing requires a clean checkout' 65
+head_revision="$(git -C "$project_root" rev-parse --verify HEAD)"
+[[ "$(awk -F ': ' '$1 == "source revision" { print $2 }' "$build_info")" == "$head_revision" ]] \
+  || die 'bundle source revision does not match checkout HEAD' 65
+security find-identity -v -p codesigning | grep -F -- "\"$identity\"" >/dev/null \
+  || die 'Developer ID Application certificate is unavailable' 69
+staging="$(mktemp -d "${TMPDIR:-/tmp}/vox-sign.XXXXXX")"
+trap 'rm -rf "$staging"' EXIT
+cp -R "$input" "$staging/Vox.app"
+codesign --sign "$identity" --force --options runtime --timestamp \
+  --entitlements "$project_root/Resources/App/Vox.entitlements" "$staging/Vox.app"
+codesign --verify --deep --strict --verbose=2 "$staging/Vox.app"
+codesign --display --entitlements :- "$staging/Vox.app" >"$staging/entitlements.plist" 2>/dev/null
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.device.audio-input' "$staging/entitlements.plist")" == 'true' ]] \
+  || die 'signed app is missing the audio-input entitlement' 65
+unsigned_binary="$staging/Vox.unsigned"
+cp "$staging/Vox.app/Contents/MacOS/Vox" "$unsigned_binary"
+codesign --remove-signature "$unsigned_binary"
+binary_sha256="$(shasum -a 256 "$unsigned_binary" | awk '{print $1}')"
+sed -e 's/^candidate: .*/candidate: developer-id-signed-unnotarized/' \
+  -e 's/^Developer ID signed: .*/Developer ID signed: yes/' \
+  -e "s/^binary unsigned sha256: .*/binary unsigned sha256: $binary_sha256/" \
+  "$build_info" >"$staging/Vox.app/Contents/Resources/BUILD-INFO.txt"
+codesign --sign "$identity" --force --options runtime --timestamp \
+  --entitlements "$project_root/Resources/App/Vox.entitlements" "$staging/Vox.app"
+codesign --verify --deep --strict --verbose=2 "$staging/Vox.app"
+"$project_root/scripts/validate-app" "$staging/Vox.app" >/dev/null
+mkdir -p "$(dirname "$output")"
+mv "$staging/Vox.app" "$output"
+printf 'Created Developer ID signed, unnotarized candidate: %s\n' "$output"

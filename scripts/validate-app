@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+die() { printf 'validate-app: %s\n' "$1" >&2; exit 1; }
+allow_accessory=false
+if [[ "${1:-}" == '--allow-accessory' ]]; then
+  allow_accessory=true
+  shift
+fi
+[[ "$#" -eq 1 ]] || die 'usage: scripts/validate-app [--allow-accessory] PATH.app'
+app="$1"
+[[ ! -L "$app" ]] || die 'app path must not be a symbolic link'
+[[ -d "$app/Contents/MacOS" && -d "$app/Contents/Resources" ]] || die 'invalid app bundle structure'
+plist="$app/Contents/Info.plist"
+binary="$app/Contents/MacOS/Vox"
+[[ -f "$plist" && -x "$binary" ]] || die 'bundle payload is incomplete'
+plutil -lint "$plist" >/dev/null
+[[ "$(plutil -extract CFBundleIdentifier raw "$plist")" == 'local.vox.app' ]] || die 'unexpected bundle identifier'
+[[ "$(plutil -extract LSMinimumSystemVersion raw "$plist")" == '26.0' ]] || die 'unexpected minimum system version'
+ui_element="$(plutil -extract LSUIElement raw "$plist")"
+if [[ "$ui_element" != 'false' ]]; then
+  $allow_accessory && [[ "$ui_element" == 'true' ]] \
+    || die 'LSUIElement must be false for a Dock-visible app'
+fi
+[[ -n "$(plutil -extract NSMicrophoneUsageDescription raw "$plist")" ]] || die 'microphone usage text is missing'
+[[ -n "$(plutil -extract NSSpeechRecognitionUsageDescription raw "$plist")" ]] || die 'speech recognition usage text is missing'
+file "$binary" | grep -Eq 'Mach-O.*arm64' || die 'payload is not macOS arm64'
+[[ -f "$app/Contents/Resources/AppIcon.icns" ]] || die 'app icon is missing'
+build_info="$app/Contents/Resources/BUILD-INFO.txt"
+[[ -f "$build_info" && ! -L "$build_info" ]] || die 'BUILD-INFO.txt is missing or unsafe'
+stored_digest="$(awk -F ': ' '$1 == "binary unsigned sha256" { print $2 }' "$build_info")"
+[[ "$stored_digest" =~ ^[0-9a-f]{64}$ ]] || die 'binary digest metadata is invalid'
+validation_tmp="$(mktemp -d "${TMPDIR:-/tmp}/vox-validate.XXXXXX")"
+trap 'rm -rf "$validation_tmp"' EXIT
+unsigned_binary="$validation_tmp/Vox"
+cp "$binary" "$unsigned_binary"
+codesign --remove-signature "$unsigned_binary"
+actual_digest="$(shasum -a 256 "$unsigned_binary" | awk '{print $1}')"
+[[ "$stored_digest" == "$actual_digest" ]] || die 'binary digest does not match payload'
+codesign --verify --strict "$app"
+entitlements="$validation_tmp/entitlements.plist"
+codesign --display --entitlements :- "$app" >"$entitlements" 2>/dev/null
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.device.audio-input' "$entitlements")" == 'true' ]] \
+  || die 'audio-input entitlement is missing'
+if /usr/libexec/PlistBuddy -c 'Print :com.apple.security.app-sandbox' "$entitlements" >/dev/null 2>&1; then
+  die 'App Sandbox entitlement is not permitted for this candidate'
+fi
+if find "$app" -type l -print | grep -q .; then
+  die 'app bundle contains an unexpected symbolic link'
+fi
+if rg -a -l '/Users/[^/]+/' "$app/Contents/Info.plist" "$app/Contents/Resources" "$binary" >/dev/null; then
+  die 'bundle payload contains a private absolute user path'
+fi
+printf 'Validated Vox.app bundle: %s\n' "$app"

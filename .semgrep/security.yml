@@ -1,0 +1,31 @@
+rules:
+  - id: vox.python.subprocess-shell-true
+    message: Pass an argument array to subprocess instead of invoking a shell.
+    severity: ERROR
+    languages: [python]
+    patterns:
+      - pattern-either:
+          - pattern: subprocess.run(..., shell=True, ...)
+          - pattern: subprocess.call(..., shell=True, ...)
+          - pattern: subprocess.check_call(..., shell=True, ...)
+          - pattern: subprocess.check_output(..., shell=True, ...)
+          - pattern: subprocess.Popen(..., shell=True, ...)
+
+  - id: vox.swift.shell-command-string
+    message: Avoid passing a command string through /bin/sh, /bin/bash, or /bin/zsh.
+    severity: ERROR
+    languages: [generic]
+    paths:
+      include:
+        - Sources/**/*.swift
+        - scripts/*.swift
+    pattern-regex: '(?s)executableURL\s*=\s*URL\(fileURLWithPath:\s*"/bin/(?:ba|z)?sh"\).{0,800}arguments\s*=\s*\[\s*"-c"'
+
+  - id: vox.swift.transcript-preview-log
+    message: Do not put recognized text previews in routine logs.
+    severity: ERROR
+    languages: [generic]
+    paths:
+      include:
+        - Sources/**/*.swift
+    pattern-regex: '(?i)(?:preview|prefix)[A-Za-z]*Text\s*=\s*String\([^\n]*(?:text|transcript|utterance)[^\n]*\.prefix\('

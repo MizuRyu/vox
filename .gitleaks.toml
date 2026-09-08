@@ -1,0 +1,11 @@
+title = "vox secret scanning"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Synthetic absolute paths used by tests"
+regexTarget = "match"
+regexes = [
+  '''/Users/(?:vox|me)(?:/|\b)''',
+]

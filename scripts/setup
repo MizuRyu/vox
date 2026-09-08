@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+die() {
+  printf 'setup: %s\n' "$1" >&2
+  exit 1
+}
+
+require_tool() {
+  command -v "$1" >/dev/null 2>&1 || die "required tool '$1' is missing; enter the dev shell with 'nix develop'"
+}
+
+for tool in git gitleaks semgrep lefthook jq rg swiftlint shellcheck python3; do
+  require_tool "$tool"
+done
+
+project_root="$(git -C "$(dirname "$0")" rev-parse --show-toplevel 2>/dev/null)" \
+  || die 'run this command inside a Git worktree'
+configured_hooks_path="$(git -C "$project_root" config --get core.hooksPath || true)"
+if [[ -n "$configured_hooks_path" && "$configured_hooks_path" != '.git/hooks' ]]; then
+  die "core.hooksPath is '$configured_hooks_path'; inspect it before installing Lefthook"
+fi
+
+git_directory="$(git -C "$project_root" rev-parse --git-dir)"
+if [[ "$git_directory" != /* ]]; then
+  git_directory="$project_root/$git_directory"
+fi
+pre_commit_hook="$git_directory/hooks/pre-commit"
+if [[ -f "$pre_commit_hook" ]] && ! grep -q 'LEFTHOOK' "$pre_commit_hook"; then
+  die "an unmanaged pre-commit hook already exists at $pre_commit_hook"
+fi
+
+lefthook install
+
+# Lefthook 2.1.10's generated launcher tries ambient package managers and exits
+# successfully when no binary is found. Keep Lefthook as the hook runner, but
+# use a deterministic launcher so a missing tool cannot bypass the checks.
+cat >"$pre_commit_hook" <<'EOF'
+#!/bin/sh
+
+if [ "${LEFTHOOK:-}" = "0" ]; then
+  exit 0
+fi
+
+if [ -n "${LEFTHOOK_BIN:-}" ]; then
+  if [ ! -x "$LEFTHOOK_BIN" ]; then
+    printf "pre-commit: LEFTHOOK_BIN '%s' is not executable\n" "$LEFTHOOK_BIN" >&2
+    exit 1
+  fi
+  exec "$LEFTHOOK_BIN" run pre-commit "$@"
+fi
+
+if ! command -v lefthook >/dev/null 2>&1; then
+  printf "pre-commit: required tool 'lefthook' is missing; enter the dev shell with 'nix develop'\n" >&2
+  exit 1
+fi
+
+exec lefthook run pre-commit "$@"
+EOF
+chmod +x "$pre_commit_hook"
+
+printf 'setup: hook installed\n'
+printf 'setup: gitleaks %s\n' "$(gitleaks version)"
+printf 'setup: semgrep %s\n' "$(semgrep --version 2>/dev/null | tail -n 1)"
+printf 'setup: lefthook %s\n' "$(lefthook version)"
+printf 'setup: swiftlint %s\n' "$(swiftlint version)"
+printf 'setup: shellcheck %s\n' "$(shellcheck --version | awk '/^version:/ { print $2 }')"

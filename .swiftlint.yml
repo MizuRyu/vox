@@ -1,0 +1,82 @@
+# SwiftLint 設定。~/nix-darwin/standards/swift/swiftlint.yml の自己完結コピー。
+# 公開リポジトリのため parent_config で $HOME を参照しない。標準との差分は下の「この repo の調整」だけ。
+#
+# - pre-commit（lefthook.yml → scripts/lint --staged）は --strict で実行する。warning も不合格。
+# - 全体検査は `just lint`（scripts/lint --worktree）。
+
+included:
+  - Sources
+  - Tests
+  - Tools
+  - scripts
+  - benchmarks
+
+excluded:
+  - .build
+  - benchmarks/.build
+  - build
+
+disabled_rules:
+  # Protocol メソッド宣言での明示的な `-> Void` を許容する
+  - redundant_void_return
+  # ---- この repo の調整 ----
+  # 検査は XCTest ではなく実行ターゲット（swift run vox-core-tests 等）。
+  # private な test* 関数は XCTest の未検出を意味しないため、このルールの前提が成り立たない。
+  - private_unit_test
+
+opt_in_rules:
+  # 定番の低ノイズ系
+  - empty_count
+  - closure_spacing
+  - explicit_init
+  - closure_end_indentation
+  - first_where
+  - contains_over_first_not_nil
+  - sorted_first_last
+
+line_length:
+  warning: 160
+  error: 240
+
+file_length:
+  warning: 800
+  error: 1500
+
+type_body_length:
+  warning: 600
+  error: 1200
+
+function_body_length:
+  warning: 80
+  error: 200
+
+cyclomatic_complexity:
+  warning: 15
+  error: 25
+
+identifier_name:
+  min_length: 1
+  excluded:
+    - id
+
+type_name:
+  min_length: 2
+  excluded:
+    - UI
+
+nesting:
+  type_level:
+    warning: 2
+    error: 3
+
+large_tuple:
+  warning: 4
+  error: 6
+
+function_parameter_count:
+  warning: 7
+  error: 10
+
+# この repo の調整: 標準の custom_rules.disallow_print は入れない。
+# CLI（--help, --print-history）と検査・ベンチの実行ターゲットは stdout が成果物であり、
+# print が正しい出力手段。アプリ本体の診断は voxLog / os.Logger を使う（設計書参照）。

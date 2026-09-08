@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+
+die() { printf 'notarize-dmg: %s\n' "$1" >&2; exit "${2:-1}"; }
+[[ "$#" -eq 2 ]] \
+  || die 'usage: VOX_SIGNING_IDENTITY=... VOX_NOTARY_PROFILE=... scripts/notarize-dmg INPUT.dmg OUTPUT.dmg' 64
+input="$1"
+output="$2"
+profile="${VOX_NOTARY_PROFILE:-}"
+identity="${VOX_SIGNING_IDENTITY:-}"
+[[ -n "$profile" ]] || die 'VOX_NOTARY_PROFILE is required' 64
+[[ "$identity" == 'Developer ID Application: '* && "$identity" != *$'\n'* ]] \
+  || die 'a Developer ID Application identity is required' 64
+[[ -f "$input" && ! -L "$input" ]] || die 'input DMG is missing or unsafe' 66
+[[ "$output" == *.dmg ]] || die 'output must end in .dmg' 64
+[[ ! -e "$output" && ! -L "$output" && ! -e "$output.sha256" && ! -L "$output.sha256" ]] \
+  || die 'output or checksum already exists' 73
+security find-identity -v -p codesigning | grep -F -- "\"$identity\"" >/dev/null \
+  || die 'Developer ID Application certificate is unavailable' 69
+
+staging="$(mktemp -d "${TMPDIR:-/tmp}/vox-notary.XXXXXX")"
+trap 'rm -rf "$staging"' EXIT
+candidate="$staging/Vox-notarized.dmg"
+cp "$input" "$candidate"
+codesign --sign "$identity" --force --timestamp "$candidate"
+codesign --verify --strict --verbose=2 "$candidate"
+xcrun notarytool submit "$candidate" --keychain-profile "$profile" --wait
+xcrun stapler staple "$candidate"
+xcrun stapler validate "$candidate"
+codesign --verify --strict --verbose=2 "$candidate"
+spctl --assess --type open --context context:primary-signature --verbose=2 "$candidate"
+mkdir -p "$(dirname "$output")"
+mv "$candidate" "$output"
+(cd "$(dirname "$output")" && shasum -a 256 "$(basename "$output")" >"$(basename "$output").sha256")
+printf 'Created signed, notarized and stapled DMG without changing input:\n%s\n%s\n' \
+  "$output" "$output.sha256"

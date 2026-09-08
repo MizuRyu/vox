@@ -1,0 +1,264 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/bundle-app [--development|--adhoc] [--binary PATH] [--icon PATH.png] [--output PATH] [--allow-dirty]
+
+Build a local Vox.app review candidate at dist/Vox-<VERSION>.app. Development
+signing is the default and uses the exact configured Apple Development identity.
+--adhoc is an explicit diagnostic mode. The signing mode is recorded in
+BUILD-INFO.txt, not in the file name, so an existing default output is only
+replaced when it was built the same way. Custom --output paths are never replaced.
+EOF
+}
+
+die() { printf 'bundle-app: %s\n' "$1" >&2; exit "${2:-1}"; }
+
+project_root="$(cd "$(dirname "$0")/.." && pwd)"
+binary=""
+icon="$project_root/Resources/VoxIcon.png"
+output=""
+default_output=false
+allow_dirty=false
+custom_binary=false
+signing_mode=''
+development=true
+signing_identity='-'
+candidate_label='local-adhoc'
+
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    --binary) [[ "$#" -ge 2 ]] || die 'missing value for --binary' 64; binary="$2"; custom_binary=true; shift 2 ;;
+    --icon) [[ "$#" -ge 2 ]] || die 'missing value for --icon' 64; icon="$2"; shift 2 ;;
+    --output) [[ "$#" -ge 2 ]] || die 'missing value for --output' 64; output="$2"; shift 2 ;;
+    --allow-dirty) allow_dirty=true; shift ;;
+    --development)
+      [[ "$signing_mode" != adhoc ]] || die '--development and --adhoc cannot be combined' 64
+      signing_mode=development; shift ;;
+    --adhoc)
+      [[ "$signing_mode" != development ]] || die '--development and --adhoc cannot be combined' 64
+      signing_mode=adhoc; development=false; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) usage >&2; die "unknown argument: $1" 64 ;;
+  esac
+done
+
+if $development; then
+  signing_config="${VOX_DEVELOPMENT_SIGNING_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/vox/development-signing-identity}"
+  [[ ! -L "$signing_config" && -f "$signing_config" ]] \
+    || die "development signing configuration must be a regular, non-symbolic-link file: $signing_config" 66
+  [[ "$(/usr/bin/stat -f '%u' "$signing_config")" == "$(id -u)" ]] \
+    || die "development signing configuration must be owned by the current user: $signing_config" 65
+  signing_config_content="$(cat "$signing_config"; printf x)"
+  signing_config_content="${signing_config_content%x}"
+  [[ "$signing_config_content" =~ ^[[:xdigit:]]{40}$ || "$signing_config_content" =~ ^[[:xdigit:]]{40}$'\n'$ ]] \
+    || die 'development signing identity must contain exactly 40 hexadecimal digits' 65
+  signing_identity="${signing_config_content%$'\n'}"
+  signing_identity="$(printf '%s' "$signing_identity" | tr '[:lower:]' '[:upper:]')"
+  security find-identity -v -p codesigning 2>/dev/null \
+    | awk -v fingerprint="$signing_identity" 'toupper($2) == fingerprint && $3 == "\"Apple" && $4 == "Development:" { found = 1 } END { exit !found }' \
+    || die "configured Apple Development signing identity is unavailable: $signing_identity" 69
+  candidate_label='local-development'
+fi
+
+version="$(tr -d '[:space:]' <"$project_root/VERSION")"
+[[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die 'VERSION must contain a semantic version' 65
+[[ -f "$icon" ]] || die "approved VoxIcon.png is missing: $icon" 66
+file "$icon" | grep -q 'PNG image data' || die 'app icon source is not a PNG file' 65
+
+checkout_head="$(git -C "$project_root" rev-parse --verify HEAD 2>/dev/null)" || die 'source revision is unavailable' 65
+source_revision="$checkout_head"
+checkout_was_clean=true
+if [[ -n "$(git -C "$project_root" status --porcelain --untracked-files=normal)" ]]; then
+  checkout_was_clean=false
+  $allow_dirty || die 'source tree is dirty; commit it or pass --allow-dirty for a local review candidate' 65
+  source_revision="$source_revision+dirty"
+fi
+
+if [[ -z "$output" ]]; then
+  output="$project_root/dist/Vox-$version.app"
+  default_output=true
+fi
+output_parent="$(dirname "$output")"
+if $default_output; then
+  [[ ! -L "$output_parent" ]] || die "default output directory must not be a symbolic link: $output_parent" 73
+  mkdir -p "$output_parent"
+else
+  [[ ! -e "$output" && ! -L "$output" ]] || die "output already exists: $output" 73
+  mkdir -p "$output_parent"
+fi
+output_parent_real="$(cd "$output_parent" && pwd -P)"
+output_parent_identity="$(/usr/bin/stat -f '%d:%i' "$output_parent")"
+
+validate_output_parent() {
+  [[ ! -L "$output_parent" ]] || die "output directory must not be a symbolic link: $output_parent" 73
+  [[ "$(cd "$output_parent" && pwd -P)" == "$output_parent_real" ]] \
+    || die "output directory changed during candidate creation: $output_parent" 73
+  [[ "$(/usr/bin/stat -f '%d:%i' "$output_parent")" == "$output_parent_identity" ]] \
+    || die "output directory identity changed during candidate creation: $output_parent" 73
+}
+
+validate_replaceable_output() {
+  [[ ! -L "$output" ]] || die "output must not be a symbolic link: $output" 73
+  [[ -d "$output" ]] || die "existing default output is not an app bundle: $output" 73
+  "$project_root/scripts/validate-app" --allow-accessory "$output" >/dev/null \
+    || die "existing default output is not a valid Vox app: $output" 73
+  existing_version="$(plutil -extract CFBundleShortVersionString raw "$output/Contents/Info.plist")"
+  [[ "$existing_version" == "$version" ]] \
+    || die "existing default output has version $existing_version, expected $version" 73
+  build_info="$output/Contents/Resources/BUILD-INFO.txt"
+  grep -Fqx "candidate: $candidate_label" "$build_info" \
+    || die "existing default output is not a $candidate_label candidate: $output" 73
+  if $development; then
+    grep -Fqx "signing certificate sha1: $signing_identity" "$build_info" \
+      || die "existing development candidate uses a different configured signing identity: $output" 73
+  fi
+  grep -Fqx 'Developer ID signed: no' "$build_info" \
+    || die "existing default output is Developer ID signed: $output" 73
+  grep -Fqx 'notarization ticket stapled to this app: no' "$build_info" \
+    || die "existing default output has a notarization ticket: $output" 73
+  if ! python3 - "$output/Contents/MacOS/Vox" <<'PY'
+import ctypes
+import os
+import subprocess
+import sys
+
+expected = os.path.realpath(sys.argv[1])
+for text in subprocess.check_output(["ps", "-axo", "pid="], text=True).splitlines():
+    pid = int(text)
+    actual = None
+    if sys.platform == "darwin":
+        library = ctypes.CDLL("/usr/lib/libproc.dylib")
+        buffer = ctypes.create_string_buffer(4096)
+        if library.proc_pidpath(pid, buffer, len(buffer)) > 0:
+            actual = os.path.realpath(os.fsdecode(buffer.value))
+    else:
+        try:
+            actual = os.path.realpath(os.readlink(f"/proc/{pid}/exe"))
+        except OSError:
+            pass
+    if actual is not None:
+        try:
+            if os.path.samefile(actual, expected):
+                raise SystemExit(1)
+        except OSError:
+            pass
+raise SystemExit(0)
+PY
+  then
+    die "existing default output is running or its process state could not be inspected: $output" 73
+  fi
+}
+
+if $default_output && [[ -e "$output" || -L "$output" ]]; then
+  validate_replaceable_output
+fi
+
+if ! $custom_binary; then
+  (cd "$project_root" && swift build -c release --product Vox)
+  binary="$(cd "$project_root" && swift build -c release --show-bin-path)/Vox"
+  [[ "$(git -C "$project_root" rev-parse --verify HEAD 2>/dev/null)" == "$checkout_head" ]] \
+    || die 'checkout HEAD changed during the release build' 65
+  if $checkout_was_clean; then
+    [[ -z "$(git -C "$project_root" status --porcelain --untracked-files=normal)" ]] \
+      || die 'source tree changed during the release build' 65
+  fi
+fi
+[[ -x "$binary" ]] || die "release executable is missing: $binary" 66
+file "$binary" | grep -Eq 'Mach-O.*arm64' || die 'release executable is not macOS arm64' 65
+validate_output_parent
+staging="$(mktemp -d "$output_parent/.vox-app.XXXXXX")"
+backup=""
+cleanup() {
+  status="$?"
+  if [[ -n "$backup" && -e "$backup" && ! -e "$output" ]]; then
+    mv "$backup" "$output" || true
+  fi
+  rm -rf "$staging"
+  exit "$status"
+}
+trap cleanup EXIT
+app="$staging/Vox.app"
+
+sign_bundle() {
+  sign_args=(--sign "$signing_identity" --force --options runtime)
+  $development && sign_args+=(--timestamp=none)
+  codesign "${sign_args[@]}" --entitlements "$project_root/Resources/App/Vox.entitlements" "$app"
+}
+
+validate_designated_requirements() {
+  old_requirement="$staging/existing.requirement"
+  new_requirement="$staging/new.requirement"
+  old_dump="$(codesign -d -r- "$output" 2>&1)" \
+    || die "could not read the existing development candidate's designated requirement: $output" 73
+  new_dump="$(codesign -d -r- "$app" 2>&1)" \
+    || die 'could not read the new development candidate designated requirement' 73
+  printf '%s\n' "$old_dump" | sed -n -e 's/^# designated => //p' -e 's/^designated => //p' >"$old_requirement"
+  printf '%s\n' "$new_dump" | sed -n -e 's/^# designated => //p' -e 's/^designated => //p' >"$new_requirement"
+  [[ "$(wc -l <"$old_requirement" | tr -d '[:space:]')" == 1 && -s "$old_requirement" \
+    && "$(wc -l <"$new_requirement" | tr -d '[:space:]')" == 1 && -s "$new_requirement" ]] \
+    || die 'development candidate designated requirement is missing or ambiguous' 73
+  codesign -v --strict -R "$old_requirement" "$output" >/dev/null 2>&1 \
+    || die 'existing development candidate does not satisfy its own designated requirement' 73
+  codesign -v --strict -R "$new_requirement" "$app" >/dev/null 2>&1 \
+    || die 'new development candidate does not satisfy its own designated requirement' 73
+  codesign -v --strict -R "$old_requirement" "$app" >/dev/null 2>&1 \
+    || die 'new development candidate is not compatible with the existing designated requirement; keep the configured signing identity unchanged' 73
+  codesign -v --strict -R "$new_requirement" "$output" >/dev/null 2>&1 \
+    || die 'existing development candidate is not compatible with the new designated requirement; keep the configured signing identity unchanged' 73
+}
+
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+install -m 0755 "$binary" "$app/Contents/MacOS/Vox"
+strip -S "$app/Contents/MacOS/Vox"
+"$project_root/scripts/make-app-icon" "$icon" "$app/Contents/Resources/AppIcon.icns" >/dev/null
+install -m 0644 "$project_root/Resources/App/Info.plist" "$app/Contents/Info.plist"
+plutil -replace CFBundleShortVersionString -string "$version" "$app/Contents/Info.plist"
+plutil -replace CFBundleVersion -string "$version" "$app/Contents/Info.plist"
+plutil -lint "$app/Contents/Info.plist" >/dev/null
+provenance='verified-clean-build'
+$custom_binary && provenance='custom-binary-unverified'
+# Normalize the executable through the same signing/removal path used by the
+# validator. codesign changes Mach-O load commands even after its signature is
+# removed, so hashing the never-signed copy would not be reproducible.
+sign_bundle
+unsigned_binary="$staging/Vox.unsigned"
+cp "$app/Contents/MacOS/Vox" "$unsigned_binary"
+codesign --remove-signature "$unsigned_binary"
+binary_sha256="$(shasum -a 256 "$unsigned_binary" | awk '{print $1}')"
+{
+cat <<EOF
+version: $version
+source revision: $source_revision
+provenance: $provenance
+binary unsigned sha256: $binary_sha256
+platform: macOS 26 or later, arm64
+candidate: $candidate_label
+EOF
+if $development; then
+  printf 'signing certificate sha1: %s\n' "$signing_identity"
+fi
+cat <<'EOF'
+Developer ID signed: no
+notarization ticket stapled to this app: no
+EOF
+} >"$app/Contents/Resources/BUILD-INFO.txt"
+chmod 0644 "$app/Contents/Resources/BUILD-INFO.txt"
+sign_bundle
+"$project_root/scripts/validate-app" "$app" >/dev/null
+validate_output_parent
+if $default_output && [[ -e "$output" || -L "$output" ]]; then
+  validate_replaceable_output
+  $development && validate_designated_requirements
+  backup="$(mktemp -d "$output_parent/.vox-app-backup.XXXXXX")"
+  rmdir "$backup"
+  mv "$output" "$backup"
+fi
+mv "$app" "$output"
+if [[ -n "$backup" ]]; then
+  rm -rf "$backup"
+  backup=""
+fi
+printf 'Created %s review candidate: %s\n' "$candidate_label" "$output"

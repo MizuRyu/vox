@@ -1,0 +1,47 @@
+.build/
+benchmarks/.build/
+.swiftpm/
+.DS_Store
+DerivedData/
+
+# ローカル設定・認証情報
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# ローカル実行で生じる私的データと検査レポート
+*.log
+recordings/
+private/
+security-reports/
+.gitleaks-report.*
+.semgrep-results.*
+vox-history.jsonl
+
+# 大きなモデル形式。公開用 manifest と合成 fixture は除外しない。
+*.gguf
+*.mlmodelc/
+*.onnx
+*.safetensors
+benchmarks/m0/audio/
+benchmarks/m0/models/
+benchmarks/m0/results/
+benchmarks/m1/
+
+# グローバル ~/.config/git/ignore が flake.nix を除外しているが、
+# このプロジェクトでは flake を追跡する（ADR-006 で nix を開発環境として使うため）。
+!flake.nix
+!flake.lock
+
+# .claude はスキルの symlink（.agents/skills）だけ追跡し、ローカル設定は追跡しない。
+.claude/*
+!.claude/skills
+
+# ローカル配布物（公開は実機確認後に明示的に行う）
+dist/
+__pycache__/
+*.pyc
