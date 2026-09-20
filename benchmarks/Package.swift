@@ -14,7 +14,7 @@ let package = Package(
     .executable(name: "vox-m0-live-probe", targets: ["VoxM0LiveProbe"])
   ],
   dependencies: [
-    .package(url: "https://github.com/FluidInference/FluidAudio.git", exact: "0.15.0")
+    .package(url: "https://github.com/FluidInference/FluidAudio.git", exact: "0.15.8")
   ],
   targets: [
     .target(name: "M0HarnessCore"),
