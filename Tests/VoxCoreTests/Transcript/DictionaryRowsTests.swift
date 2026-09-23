@@ -101,6 +101,41 @@ struct DictionaryRowsTests {
     #expect(!table.rows[1].isPending, "保存した行が未保存に見える")
   }
 
+  /// 重複で落ちていた行が編集で表に出ても、既にある行の ID と保存できなかった値を保つ。
+  @Test("重複で落ちていた行が表に出ても、ほかの行の ID と値は変わらない")
+  func aRevivedDuplicateKeepsOtherRows() throws {
+    var table = rows("A\ta\nB\tb\nB\tc\n")
+    let ids = table.rows.map(\.id)
+    #expect(throws: DictionaryDocument.EditFailure.emptySource) {
+      try table.edit(ids[0], to: DictionaryEntry(from: "", to: "a"))
+    }
+
+    let result = try table.edit(ids[1], to: DictionaryEntry(from: "C", to: "b"))
+    table.apply(try #require(result))
+    #expect(table.document.entries.map(\.from) == ["A", "C", "B"], "落ちていた行が表に出ていない")
+    #expect(Array(table.rows.map(\.id).prefix(2)) == ids, "既にある行の ID が変わった")
+    #expect(!ids.contains(table.rows[2].id), "表に出た行が既にある ID を使った")
+    #expect(table.rows[0].entry == DictionaryEntry(from: "", to: "a"), "保存できなかった値が消えた")
+  }
+
+  /// 空の打ち込み途中の行は知らせない。保存できなかった値だけを知らせる。
+  @Test("保存していない値があるかを返す")
+  func unsavedEditsAreReported() throws {
+    var table = rows(sample)
+    #expect(!table.hasUnsavedEdits)
+    let draft = table.addDraft()
+    #expect(!table.hasUnsavedEdits, "空の打ち込み途中の行を未保存として扱った")
+    #expect(throws: DictionaryDocument.EditFailure.duplicateSource("松尾")) {
+      try table.edit(draft, to: DictionaryEntry(from: "松尾", to: "別"))
+    }
+    #expect(table.hasUnsavedEdits, "拒否された追加の行")
+    _ = table.remove(draft)
+    #expect(throws: DictionaryDocument.EditFailure.emptySource) {
+      try table.edit(table.rows[0].id, to: DictionaryEntry(from: "", to: "末尾"))
+    }
+    #expect(table.hasUnsavedEdits, "拒否された既存の行")
+  }
+
   /// 外で書き換えた後は、どの行がどれか分からない。古い ID の確定を別の行へ通さない。
   @Test("外で変わったファイルを読み直すと ID を振り直し、古い ID の確定を捨てる")
   func externalChangesRenumberRows() throws {

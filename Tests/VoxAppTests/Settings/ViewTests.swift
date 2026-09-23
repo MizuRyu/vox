@@ -186,6 +186,13 @@ struct SettingsViewTests {
     #expect(shown == DictionaryEntry(from: "", to: "末尾"), "打ち込みが画面から消えた")
     model.updateDictionaryEntry(id: id, from: shown.from, to: "別")
     #expect(try store.contents() == sample, "画面に無い左辺で保存した")
+
+    // 別の行を保存しても、保存していない行があることは知らせ続ける。
+    model.updateDictionaryEntry(id: rowID(model, 1), from: "おるか", to: "Orca")
+    #expect(model.dictionaryEntries[0] == DictionaryEntry(from: "", to: "別"))
+    #expect(
+      model.dictionaryMessage.hasSuffix("保存していない行があります。Enterを押すと保存し直します。"),
+      "\(model.dictionaryMessage)")
   }
 
   /// エディタで書き換えた内容を、表の古い内容で上書きしない。

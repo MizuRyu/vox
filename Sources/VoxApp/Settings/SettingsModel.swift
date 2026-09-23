@@ -65,6 +65,8 @@ public final class SettingsModel: ObservableObject {
       let table = DictionaryTable(contents: contents)
       dictionaryMessage = "\(table.entries.count)件を読み込みました。"
         + skippedNotice(table.skippedLines)
+        + (dictionaryRows?.hasUnsavedEdits == true
+          ? "保存していない行があります。Enterを押すと保存し直します。" : "")
     } catch {
       dictionaryRows = nil
       dictionaryMessage = "辞書ファイルを読み込めません。ファイルを確認してから「更新」を押してください。"
