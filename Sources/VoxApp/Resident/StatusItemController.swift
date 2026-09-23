@@ -58,7 +58,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     statusItem.menu = menu
     update(phase: .idle)
     NotificationCenter.default.addObserver(
-      self, selector: #selector(screenParametersChanged),
+      self, selector: #selector(screenParametersChanged(_:)),
       name: NSApplication.didChangeScreenParametersNotification, object: nil)
     logFrames(reason: "startup")
   }
@@ -78,7 +78,9 @@ final class StatusItemController: NSObject, NSMenuDelegate {
       x: frame.origin.x, y: frame.origin.y, width: frame.size.width, height: frame.size.height)
   }
 
-  @objc private func screenParametersChanged() { logFrames(reason: "screen_change") }
+  @objc private func screenParametersChanged(_ notification: Notification) {
+    logFrames(reason: "screen_change")
+  }
 
   func update(phase: ResidentPhase, detail: String? = nil) {
     self.phase = phase

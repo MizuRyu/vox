@@ -33,6 +33,43 @@ struct StatusItemDiagnosticsTests {
       "a status item outside every screen was not recorded as off screen")
   }
 
+  @Test("2枚目の画面だけに重なる矩形も on_screen=true で残る")
+  func testFrameOnSecondScreen() {
+    #expect(
+      StatusItemDiagnostics.framesLine(
+        reason: "setup_opened", visible: true,
+        button: .init(x: -600, y: 1_700, width: 30, height: 24),
+        screens: [
+          .init(x: 0, y: 0, width: 1_512, height: 982),
+          .init(x: -1_080, y: -100, width: 1_080, height: 1_920)
+        ])
+        == "status_item_frames reason=setup_opened visible=true button={-600.0,1700.0,30.0,24.0} "
+        + "on_screen=true screens={0.0,0.0,1512.0,982.0};{-1080.0,-100.0,1080.0,1920.0}",
+      "a status item on a secondary screen was not recorded as on screen")
+  }
+
+  @Test("幅 0 の矩形は画面の内側でも on_screen=false で残る")
+  func testEmptyFrameIsNotOnScreen() {
+    #expect(
+      StatusItemDiagnostics.framesLine(
+        reason: "startup", visible: true, button: .init(x: 700, y: 950, width: 0, height: 24),
+        screens: [.init(x: 0, y: 0, width: 1_512, height: 982)])
+        == "status_item_frames reason=startup visible=true button={700.0,950.0,0.0,24.0} "
+        + "on_screen=false screens={0.0,0.0,1512.0,982.0}",
+      "an unplaced status item was reported as on screen")
+  }
+
+  @Test("画面が 1 枚も無ければ矩形があっても on_screen=false で残る")
+  func testFrameWithoutScreens() {
+    #expect(
+      StatusItemDiagnostics.framesLine(
+        reason: "screen_change", visible: true,
+        button: .init(x: 700, y: 950, width: 30, height: 24), screens: [])
+        == "status_item_frames reason=screen_change visible=true button={700.0,950.0,30.0,24.0} "
+        + "on_screen=false screens=-",
+      "a status item without any screen was reported as on screen")
+  }
+
   @Test("矩形を取れない回は on_screen=unknown で残る")
   func testFrameUnavailable() {
     #expect(

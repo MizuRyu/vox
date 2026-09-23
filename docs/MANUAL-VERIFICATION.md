@@ -375,7 +375,7 @@
 |---|---|
 | **前提** | Vox が起動中。ディスプレイが2枚以上つながっている |
 | **手順** | ディスプレイを1枚外す（または配置を変える）。`~/Library/Application Support/vox/logs/vox.log` を開く |
-| **期待結果** | `status_item_frames reason=screen_change` の行が1行増え、項目の矩形（`button=`）、可視性（`visible=`）、各画面の範囲（`screens=`）が残る。項目が押せないときは `on_screen=false` になる |
+| **期待結果** | `status_item_frames reason=screen_change` の行が1行増え、項目の矩形（`button=`）、可視性（`visible=`）、各画面の範囲（`screens=`）が残る。`on_screen` は矩形がどの画面とも重ならなければ `false`、矩形を取得できなければ `unknown` |
 
 ## DIST — バンドル配布
 

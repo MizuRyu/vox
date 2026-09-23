@@ -5,10 +5,10 @@ import Foundation
 
 public enum StatusItemDiagnostics {
   public struct Rect: Sendable, Equatable {
-    public let x: Double
-    public let y: Double
-    public let width: Double
-    public let height: Double
+    let x: Double
+    let y: Double
+    let width: Double
+    let height: Double
 
     public init(x: Double, y: Double, width: Double, height: Double) {
       self.x = x
@@ -35,8 +35,11 @@ public enum StatusItemDiagnostics {
     String(format: "{%.1f,%.1f,%.1f,%.1f}", rect.x, rect.y, rect.width, rect.height)
   }
 
+  /// 空の矩形はどの画面とも重ならない（`CGRect.intersects` と同じ扱い）。
+  /// 配置前の項目は幅 0 で現れるので、画面内に見えてしまわないようにする。
   private static func overlaps(_ rect: Rect, _ other: Rect) -> Bool {
-    rect.x < other.x + other.width && other.x < rect.x + rect.width
+    guard rect.width > 0, rect.height > 0, other.width > 0, other.height > 0 else { return false }
+    return rect.x < other.x + other.width && other.x < rect.x + rect.width
       && rect.y < other.y + other.height && other.y < rect.y + rect.height
   }
 }
