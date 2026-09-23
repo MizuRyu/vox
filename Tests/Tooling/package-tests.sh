@@ -2,6 +2,7 @@
 set -euo pipefail
 
 project_root="$(cd "$(dirname "$0")/../.." && pwd)"
+project_version="$(<"$project_root/VERSION")"
 temporary_root="$(mktemp -d "${TMPDIR:-/tmp}/vox-package-tests.XXXXXX")"
 sleeper_pid=""
 cleanup() {
@@ -37,9 +38,9 @@ grep -Fq 'LSUIElement must be false' "$temporary_root/accessory-default.out" \
 "$project_root/scripts/validate-app" --allow-accessory "$accessory_app"
 [[ "$(plutil -extract CFBundleIdentifier raw "$app/Contents/Info.plist")" == 'local.vox.app' ]] \
   || fail 'bundle identifier differs from resident app identity'
-[[ "$(plutil -extract CFBundleShortVersionString raw "$app/Contents/Info.plist")" == '1.0.0' ]] \
+[[ "$(plutil -extract CFBundleShortVersionString raw "$app/Contents/Info.plist")" == "$project_version" ]] \
   || fail 'short version is incorrect'
-[[ "$(plutil -extract CFBundleVersion raw "$app/Contents/Info.plist")" == '1.0.0' ]] \
+[[ "$(plutil -extract CFBundleVersion raw "$app/Contents/Info.plist")" == "$project_version" ]] \
   || fail 'bundle version is incorrect'
 grep -Fq 'candidate: local-adhoc' "$app/Contents/Resources/BUILD-INFO.txt" \
   || fail 'local candidate label is missing'
