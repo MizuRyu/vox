@@ -28,4 +28,5 @@
 | [012](012-filler-removal-rule-based.md) | フィラー除去は規則ベースの後処理。LLM 整形は入れない | 提案 | 2026-09-02 |
 | [013](013-library-app-and-test-targets.md) | 本体をライブラリ + 薄い executable にし、検査は testTarget に統一する | 承認 | 2026-09-07 |
 | [014](014-auto-enter-readability-decides.md) | 自動 Enter は読み返せるかで自動判定し、読めないときの送信だけを設定にする | 承認 | 2026-09-08 |
+| [015](015-palette-target-from-frontmost-app.md) | 検索対象はアプリ固有 → ターミナル汎用 → 最近使ったフォルダの 3 方式で決める | 承認 | 2026-09-23 |
 | [016](016-microphone-selection-input-only.md) | マイクを Vox 内で選び、通常録音を入力専用 AUHAL で開く | 承認 | 2026-09-23 |
