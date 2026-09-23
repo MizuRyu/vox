@@ -117,23 +117,26 @@ struct TargetCycleKeyTests {
       if coordinator.paletteModel.folderHistory.entries.count == 3 { break }
       try? await Task.sleep(for: .milliseconds(2))
     }
-    #expect(coordinator.paletteModel.target == nil, "この検査では対象が解決しない前提")
+    // ADR-015: 対応していないアプリでは最近使ったフォルダの先頭（charlie）に解決される。
+    let charlie = folders[2]
+    let bravo = folders[1]
+    let alpha = folders[0]
+    #expect(coordinator.paletteModel.target?.root == charlie, "最近使ったフォルダの先頭に解決していない")
 
+    // 輪は候補（bravo → alpha）を巡り、押し始めの対象（charlie）を経て一周する。
     var visited: [String?] = []
     for _ in 0..<4 {
       coordinator.cycleTarget()
       visited.append(coordinator.paletteModel.target?.root)
     }
-    let charlie = folders[2]
-    let bravo = folders[1]
-    let alpha = folders[0]
     #expect(
-      visited == [charlie, bravo, alpha, charlie],
+      visited == [bravo, alpha, charlie, bravo],
       "輪を一周して先頭に戻っていない: \(visited)")
 
     // 候補行から選び直したら、次の打鍵はそのときの候補から写し直す。
     coordinator.switchTarget(to: PaletteTarget(root: alpha, source: .recent))
     coordinator.cycleTarget()
+    // alpha を選んだ後の候補は charlie → bravo なので、次の打鍵で charlie。
     #expect(
       coordinator.paletteModel.target?.root == charlie,
       "選び直した後に輪を写し直していない: \(coordinator.paletteModel.target?.root ?? "-")")
