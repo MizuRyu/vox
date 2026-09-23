@@ -184,7 +184,8 @@ final class VoxController {
     case .escape:
       if palette.isOpen {
         // パレット表示中の esc は「挿入せず閉じる」。録音は止めない。
-        palette.close(insert: nil, fileNameOnly: false)
+        // T23。フォルダ選択モードのときだけモードを抜けるだけで済む。
+        palette.escape()
         return
       }
       switch state {

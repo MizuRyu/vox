@@ -41,7 +41,8 @@ struct MetricsSession {
   var paletteOpenedCount = 0
   /// T22。パレットを開いてから閉じるまでの時間。複数回開いたときは最後の 1 回。
   var paletteOpenMilliseconds: Double?
-  /// M3。検索対象をどのアダプタで決めたか（orca / terminal / fallback）。特定できなければ nil。
+  /// M3。検索対象をどう決めたか。列挙は `PaletteTargetSource`（自動解決の orca / terminal /
+  /// fallback と、選び直した worktree / recent / manual）。特定できなければ nil。
   var paletteTargetSource: String?
 
   init(toggleOnMilliseconds: Double) {

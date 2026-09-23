@@ -18,6 +18,26 @@ final class PaletteModel: ObservableObject {
     case tree = "Tree"
   }
 
+  /// 検索対象を切り替える行。worktree 候補（T38-a）と最近使ったフォルダ（T23）、
+  /// フォルダ選択パネルの導線を 1 つの並びで数える（選択を 1 つの空間で扱うため）。
+  enum TargetRow: Equatable {
+    case worktree(WorktreeCandidate)
+    case folder(FolderHistoryEntry)
+    /// `NSOpenPanel` を開く導線。履歴に無いフォルダを初めて指定するとき。
+    case chooseFolder
+
+    var id: String {
+      switch self {
+      case .worktree(let candidate): "worktree:" + candidate.path
+      case .folder(let entry): "folder:" + entry.path
+      case .chooseFolder: "choose"
+      }
+    }
+  }
+
+  /// 既定表示で出す最近使ったフォルダの件数（T23）。
+  static let recentFolderLimit = 3
+
   /// 検索対象。解決前は nil で、ヘッダに「検索対象を確認中」を出す。
   @Published var target: PaletteTarget?
   /// アダプタもフォールバックも失敗した。ヘッダに「対象を特定できず」を出す。
@@ -28,7 +48,11 @@ final class PaletteModel: ObservableObject {
   @Published var rows: [PaletteRow] = []
   @Published var treeRows: [FileTreeRow] = []
   /// T38-a。同一リポジトリの他の worktree。ファイル行の上に候補として並べる。
-  @Published var worktrees: [WorktreeCandidate] = []
+  @Published private(set) var worktrees: [WorktreeCandidate] = []
+  /// T23。最近使ったフォルダ。worktree 候補の後に並べる。
+  @Published private(set) var folderHistory = FolderHistory()
+  /// T23。ヘッダのパスをクリックして入るフォルダ選択モード。候補はフォルダだけになる。
+  @Published private(set) var isPickingFolder = false
   @Published var fileViewMode: FileViewMode = .changes
   @Published var selection = 0
   @Published var preview: FilePreview?
@@ -54,57 +78,86 @@ final class PaletteModel: ObservableObject {
   var onCommit: ((_ path: String, _ fileNameOnly: Bool) -> Void)?
   /// esc 相当（キーヒントの `Esc` をクリックしたとき）。未接続なら何もしない。
   var onCancel: (() -> Void)?
-  /// T38-a。worktree 行を選んだ。検索対象の切り替えは App 側が行う。
-  var onSwitchTarget: ((WorktreeCandidate) -> Void)?
+  /// T38-a / T23。候補行を選んだ。検索対象の切り替えは App 側が行う。
+  var onSwitchTarget: ((PaletteTarget) -> Void)?
+  /// T23。「フォルダを選ぶ」を選んだ。`NSOpenPanel` を開くのは App 側。
+  var onChooseFolder: (() -> Void)?
 
-  /// 候補行は Changes・クエリが空のときだけ出す（Tree と検索中はファイルだけ並べる）。
-  var visibleWorktrees: [WorktreeCandidate] {
-    fileViewMode == .changes && query.isEmpty ? worktrees : []
+  /// 検索対象を切り替える候補行。フォルダ選択モードではフォルダだけ、通常は Changes で
+  /// クエリが空のときだけ出す（Tree と検索中はファイルだけ並べる）。
+  var targetRows: [TargetRow] {
+    if isPickingFolder {
+      return folders(matching: query, limit: FolderHistory.limit).map(TargetRow.folder)
+        + [.chooseFolder]
+    }
+    guard fileViewMode == .changes, query.isEmpty else { return [] }
+    return worktrees.map(TargetRow.worktree)
+      + folders(matching: "", limit: Self.recentFolderLimit).map(TargetRow.folder)
   }
 
-  /// 選択中の worktree 行。ファイル行を選んでいるときは nil。
-  var selectedWorktree: WorktreeCandidate? {
-    let candidates = visibleWorktrees
+  /// 選択中の候補行。ファイル行を選んでいるときは nil。
+  var selectedTargetRow: TargetRow? {
+    let candidates = targetRows
     guard selection >= 0, selection < candidates.count else { return nil }
     return candidates[selection]
   }
 
   var selectedRow: PaletteRow? {
+    // T23。フォルダ選択モードにはファイル行が無い。
+    guard !isPickingFolder else { return nil }
     if fileViewMode == .tree {
       guard selection >= 0, selection < treeRows.count, let file = treeRows[selection].file else {
         return nil
       }
       return PaletteRow(file: file)
     }
-    let index = selection - visibleWorktrees.count
+    let index = selection - targetRows.count
     guard index >= 0, index < rows.count else { return nil }
     return rows[index]
   }
 
   var selectedDisplayID: String? {
+    if let candidate = selectedTargetRow { return candidate.id }
+    guard !isPickingFolder else { return nil }
     if fileViewMode == .tree {
       guard treeRows.indices.contains(selection) else { return nil }
       return "tree:" + treeRows[selection].id
     }
-    if let candidate = selectedWorktree { return "worktree:" + candidate.path }
-    let index = selection - visibleWorktrees.count
+    let index = selection - targetRows.count
     guard rows.indices.contains(index) else { return nil }
     return "changes:" + rows[index].file.path
   }
 
   /// 既定の選択位置。候補行は先頭に積むので、既定はその次（＝ファイルの先頭行）。
-  /// 選択を初期化する箇所はすべてここを使う。
-  var defaultSelection: Int { visibleWorktrees.count }
+  /// フォルダ選択モードはファイル行が無いので先頭の候補。選択を初期化する箇所はすべてここを使う。
+  var defaultSelection: Int { isPickingFolder ? 0 : targetRows.count }
+
+  /// T23。検索フィールドに出す記号。フォルダ選択モードだけ `~`（sigil の割り当ては変えない）。
+  var fieldSigil: String {
+    isPickingFolder ? PaletteSigil.branch.rawValue : sigil.rawValue
+  }
 
   /// 候補は索引より後に届く。挿入した分だけ選択を下げ、選んでいた行を動かさない。
   func setWorktrees(_ candidates: [WorktreeCandidate]) {
-    let before = visibleWorktrees.count
-    worktrees = candidates
-    let inserted = visibleWorktrees.count - before
+    adjustingTargetRows { worktrees = candidates }
+  }
+
+  func setFolderHistory(_ history: FolderHistory) {
+    adjustingTargetRows { folderHistory = history }
+  }
+
+  private func adjustingTargetRows(_ change: () -> Void) {
+    let before = targetRows.count
+    change()
+    let inserted = targetRows.count - before
     if inserted != 0, selection >= before {
       selection = max(0, selection + inserted)
     }
     clampSelection()
+  }
+
+  private func folders(matching query: String, limit: Int) -> [FolderHistoryEntry] {
+    folderHistory.candidates(matching: query, excluding: target?.root, limit: limit)
   }
 
   func refreshRows() {
@@ -122,6 +175,7 @@ final class PaletteModel: ObservableObject {
 
   /// 索引・候補・選択・プレビューを空にする。検索対象と sigil / クエリは呼び出し側が決める
   /// （閉じるときは空に戻し、対象を切り替えるときは新しい対象を先に置く）。
+  /// 最近使ったフォルダは対象を切り替えても出し続けるので、ここでは消さない（T23）。
   func reset() {
     files = []
     rows = []
@@ -149,7 +203,8 @@ final class PaletteModel: ObservableObject {
   }
 
   private var visibleCount: Int {
-    fileViewMode == .tree ? treeRows.count : visibleWorktrees.count + rows.count
+    if isPickingFolder { return targetRows.count }
+    return fileViewMode == .tree ? treeRows.count : targetRows.count + rows.count
   }
 
   private func clampSelection() {
@@ -173,9 +228,16 @@ final class PaletteModel: ObservableObject {
   }
 
   func commit(fileNameOnly: Bool) {
-    // T38-a。worktree 行は挿入せず検索対象を切り替える（⌥Enter でも同じ）。
-    if let candidate = selectedWorktree {
-      onSwitchTarget?(candidate)
+    // T38-a / T23。候補行は挿入せず検索対象を切り替える（⌥Enter でも同じ）。
+    if let candidate = selectedTargetRow {
+      switch candidate {
+      case .worktree(let worktree):
+        onSwitchTarget?(PaletteTarget(root: worktree.path, source: .worktree))
+      case .folder(let entry):
+        onSwitchTarget?(PaletteTarget(root: entry.path, source: .recent))
+      case .chooseFolder:
+        onChooseFolder?()
+      }
       return
     }
     if fileViewMode == .tree, selection >= 0, selection < treeRows.count,
@@ -203,6 +265,25 @@ final class PaletteModel: ObservableObject {
 
   func cancel() {
     onCancel?()
+  }
+
+  /// T23。ヘッダのパスのクリックで入り、esc で抜ける。クエリはどちらの向きも空から始める。
+  func setPickingFolder(_ picking: Bool) {
+    guard isPickingFolder != picking else { return }
+    isPickingFolder = picking
+    query = ""
+    refreshRows()
+    selection = defaultSelection
+    clampSelection()
+    preview = nil
+    focusToken += 1
+  }
+
+  /// T23。esc をフォルダ選択モードが受け取ったか。受け取ったらパレットは閉じない。
+  func consumeEscape() -> Bool {
+    guard isPickingFolder else { return false }
+    setPickingFolder(false)
+    return true
   }
 
   /// T22。右ペインに出ているプレビューの全文（notice があればその 1 行を頭に足す）。
@@ -285,6 +366,9 @@ final class PalettePanel {
     model.resolvingTarget = true
     model.sigil = .file
     model.query = ""
+    // T23。履歴は開くたびに読み直す。フォルダ選択モードも毎回ファイル検索から始める。
+    model.setFolderHistory(FolderHistory())
+    model.setPickingFolder(false)
     model.reset()
     model.committedTail = committedTail
     model.clearCopiedNotice()

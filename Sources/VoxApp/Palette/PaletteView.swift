@@ -16,14 +16,21 @@ private struct QueryField: NSViewRepresentable {
     field.drawsBackground = false
     field.focusRingType = .none
     field.font = NSFont.monospacedSystemFont(ofSize: 15, weight: .regular)
-    field.placeholderString = "ファイル名の一部を打つ"
+    field.placeholderString = Self.placeholder(pickingFolder: model.isPickingFolder)
     field.stringValue = model.query
     field.cell?.usesSingleLineMode = true
     return field
   }
 
+  /// T23。フォルダ選択モードでは何を打てばよいかが変わる。
+  private static func placeholder(pickingFolder: Bool) -> String {
+    pickingFolder ? "フォルダ名の一部を打つ" : "ファイル名の一部を打つ"
+  }
+
   func updateNSView(_ field: NSTextField, context: Context) {
     if field.stringValue != model.query { field.stringValue = model.query }
+    let placeholder = Self.placeholder(pickingFolder: model.isPickingFolder)
+    if field.placeholderString != placeholder { field.placeholderString = placeholder }
     let coordinator = context.coordinator
     if coordinator.focusToken != model.focusToken {
       coordinator.focusToken = model.focusToken
@@ -199,18 +206,27 @@ struct PaletteView: View {
             .font(.system(size: 11, weight: .medium))
             .foregroundStyle(.secondary)
         }
-        Text("ファイルを選ぶ")
+        Text(model.isPickingFolder ? "フォルダを選ぶ" : "ファイルを選ぶ")
           .font(.system(size: 16, weight: .semibold))
         Text("@ ファイル")
           .font(.system(size: 10))
           .foregroundStyle(.tertiary)
       }
       Spacer(minLength: 12)
-      Text(targetLabel)
-        .font(.system(size: 11, design: .monospaced))
-        .foregroundStyle(model.targetUnresolved ? Color.orange : Color.secondary)
-        .lineLimit(1)
-        .truncationMode(.head)
+      // T23。検索対象のパスをクリックするとフォルダ選択モードに入る。
+      Button {
+        model.setPickingFolder(true)
+      } label: {
+        Text(targetLabel)
+          .font(.system(size: 11, design: .monospaced))
+          .foregroundStyle(model.targetUnresolved ? Color.orange : Color.secondary)
+          .lineLimit(1)
+          .truncationMode(.head)
+          .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .disabled(model.isPickingFolder)
+      .help("検索対象のフォルダを選ぶ")
     }
   }
 
@@ -224,7 +240,7 @@ struct PaletteView: View {
 
   private var field: some View {
     HStack(spacing: 8) {
-      Text(model.sigil.rawValue)
+      Text(model.fieldSigil)
         .font(.system(size: 15, weight: .bold, design: .monospaced))
         .foregroundStyle(Color.accentColor)
       QueryField(model: model)
@@ -282,6 +298,8 @@ struct PaletteView: View {
           .labelsHidden()
           .pickerStyle(.segmented)
           .frame(width: 132)
+          // T23。フォルダ選択モードに階層表示は無い。
+          .disabled(model.isPickingFolder)
           Spacer(minLength: 8)
           if model.fileViewMode == .tree && !model.query.isEmpty {
             Text("検索中は親フォルダを開く")
@@ -339,13 +357,14 @@ struct PaletteView: View {
     .frame(maxHeight: .infinity)
   }
 
-  /// Changes 表示の行。T38-a の worktree 候補を先頭に置き、選択インデックスは 1 つの空間で数える。
+  /// Changes 表示の行。検索対象を切り替える候補（T38-a / T23）を先頭に置き、
+  /// 選択インデックスは候補とファイルで 1 つの空間で数える。
   @ViewBuilder
   private var changesList: some View {
-    let candidates = model.visibleWorktrees
-    ForEach(Array(candidates.enumerated()), id: \.element.path) { index, candidate in
-      WorktreeRowView(
-        candidate: candidate,
+    let candidates = model.targetRows
+    ForEach(Array(candidates.enumerated()), id: \.element.id) { index, candidate in
+      TargetRowView(
+        row: candidate,
         selected: index == model.selection,
         onSelect: { model.select(index) },
         onCommit: {
@@ -353,19 +372,22 @@ struct PaletteView: View {
           model.commit(fileNameOnly: false)
         }
       )
-      .id("worktree:" + candidate.path)
+      .id(candidate.id)
     }
-    ForEach(Array(model.rows.enumerated()), id: \.element.file.path) { index, row in
-      PaletteRowView(
-        row: row,
-        selected: index + candidates.count == model.selection,
-        onSelect: { model.select(index + candidates.count) },
-        onCommit: { fileNameOnly in
-          model.select(index + candidates.count)
-          model.commit(fileNameOnly: fileNameOnly)
-        }
-      )
-      .id("changes:" + row.file.path)
+    // T23。フォルダ選択モードはフォルダだけを並べる（ファイル検索に戻るのは esc）。
+    if !model.isPickingFolder {
+      ForEach(Array(model.rows.enumerated()), id: \.element.file.path) { index, row in
+        PaletteRowView(
+          row: row,
+          selected: index + candidates.count == model.selection,
+          onSelect: { model.select(index + candidates.count) },
+          onCommit: { fileNameOnly in
+            model.select(index + candidates.count)
+            model.commit(fileNameOnly: fileNameOnly)
+          }
+        )
+        .id("changes:" + row.file.path)
+      }
     }
   }
 
@@ -395,7 +417,15 @@ struct PaletteView: View {
     }
   }
 
+  /// T23。フォルダ選択モードは挿入しないので、貼り付け先を出さない。
+  @ViewBuilder
   private var insertionPreview: some View {
+    if !model.isPickingFolder {
+      insertionTarget
+    }
+  }
+
+  private var insertionTarget: some View {
     HStack(alignment: .firstTextBaseline, spacing: 8) {
       Text("貼り付け先")
         .font(.system(size: 9, weight: .semibold))
@@ -421,12 +451,19 @@ struct PaletteView: View {
     }
   }
 
+  @ViewBuilder
   private var footer: some View {
     HStack(spacing: 14) {
       hint("↑↓", "選択")
-      hint("Enter", "パスを入れる") { model.commit(fileNameOnly: false) }
-      hint("⌥Enter", "ファイル名のみ")
-      hint("Esc", "閉じる") { model.cancel() }
+      if model.isPickingFolder {
+        // T23。フォルダ選択モードはパスを挿入せず、esc でファイル検索に戻る。
+        hint("Enter", "検索対象にする") { model.commit(fileNameOnly: false) }
+        hint("Esc", "ファイル検索に戻る") { model.setPickingFolder(false) }
+      } else {
+        hint("Enter", "パスを入れる") { model.commit(fileNameOnly: false) }
+        hint("⌥Enter", "ファイル名のみ")
+        hint("Esc", "閉じる") { model.cancel() }
+      }
       Spacer(minLength: 0)
     }
   }
@@ -506,9 +543,9 @@ private struct FileTreeRowView: View {
   }
 }
 
-/// T38-a。検索対象を切り替える候補行。パスは挿入しないので `onCommit` に fileNameOnly はない。
-private struct WorktreeRowView: View {
-  let candidate: WorktreeCandidate
+/// T38-a / T23。検索対象を切り替える候補行。パスは挿入しないので `onCommit` に fileNameOnly はない。
+private struct TargetRowView: View {
+  let row: PaletteModel.TargetRow
   let selected: Bool
   let onSelect: () -> Void
   let onCommit: () -> Void
@@ -517,22 +554,25 @@ private struct WorktreeRowView: View {
 
   var body: some View {
     HStack(spacing: 8) {
-      Text("worktree")
-        .font(.system(size: 9, weight: .bold, design: .monospaced))
-        .foregroundStyle(Color.blue)
-        .padding(.horizontal, 4)
-        .padding(.vertical, 1)
-        .background(Color.blue.opacity(0.16), in: RoundedRectangle(cornerRadius: 3))
-      Text(candidate.path)
+      if let badge {
+        Text(badge)
+          .font(.system(size: 9, weight: .bold, design: .monospaced))
+          .foregroundStyle(Color.blue)
+          .padding(.horizontal, 4)
+          .padding(.vertical, 1)
+          .background(Color.blue.opacity(0.16), in: RoundedRectangle(cornerRadius: 3))
+      }
+      Text(title)
         .font(.system(size: 12, design: .monospaced))
         .lineLimit(1)
         .truncationMode(.head)
       Spacer(minLength: 6)
-      if let branch = candidate.branch {
-        Text(branch)
+      if let detail {
+        Text(detail)
           .font(.system(size: 10, design: .monospaced))
           .foregroundStyle(.secondary)
           .lineLimit(1)
+          .truncationMode(.head)
       }
     }
     .padding(.horizontal, 8)
@@ -546,6 +586,31 @@ private struct WorktreeRowView: View {
     .onHover { hovered = $0 }
     .onTapGesture(count: 2) { onCommit() }
     .onTapGesture { onSelect() }
+  }
+
+  /// ファイル行の `M` / `A` / `??` と見分けるためのバッジ。導線の行には付けない。
+  private var badge: String? {
+    switch row {
+    case .worktree: "worktree"
+    case .folder: "フォルダ"
+    case .chooseFolder: nil
+    }
+  }
+
+  private var title: String {
+    switch row {
+    case .worktree(let candidate): candidate.path
+    case .folder(let entry): entry.name
+    case .chooseFolder: "フォルダを選ぶ"
+    }
+  }
+
+  private var detail: String? {
+    switch row {
+    case .worktree(let candidate): candidate.branch
+    case .folder(let entry): entry.path
+    case .chooseFolder: nil
+    }
   }
 }
 

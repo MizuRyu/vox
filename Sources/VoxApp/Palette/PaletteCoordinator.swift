@@ -37,6 +37,9 @@ final class PaletteCoordinator {
   /// T13。`@` を打った caret 位置。nil は「committed の末尾」（`⌃P` と、末尾で打った場合）。
   /// 末尾で打った回を位置で固定しないのは、開いたあとに締めた final が末尾に入るため。
   private var insertLocation: Int?
+  /// T23。この録音の間だけ持ち越す、選び直した検索対象。開き直しても同じフォルダで続け、
+  /// 録音の後片付け（`reset`）で捨てて自動解決に戻す。
+  private var chosenTarget: PaletteTarget?
 
   init(hud: HudPanel) {
     self.hud = hud
@@ -47,9 +50,13 @@ final class PaletteCoordinator {
     panel.model.onCancel = { [weak self] in
       self?.close(insert: nil, fileNameOnly: false)
     }
-    // T38-a。候補行で選んだ worktree に検索対象を移す。
-    panel.model.onSwitchTarget = { [weak self] candidate in
-      self?.switchTarget(to: candidate)
+    // T38-a / T23。候補行で選んだ worktree・フォルダに検索対象を移す。
+    panel.model.onSwitchTarget = { [weak self] target in
+      self?.switchTarget(to: target)
+    }
+    // T23。履歴に無いフォルダを選ぶ導線。
+    panel.model.onChooseFolder = { [weak self] in
+      self?.chooseFolder()
     }
   }
 
@@ -75,9 +82,17 @@ final class PaletteCoordinator {
     voxLog("palette_opened at_ms=\(atMilliseconds)")
 
     setupTask = Task { @MainActor in
+      // T23。最近使ったフォルダはファイル読み込みなので detached。候補行は索引より先に出る。
+      let folders = Task.detached { FolderHistoryStore.load() }
       let repositories = VoxConfig.fallbackRepositories
-      let target = await PaletteTargetResolver.resolve(
-        bundleIdentifier: targetBundleIdentifier(), fallbackRepositories: repositories)
+      // T23。この録音で選び直したフォルダがあれば、自動解決に戻さない。
+      let target: PaletteTarget?
+      if let chosenTarget {
+        target = chosenTarget
+      } else {
+        target = await PaletteTargetResolver.resolve(
+          bundleIdentifier: targetBundleIdentifier(), fallbackRepositories: repositories)
+      }
       // 計測は取り消し判定より先に入れる（早く閉じた回も何で解決したかは残す）。
       onMetric(.targetResolved(target?.source.rawValue))
       guard !Task.isCancelled else { return }
@@ -86,6 +101,9 @@ final class PaletteCoordinator {
       panel.model.resolvingTarget = false
       // T20。HUD にファイルをペーストしたときの相対パスの基準（未解決なら nil のまま）。
       hud.model.repositoryRoot = target?.root
+      // 対象を置いた後に履歴を入れる（今の対象を候補から外すため）。
+      panel.model.setFolderHistory(await folders.value)
+      guard !Task.isCancelled else { return }
 
       guard let root = target?.root else { return }
       await loadContents(root: root)
@@ -102,6 +120,11 @@ final class PaletteCoordinator {
     setupTask = nil
     previewTask?.cancel()
     previewTask = nil
+    // T23。確定した回だけ、そのときの検索対象を最近使ったフォルダに記録する
+    // （開いただけでは記録しない）。書き込みは detached で、確定の経路を待たせない。
+    if insert != nil, let folder = panel.model.target?.root {
+      Task.detached { FolderHistoryStore.record(folder) }
+    }
     panel.hide()
     hud.makeKeyAgain()
 
@@ -152,6 +175,8 @@ final class PaletteCoordinator {
     previewedPath = nil
     insertLocation = nil
     openedAtMilliseconds = nil
+    // T23。選び直したフォルダはこの録音までで、次の録音は自動解決から始める。
+    chosenTarget = nil
     panel.hide()
   }
 
@@ -162,23 +187,49 @@ final class PaletteCoordinator {
     previewTask?.cancel()
   }
 
-  /// T38-a。候補行で選んだ worktree を検索対象にし、索引と候補を組み直す。
-  private func switchTarget(to candidate: WorktreeCandidate) {
+  /// T38-a / T23。候補行で選んだ worktree・フォルダを検索対象にし、索引と候補を組み直す。
+  func switchTarget(to target: PaletteTarget) {
     guard isOpen else { return }
     setupTask?.cancel()
-    let root = candidate.path
-    panel.model.target = PaletteTarget(root: root, source: .worktree)
+    let root = target.root
+    // T23。選び直した対象はこの録音の間だけ持ち越す。
+    chosenTarget = target
+    panel.model.setPickingFolder(false)
+    panel.model.target = target
     panel.model.targetUnresolved = false
     panel.model.resolvingTarget = false
     hud.model.repositoryRoot = root
-    onMetric(.targetResolved(PaletteTargetSource.worktree.rawValue))
-    voxLog("palette_target source=worktree root=\(voxLoggable(path: root))")
+    onMetric(.targetResolved(target.source.rawValue))
+    voxLog("palette_target source=\(target.source.rawValue) root=\(voxLoggable(path: root))")
 
     // 前の root のファイルと候補は先に捨てる（読み直しの間に古いパスを挿入させない）。
     panel.model.reset()
     setupTask = Task { @MainActor in
       await loadContents(root: root)
     }
+  }
+
+  /// T23。履歴に無いフォルダを初めて指定する導線。`NSApp.activate` は呼ばない（前面アプリを
+  /// 変えない）。`runModal` は録音中の main の実行を止めるので `begin` で受ける。
+  private func chooseFolder() {
+    let open = NSOpenPanel()
+    open.canChooseDirectories = true
+    open.canChooseFiles = false
+    open.allowsMultipleSelection = false
+    open.prompt = "選ぶ"
+    open.message = "検索対象にするフォルダを選んでください。"
+    open.begin { response in
+      MainActor.assumeIsolated {
+        guard response == .OK, let folder = open.url?.path else { return }
+        self.switchTarget(to: PaletteTarget(root: folder, source: .manual))
+      }
+    }
+  }
+
+  /// esc。フォルダ選択モードのときは抜けるだけで、パレットは閉じない（T23）。
+  func escape() {
+    guard !panel.model.consumeEscape() else { return }
+    close(insert: nil, fileNameOnly: false)
   }
 
   /// 索引と worktree 候補を並行して読む。候補は索引より遅れて届いてよい。

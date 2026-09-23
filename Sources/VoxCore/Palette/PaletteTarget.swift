@@ -11,6 +11,10 @@ public enum PaletteTargetSource: String, Sendable, Equatable {
   case fallback
   /// T38-a。候補行から同一リポジトリの他の worktree に切り替えた回。
   case worktree
+  /// T23。候補行から最近使ったフォルダに切り替えた回。
+  case recent
+  /// T23。`NSOpenPanel` でフォルダを指定した回。
+  case manual
 }
 
 public struct PaletteTarget: Sendable, Equatable {

@@ -38,11 +38,20 @@ public enum PrivateFileIO {
   }
 
   public static func append(_ data: Data, to file: URL) throws {
+    try writeFile(data, to: file, openFlags: O_APPEND)
+  }
+
+  /// 全文の置き換え。追記ではなく毎回書き直す小さな私的ファイル（folders.json）向け。
+  public static func write(_ data: Data, to file: URL) throws {
+    try writeFile(data, to: file, openFlags: O_TRUNC)
+  }
+
+  private static func writeFile(_ data: Data, to file: URL, openFlags: Int32) throws {
     try PrivateFileSafety.prepareForAppend(file)
     let (directoryFD, name) = try openParent(of: file)
     defer { close(directoryFD) }
     let fd = openat(
-      directoryFD, name, O_WRONLY | O_APPEND | O_CREAT | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK,
+      directoryFD, name, O_WRONLY | openFlags | O_CREAT | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK,
       0o600)
     guard fd >= 0 else { throw PrivateFileSafetyError.systemCall("openat", errno) }
     defer { close(fd) }

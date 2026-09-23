@@ -37,6 +37,9 @@ public struct MetricsRecord: Encodable, Sendable {
   public let paletteOpenedCount: Int?
   /// T22。パレットを開いてから閉じるまでの時間（給餌は止めないので再開の所要は無くなった）。
   public let paletteOpenMilliseconds: Double?
+  /// 検索対象をどう決めたか。`orca` / `terminal` / `fallback`（自動解決）と
+  /// `worktree` / `recent` / `manual`（パレットで選び直した回）。特定できなければ null。
+  /// 列挙は `PaletteTargetSource`。開発手順の `error` 表とは別の列挙。
   public let paletteTargetSource: String?
   /// T19。pasteboard に置いた確定テキストの文字数。
   public let pastedCharacters: Int?
