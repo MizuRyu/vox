@@ -83,6 +83,36 @@ struct DictionaryRowsTests {
     #expect(table.rows.count == 2)
   }
 
+  /// 行 A の拒否された打ち込みを、行 B の保存で黙って消さない。
+  @Test("別の行を保存しても、保存できなかった値は残る")
+  func savingAnotherRowKeepsRefusedValues() throws {
+    var table = rows(sample)
+    let ids = table.rows.map(\.id)
+    #expect(throws: DictionaryDocument.EditFailure.emptySource) {
+      try table.edit(ids[0], to: DictionaryEntry(from: "", to: "末尾"))
+    }
+    #expect(table.rows[0].isPending, "拒否された行が保存済みに見える")
+
+    let result = try table.edit(ids[1], to: DictionaryEntry(from: "おるか", to: "Orca"))
+    table.apply(try #require(result))
+    table.reload(table.document)
+    #expect(table.rows[0].entry == DictionaryEntry(from: "", to: "末尾"), "別の行の保存で打ち込みが消えた")
+    #expect(table.rows[0].isPending)
+    #expect(!table.rows[1].isPending, "保存した行が未保存に見える")
+  }
+
+  /// 外で書き換えた後は、どの行がどれか分からない。古い ID の確定を別の行へ通さない。
+  @Test("外で変わったファイルを読み直すと ID を振り直し、古い ID の確定を捨てる")
+  func externalChangesRenumberRows() throws {
+    var table = rows(sample)
+    let old = table.rows[0].id
+    table.reload(DictionaryDocument(contents: "# 説明\nまつお\t末尾\n壊れた行\nオルカ\tOrca\n"))
+    #expect(!table.rows.map(\.id).contains(old), "外の変更の後も古い ID が残った")
+
+    let edited = try table.edit(old, to: DictionaryEntry(from: "松尾", to: "別"))
+    #expect(edited == nil, "古い ID の確定が通った")
+  }
+
   @Test("表にない ID の確定と削除は何もしない")
   func unknownIDsAreIgnored() throws {
     var table = rows(sample)

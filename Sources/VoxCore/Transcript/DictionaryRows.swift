@@ -7,6 +7,11 @@ public struct DictionaryRow: Identifiable, Equatable, Sendable {
   public let id: Int
   /// 画面に出す値。保存できなかった打ち込みを含む。
   public var entry: DictionaryEntry
+  /// ファイルにある値。打ち込み途中の行は nil。
+  public let saved: DictionaryEntry?
+
+  /// 画面の値がまだファイルに無い。同じ値のままでも確定し直せるようにする。
+  public var isPending: Bool { entry != saved }
 }
 
 /// ファイルの項目の行と、その後ろの打ち込み途中の行（1 行まで）。
@@ -23,13 +28,13 @@ public struct DictionaryRows: Equatable, Sendable {
   private var nextID = 0
 
   public init(document: DictionaryDocument) {
-    show(document, ids: [])
+    show(document, ids: [], keepingPending: false)
   }
 
   /// 末尾に打ち込み途中の行を足す。既にあればその行の ID を返す。
   public mutating func addDraft() -> Int {
     if let draft { return draft.id }
-    let row = DictionaryRow(id: newIDs(1)[0], entry: DictionaryEntry(from: "", to: ""))
+    let row = DictionaryRow(id: newIDs(1)[0], entry: DictionaryEntry(from: "", to: ""), saved: nil)
     rows.append(row)
     return row.id
   }
@@ -63,26 +68,33 @@ public struct DictionaryRows: Equatable, Sendable {
     return Save(document: edited, ids: ids)
   }
 
+  /// 書けた内容に揃える。ほかの行の保存できなかった値は残す。
   public mutating func apply(_ save: Save) {
-    show(save.document, ids: save.ids)
+    show(save.document, ids: save.ids, keepingPending: true)
   }
 
-  /// 読み直したファイルに揃える。保存できなかった打ち込みはファイルの値に戻し、打ち込み途中の行は残す。
+  /// 読み直したファイルに揃える。外で変わっていたら、どの行がどれか分からないので
+  /// ID を振り直して保存できなかった値を捨てる（古いセルの確定を別の行へ通さない）。打ち込み途中の行は残す。
   public mutating func reload(_ document: DictionaryDocument) {
-    show(document, ids: savedIDs)
+    guard document != self.document else { return }
+    show(document, ids: [], keepingPending: false)
   }
 
   private var savedIDs: [Int] { rows.prefix(document.entries.count).map(\.id) }
   private var draft: DictionaryRow? { rows.dropFirst(document.entries.count).first }
 
-  /// why: 項目の数が見込みと違う回（重複で落ちていた行が削除で表に出た、外で書き換えた）は、
+  /// why: 項目の数が見込みと違う回（重複で落ちていた行が削除で表に出た）は、
   /// どの行がどれか分からないので ID を振り直す。
-  private mutating func show(_ document: DictionaryDocument, ids: [Int]) {
+  private mutating func show(_ document: DictionaryDocument, ids: [Int], keepingPending: Bool) {
     let draft = self.draft.flatMap { ids.contains($0.id) ? nil : $0 }
+    let pending = keepingPending ? rows.filter(\.isPending) : []
     let entries = document.entries
     let ids = ids.count == entries.count ? ids : newIDs(entries.count)
     self.document = document
-    rows = zip(ids, entries).map { DictionaryRow(id: $0, entry: $1) } + [draft].compactMap(\.self)
+    rows = zip(ids, entries).map { id, saved in
+      let shown = pending.first { $0.id == id }?.entry ?? saved
+      return DictionaryRow(id: id, entry: shown, saved: saved)
+    } + [draft].compactMap(\.self)
   }
 
   private mutating func newIDs(_ count: Int) -> [Int] {

@@ -248,12 +248,18 @@ private struct DictionaryEditor: View {
         .fixedSize(horizontal: false, vertical: true)
       Table(rows, selection: $selection) {
         TableColumn("認識される表記") { row in
-          DictionaryCell(title: "認識される表記", text: row.entry.from, autofocus: autofocus(row)) {
+          DictionaryCell(
+            title: "認識される表記", text: row.entry.from, pending: row.isPending,
+            autofocus: autofocus(row)
+          ) {
             model.updateDictionaryEntry(id: row.id, from: $0, to: row.entry.to)
           }
         }
         TableColumn("入れたい表記") { row in
-          DictionaryCell(title: "入れたい表記", text: row.entry.to, autofocus: .constant(false)) {
+          DictionaryCell(
+            title: "入れたい表記", text: row.entry.to, pending: row.isPending,
+            autofocus: .constant(false)
+          ) {
             model.updateDictionaryEntry(id: row.id, from: row.entry.from, to: $0)
           }
         }
@@ -299,14 +305,19 @@ private struct DictionaryEditor: View {
 private struct DictionaryCell: View {
   let title: String
   let text: String
+  let pending: Bool
   @Binding var autofocus: Bool
   let commit: (String) -> Void
   @State private var draft: String
   @FocusState private var focused: Bool
 
-  init(title: String, text: String, autofocus: Binding<Bool>, commit: @escaping (String) -> Void) {
+  init(
+    title: String, text: String, pending: Bool, autofocus: Binding<Bool>,
+    commit: @escaping (String) -> Void
+  ) {
     self.title = title
     self.text = text
+    self.pending = pending
     _autofocus = autofocus
     self.commit = commit
     _draft = State(initialValue: text)
@@ -332,8 +343,9 @@ private struct DictionaryCell: View {
     focused = true
   }
 
+  /// why: 保存できなかった行は、同じ値のままでも確定し直す（重複元を消した後や書き込みの障害が直った後）。
   private func save() {
-    guard draft != text else { return }
+    guard draft != text || pending else { return }
     commit(draft)
   }
 }
