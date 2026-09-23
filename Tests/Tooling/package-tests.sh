@@ -46,6 +46,20 @@ if "$project_root/scripts/validate-app" "$foreign_identity_app" >"$temporary_roo
 fi
 grep -Fq 'unexpected bundle identifier' "$temporary_root/identity.out" \
   || fail 'foreign identity fixture did not reach the bundle identity check'
+# The expected identifier must come from the checkout's Info.plist, not from a literal:
+# a checkout that declares the foreign identifier accepts that app and refuses the real one.
+identity_fixture="$temporary_root/identity-project"
+mkdir -p "$identity_fixture/scripts" "$identity_fixture/Resources/App"
+cp "$project_root/scripts/validate-app" "$identity_fixture/scripts/"
+cp "$project_root/Resources/App/Info.plist" "$identity_fixture/Resources/App/"
+plutil -replace CFBundleIdentifier -string 'local.vox.other' "$identity_fixture/Resources/App/Info.plist"
+"$identity_fixture/scripts/validate-app" "$foreign_identity_app" >/dev/null \
+  || fail 'validation ignored the bundle identifier declared by its own checkout'
+if "$identity_fixture/scripts/validate-app" "$app" >"$temporary_root/identity-source.out" 2>&1; then
+  fail 'validation accepted an identifier its own checkout does not declare'
+fi
+grep -Fq 'unexpected bundle identifier' "$temporary_root/identity-source.out" \
+  || fail 'source identity fixture did not reach the bundle identity check'
 [[ "$(plutil -extract CFBundleShortVersionString raw "$app/Contents/Info.plist")" == "$project_version" ]] \
   || fail 'short version is incorrect'
 [[ "$(plutil -extract CFBundleVersion raw "$app/Contents/Info.plist")" == "$project_version" ]] \
