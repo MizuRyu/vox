@@ -79,6 +79,51 @@ struct FolderRowsTests {
     #expect(model.selectedDisplayID == "changes:a.txt", "スクロール先がファイル行を指していない")
   }
 
+  @Test("履歴・索引・worktree がどの順に届いても、既定の選択はファイルの先頭")
+  func theDefaultSelectionStaysOnTheFirstFileWhateverArrivesFirst() {
+    // パレットを開いた直後の実際の順序（索引より先に履歴が届く）を再現する。
+    let model = PaletteModel()
+    model.target = PaletteTarget(root: "/repos/vox", source: .orca)
+    model.setFolderHistory(
+      FolderHistory(entries: [
+        FolderHistoryEntry(path: "/repos/alpha", lastUsedAt: at(40), useCount: 1),
+        FolderHistoryEntry(path: "/repos/bravo", lastUsedAt: at(30), useCount: 1),
+        FolderHistoryEntry(path: "/repos/charlie", lastUsedAt: at(20), useCount: 1)
+      ]))
+    model.files = [IndexedFile(path: "a.txt"), IndexedFile(path: "z.txt")]
+    model.refreshRows()
+    #expect(model.selectedRow?.file.path == "a.txt", "索引が届いた後もファイルの先頭にいない")
+
+    model.setWorktrees([WorktreeCandidate(path: "/repos/vox-wt", branch: "topic")])
+    #expect(
+      model.selectedRow?.file.path == "a.txt",
+      "worktree が届いて選択が候補に吸い寄せられた: \(String(describing: model.selectedDisplayID))")
+  }
+
+  @Test("候補行を選んでいる間に worktree が先頭へ入っても、同じ候補のまま")
+  func aSelectedCandidateSurvivesLaterCandidates() {
+    let model = model()
+    model.select(0)
+    #expect(model.selectedTargetRow?.id == "folder:/repos/alpha", "前提の選択が違う")
+    model.setWorktrees([WorktreeCandidate(path: "/repos/vox-wt", branch: "topic")])
+    #expect(
+      model.selectedTargetRow?.id == "folder:/repos/alpha",
+      "先に届いた候補の前に別の候補が入って選択がずれた: \(String(describing: model.selectedTargetRow?.id))")
+  }
+
+  @Test("Tree 表示からフォルダ選択モードに入ると候補一覧に戻す")
+  func theFolderPickerLeavesTheTreeDisplay() {
+    let model = model()
+    model.setFileViewMode(.tree)
+    model.setPickingFolder(true)
+    #expect(
+      model.fileViewMode == .changes,
+      "Tree のままではファイル行を描いたままフォルダを選ぶことになる")
+    #expect(model.targetRows.last?.id == "choose", "「フォルダを選ぶ」が出ていない")
+    model.selection = model.defaultSelection
+    #expect(model.selectedTargetRow?.id == "folder:/repos/alpha", "先頭のフォルダを選んでいない")
+  }
+
   @Test("候補が索引より後に届いても、選んでいたファイル行は動かない")
   func lateCandidatesKeepTheSelectedFile() {
     let model = model()

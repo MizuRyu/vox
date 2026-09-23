@@ -25,6 +25,8 @@ final class PaletteCoordinator {
   var onMetric: @MainActor (Metric) -> Void = { _ in }
 
   private(set) var isOpen = false
+  /// 検査がパネルの状態を直に置く（本体はコールバックと下のメソッド越しに触る）。
+  var paletteModel: PaletteModel { panel.model }
   /// 開いた直後に走らせる「tentative を締める」タスク。Enter を処理する前にこれを待つ
   /// （差し込む位置を動かさないため）。
   private var finalizeTask: Task<Void, Never>?
@@ -40,6 +42,8 @@ final class PaletteCoordinator {
   /// T23。この録音の間だけ持ち越す、選び直した検索対象。開き直しても同じフォルダで続け、
   /// 録音の後片付け（`reset`）で捨てて自動解決に戻す。
   private var chosenTarget: PaletteTarget?
+  /// T23。表示中のフォルダ選択パネル。esc と後片付けで閉じる。
+  private var folderPanel: NSOpenPanel?
 
   init(hud: HudPanel) {
     self.hud = hud
@@ -125,6 +129,7 @@ final class PaletteCoordinator {
     if insert != nil, let folder = panel.model.target?.root {
       Task.detached { FolderHistoryStore.record(folder) }
     }
+    dismissFolderPanel()
     panel.hide()
     hud.makeKeyAgain()
 
@@ -177,6 +182,7 @@ final class PaletteCoordinator {
     openedAtMilliseconds = nil
     // T23。選び直したフォルダはこの録音までで、次の録音は自動解決から始める。
     chosenTarget = nil
+    dismissFolderPanel()
     panel.hide()
   }
 
@@ -185,6 +191,7 @@ final class PaletteCoordinator {
     finalizeTask?.cancel()
     setupTask?.cancel()
     previewTask?.cancel()
+    dismissFolderPanel()
   }
 
   /// T38-a / T23。候補行で選んだ worktree・フォルダを検索対象にし、索引と候補を組み直す。
@@ -212,24 +219,40 @@ final class PaletteCoordinator {
   /// T23。履歴に無いフォルダを初めて指定する導線。`NSApp.activate` は呼ばない（前面アプリを
   /// 変えない）。`runModal` は録音中の main の実行を止めるので `begin` で受ける。
   private func chooseFolder() {
+    guard folderPanel == nil else { return }
     let open = NSOpenPanel()
     open.canChooseDirectories = true
     open.canChooseFiles = false
     open.allowsMultipleSelection = false
     open.prompt = "選ぶ"
     open.message = "検索対象にするフォルダを選んでください。"
-    open.begin { response in
+    folderPanel = open
+    open.begin { [weak self] response in
       MainActor.assumeIsolated {
+        // 片付けた後に届いた応答は捨てる（終わった録音の対象を動かさない）。
+        guard let self, self.folderPanel === open else { return }
+        self.folderPanel = nil
         guard response == .OK, let folder = open.url?.path else { return }
         self.switchTarget(to: PaletteTarget(root: folder, source: .manual))
       }
     }
   }
 
-  /// esc。フォルダ選択モードのときは抜けるだけで、パレットは閉じない（T23）。
+  /// esc。フォルダ選択パネル → フォルダ選択モード → パレットの順に閉じる（T23）。
+  /// why: 録音中の esc は CGEventTap が飲むのでパネルには届かない。ここで順序を決める。
   func escape() {
+    if dismissFolderPanel() { return }
     guard !panel.model.consumeEscape() else { return }
     close(insert: nil, fileNameOnly: false)
+  }
+
+  /// 出ていたフォルダ選択パネルを閉じたか。パレットを閉じる・録音を片付けるときも通る。
+  @discardableResult
+  private func dismissFolderPanel() -> Bool {
+    guard let open = folderPanel else { return false }
+    folderPanel = nil
+    open.cancel(nil)
+    return true
   }
 
   /// 索引と worktree 候補を並行して読む。候補は索引より遅れて届いてよい。

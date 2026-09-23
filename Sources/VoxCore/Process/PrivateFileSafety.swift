@@ -38,26 +38,32 @@ public enum PrivateFileIO {
   }
 
   public static func append(_ data: Data, to file: URL) throws {
-    try writeFile(data, to: file, openFlags: O_APPEND)
+    try writeFile(data, to: file, replacing: false)
   }
 
   /// 全文の置き換え。追記ではなく毎回書き直す小さな私的ファイル（folders.json）向け。
   public static func write(_ data: Data, to file: URL) throws {
-    try writeFile(data, to: file, openFlags: O_TRUNC)
+    try writeFile(data, to: file, replacing: true)
   }
 
-  private static func writeFile(_ data: Data, to file: URL, openFlags: Int32) throws {
+  private static func writeFile(_ data: Data, to file: URL, replacing: Bool) throws {
     try PrivateFileSafety.prepareForAppend(file)
     let (directoryFD, name) = try openParent(of: file)
     defer { close(directoryFD) }
+    // why: `O_TRUNC` は fd の検証より先に効くので、差し替えられたハードリンクを拒否する前に
+    // リンク先を消してしまう。切り詰めは `validate` の後に `ftruncate` で行う。
     let fd = openat(
-      directoryFD, name, O_WRONLY | openFlags | O_CREAT | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK,
+      directoryFD, name,
+      O_WRONLY | (replacing ? 0 : O_APPEND) | O_CREAT | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK,
       0o600)
     guard fd >= 0 else { throw PrivateFileSafetyError.systemCall("openat", errno) }
     defer { close(fd) }
     try validate(fd: fd, file: file)
     guard fchmod(fd, 0o600) == 0 else {
       throw PrivateFileSafetyError.systemCall("fchmod", errno)
+    }
+    if replacing, ftruncate(fd, 0) != 0 {
+      throw PrivateFileSafetyError.systemCall("ftruncate", errno)
     }
     try data.withUnsafeBytes { bytes in
       var offset = 0

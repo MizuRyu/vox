@@ -51,7 +51,7 @@ public enum FilePathFormat {
   /// 末尾の `/` と `.` / `..` を畳む。`standardizingPath` は `~` の展開もするので
   /// ペーストされた `~` 付きのパスもここで絶対パスになる。
   /// T23 の最近使ったフォルダも、同じフォルダを二重に数えないためにこれを通す。
-  public static func standardized(_ path: String) -> String {
+  static func standardized(_ path: String) -> String {
     let folded = (path as NSString).standardizingPath
     guard folded.count > 1, folded.hasSuffix("/") else { return folded }
     return String(folded.dropLast())

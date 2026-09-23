@@ -18,7 +18,7 @@ public struct FolderHistoryEntry: Codable, Equatable, Sendable {
     self.useCount = useCount
   }
 
-  public enum CodingKeys: String, CodingKey {
+  private enum CodingKeys: String, CodingKey {
     case path
     case lastUsedAt = "last_used_at"
     case useCount = "use_count"
@@ -29,7 +29,7 @@ public struct FolderHistory: Equatable, Sendable {
   /// 溢れたら最後に使った時刻が古い順に落とす。
   public static let limit = 20
   /// 形式の版。読めない版のファイルは空として扱う（原本は書き換えるまで残る）。
-  public static let schemaVersion = 1
+  private static let schemaVersion = 1
 
   /// 最後に使った時刻の新しい順。
   public private(set) var entries: [FolderHistoryEntry]

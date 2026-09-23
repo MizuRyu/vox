@@ -146,12 +146,24 @@ final class PaletteModel: ObservableObject {
     adjustingTargetRows { folderHistory = history }
   }
 
+  /// 候補は索引の前にも後にも届く。選んでいた行を動かさず、まだ選んでいない回は既定に戻す。
   private func adjustingTargetRows(_ change: () -> Void) {
+    // why: 既定のままなら候補が増えてもファイルの先頭を指し続ける。索引が届く前に
+    // clamp で候補へ吸い寄せられると、既定の Enter が挿入ではなく切り替えになる。
+    let wasDefault = selection == defaultSelection
+    let selectedCandidate = selectedTargetRow?.id
     let before = targetRows.count
     change()
-    let inserted = targetRows.count - before
-    if inserted != 0, selection >= before {
-      selection = max(0, selection + inserted)
+    if wasDefault {
+      selection = defaultSelection
+      return
+    }
+    // 選んでいた候補の前に別の候補が入ることがある（履歴の後に worktree が届く）。
+    if let selectedCandidate,
+      let index = targetRows.firstIndex(where: { $0.id == selectedCandidate }) {
+      selection = index
+    } else if targetRows.count != before, selection >= before {
+      selection = max(0, selection + targetRows.count - before)
     }
     clampSelection()
   }
@@ -268,9 +280,11 @@ final class PaletteModel: ObservableObject {
   }
 
   /// T23。ヘッダのパスのクリックで入り、esc で抜ける。クエリはどちらの向きも空から始める。
+  /// why: Tree のまま入ると、描くのはファイル行なのに選ぶのはフォルダになる。候補一覧に戻す。
   func setPickingFolder(_ picking: Bool) {
     guard isPickingFolder != picking else { return }
     isPickingFolder = picking
+    if picking { fileViewMode = .changes }
     query = ""
     refreshRows()
     selection = defaultSelection

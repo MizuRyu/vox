@@ -67,14 +67,21 @@ struct CoordinatorTargetTests {
     coordinator.close(insert: nil, fileNameOnly: false)
   }
 
-  @Test("esc はフォルダ選択モードを抜けるだけで、ファイル検索では閉じる")
+  @Test("esc はフォルダ選択モードを抜けてから、次の esc でパレットを閉じる")
   func escapeLeavesTheFolderPickerBeforeClosingThePalette() {
-    let model = PaletteModel()
-    #expect(!model.consumeEscape(), "ファイル検索の esc を候補側が食べた")
+    let allowCurrentDirectory = VoxConfig.allowCurrentDirectoryFallback
+    VoxConfig.allowCurrentDirectoryFallback = false
+    defer { VoxConfig.allowCurrentDirectoryFallback = allowCurrentDirectory }
 
-    model.setPickingFolder(true)
-    #expect(model.consumeEscape(), "フォルダ選択モードの esc を食べていない")
-    #expect(!model.isPickingFolder, "esc でモードを抜けていない")
-    #expect(!model.consumeEscape(), "抜けた後の esc をもう一度食べた")
+    let coordinator = PaletteCoordinator(hud: HudPanel())
+    coordinator.open(atMilliseconds: 0, typedAt: nil)
+    coordinator.paletteModel.setPickingFolder(true)
+
+    coordinator.escape()
+    #expect(coordinator.isOpen, "フォルダ選択モードの esc でパレットを閉じた")
+    #expect(!coordinator.paletteModel.isPickingFolder, "esc でモードを抜けていない")
+
+    coordinator.escape()
+    #expect(!coordinator.isOpen, "ファイル検索の esc でパレットを閉じていない")
   }
 }

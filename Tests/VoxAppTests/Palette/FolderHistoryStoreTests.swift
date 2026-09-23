@@ -49,6 +49,34 @@ struct FolderHistoryStoreTests {
     }
   }
 
+  /// 確定ごとの記録は detached タスクで走る。読み込み → 更新 → 全文置換が重なっても
+  /// 記録を取りこぼさない（上限ちょうどの 20 件で見る）。
+  @Test("Overlapping records keep every folder")
+  func overlappingRecordsKeepEveryFolder() async throws {
+    try withStore { directory in
+      let folders = (0..<FolderHistory.limit).map {
+        directory.appendingPathComponent("repo\($0)")
+      }
+      for folder in folders {
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+      }
+      let recorded = DispatchGroup()
+      for (index, folder) in folders.enumerated() {
+        recorded.enter()
+        DispatchQueue.global().async {
+          FolderHistoryStore.record(
+            folder.path, at: Date(timeIntervalSince1970: 1_700_000_000 + Double(index)))
+          recorded.leave()
+        }
+      }
+      recorded.wait()
+      let paths = Set(FolderHistoryStore.load().entries.map(\.path))
+      #expect(
+        paths == Set(folders.map(\.path)),
+        "同時に記録した回を取りこぼした: \(FolderHistory.limit - paths.count) 件")
+    }
+  }
+
   @Test("The file is rewritten in place instead of appended")
   func theFileIsRewrittenInPlaceInsteadOfAppended() throws {
     try withStore { directory in

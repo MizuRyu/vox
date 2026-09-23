@@ -178,7 +178,27 @@ struct InjectionSafetyTests {
     #expect(throws: (any Error).self, "FIFO history read is rejected without blocking") {
       _ = try PrivateFileIO.read(root.appendingPathComponent("fifo"))
     }
+    try privateFileRewriteChecks(root: root)
     try privateFileTailChecks(root: root)
+  }
+
+  /// T23。全文の書き直し（folders.json）も追記と同じ拒否を通り、
+  /// **拒否した回はリンク先を切り詰めない**（O_TRUNC を検証より先に効かせない）。
+  private func privateFileRewriteChecks(root: URL) throws {
+    let rewriteRoot = root.appendingPathComponent("rewrite")
+    try FileManager.default.createDirectory(at: rewriteRoot, withIntermediateDirectories: true)
+    try expectRejectsUnsafeTargets(in: rewriteRoot) {
+      try PrivateFileIO.write(Data("bad".utf8), to: $0)
+    }
+    let file = rewriteRoot.appendingPathComponent("folders.json")
+    try PrivateFileIO.write(Data("{\"first\":1}".utf8), to: file)
+    try PrivateFileIO.write(Data("{\"second\":2}".utf8), to: file)
+    #expect(
+      try PrivateFileIO.read(file) == Data("{\"second\":2}".utf8),
+      "full rewrite replaces the previous content instead of appending")
+    let mode = try FileManager.default.attributesOfItem(atPath: file.path)[.posixPermissions]
+      as? NSNumber
+    #expect(mode?.intValue == 0o600, "rewritten private file stays private")
   }
 
   private func privateFilePermissionChecks(root: URL) throws {
