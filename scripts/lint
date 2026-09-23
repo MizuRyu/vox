@@ -51,7 +51,7 @@ lint_tree() {
     swiftlint lint --quiet --no-cache --strict --config "$swiftlint_config" "${swift_paths[@]}"
   fi
 
-  for directory in scripts benchmarks/scripts; do
+  for directory in scripts benchmarks/scripts Tests/Tooling .agents/skills; do
     [[ -d "$target/$directory" ]] || continue
     while IFS= read -r -d '' path; do
       if head -n 1 "$path" | grep -Eq '^#!.*(ba|z)?sh'; then

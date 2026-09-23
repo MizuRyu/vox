@@ -12,8 +12,7 @@ import unicodedata
 
 DEFAULT_DIR = os.path.expanduser("~/Library/Application Support/vox")
 MAXIMUM_BYTES = 64 * 1024
-# why: Sources/VoxApp/Settings/DictionaryStore.swift の template と同じ文面。変えるときは両方直す
-# （Tests/Tooling/dictionary-script-tests.sh が一致を検査する）。
+# why: `DictionaryStore.swift` の template と同文。変えるときは両方（dictionary-script-tests.sh が一致を検査する）。
 TEMPLATE = (
     "# vox の辞書。1 行に「置き換える表記」、タブ、「入れたい表記」を書きます。\n"
     "# # で始まる行と空行は無視します。右側を空にすると、その語を削除します。\n"

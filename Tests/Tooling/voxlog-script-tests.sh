@@ -99,10 +99,9 @@ contains "$out" 'path=<redacted>' 'path is redacted'
 contains "$out" 'root=<redacted>' 'root is redacted'
 contains "$out" 'final_text <redacted>' 'final text is redacted'
 contains "$out" 'device="<redacted>"' 'device name is redacted'
-contains "$out" 'fixed=app-1' 'bundle identifiers become aliases'
-contains "$out" 'fixed=app-2' 'different apps get different aliases'
+contains "$out" 'fixed=com.example.terminal' 'bundle identifiers stay for diagnosis'
 for secret in '/tmp/example' 'x.png' '合成の本文' '合成の値' 'Example Mic' 'Quoted' 'Private' 'Folder' \
-  'secret' '秘密' 'CR の後' 'com.example'; do
+  'secret' '秘密' 'CR の後'; do
   lacks "$out" "$secret" 'redaction'
 done
 pass
@@ -124,8 +123,7 @@ contains "$out" '| axis_a_ms | 3 | 200 | 600 |' 'summary axis_a'
 contains "$out" '| first_token_ms | 2 | 60 | 70 |' 'summary first_token'
 contains "$out" '| pause_commit_count | 3 | 1 | 2 |' 'summary pause_commit_count'
 contains "$out" 'paste_receipt_timeout: 1' 'summary error counts'
-contains "$out" 'app-1: 2' 'summary target_app counts by alias'
-lacks "$out" 'com.example' 'summary hides bundle identifiers'
+contains "$out" 'com.example.editor: 2' 'summary target_app counts'
 out="$(python3 "$script" summary 1 --dir "$data")"
 contains "$out" '| axis_a_ms | 1 | 200 | 200 |' 'summary N takes the latest rows'
 pass

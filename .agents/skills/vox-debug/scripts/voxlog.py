@@ -17,11 +17,8 @@ PRIVATE_FIELD = re.compile(r"\b(path|root|inserted|text)=(?!(?:-|true|false)(?:\
 DEVICE_NAME = re.compile(r'device=".*"(?= selection=)|device="[^"]*"')
 # why: パスは空白を含みうるので、見つけたら行末まで伏せる。
 ABSOLUTE_PATH = re.compile(r"(?:file://)?(?<![\w.])/(?:[^\s/\"']+/)+.*$")
-# 他アプリの bundle identifier。種類は利用者に聞き、出力では app-1 のような呼び名に置き換える。
-APP_FIELD = re.compile(r'(\bfixed=|\bfrontmost=|\btarget=|"target_app":")([^\s",]+)')
 EVENT_LINE = re.compile(r"^[a-z][a-z_]*(?: |$)")
 ERROR_LINE = re.compile(r"^\w+_(?:error|failed|timeout)\b")
-NOT_APP = ("-", "unknown", "null")
 
 
 def fail(message):
@@ -40,28 +37,15 @@ def read_lines(directory, name, hint):
         fail("{} を読めません（{}）".format(name, error.strerror))
 
 
-class Redactor:
-    """本文・パス・機器名を伏せ、bundle identifier を出現順の呼び名にする（1 回の実行の中で同じ名前）。"""
-
-    def __init__(self):
-        self.apps = {}
-
-    def app(self, identifier):
-        if identifier in NOT_APP:
-            return identifier
-        return self.apps.setdefault(identifier, "app-{}".format(len(self.apps) + 1))
-
-    def line(self, line):
-        if not line:
-            return line
-        if not EVENT_LINE.match(line):
-            return REDACTED + "（形式の違う行）"
-        if line.startswith("final_text ") and line != "final_text empty":
-            return "final_text " + REDACTED
-        line = PRIVATE_FIELD.sub(lambda match: match.group(1) + "=" + REDACTED, line)
-        line = DEVICE_NAME.sub('device="{}"'.format(REDACTED), line)
-        line = ABSOLUTE_PATH.sub(REDACTED, line)
-        return APP_FIELD.sub(lambda match: match.group(1) + self.app(match.group(2)), line)
+def redact(line):
+    """本文・パス・機器名を伏せる。bundle identifier は切り分けに要るので残す（既にログにある情報）。"""
+    if not EVENT_LINE.match(line):
+        return REDACTED + "（形式の違う行）"
+    if line.startswith("final_text ") and line != "final_text empty":
+        return "final_text " + REDACTED
+    line = PRIVATE_FIELD.sub(lambda match: match.group(1) + "=" + REDACTED, line)
+    line = DEVICE_NAME.sub('device="{}"'.format(REDACTED), line)
+    return ABSOLUTE_PATH.sub(REDACTED, line)
 
 
 def recordings(lines):
@@ -125,20 +109,20 @@ def log_blocks(arguments):
 
 
 def cmd_last(arguments):
-    blocks, redactor = log_blocks(arguments), Redactor()
+    blocks = log_blocks(arguments)
     for index, block in enumerate(blocks, start=1):
         print("## 録音 {}/{}".format(index, len(blocks)))
-        for line in summarise_results([redactor.line(line) for line in block]):
+        for line in summarise_results([redact(line) for line in block]):
             print(line)
         print()
 
 
 def cmd_errors(arguments):
-    blocks, redactor = log_blocks(arguments), Redactor()
+    blocks = log_blocks(arguments)
     found = False
     for index, block in enumerate(blocks, start=1):
         names = [error_name(name) for name in map(metrics_error, block) if name]
-        lines = [redactor.line(line) for line in block if ERROR_LINE.match(line)]
+        lines = [redact(line) for line in block if ERROR_LINE.match(line)]
         if not names and not lines:
             continue
         found = True
@@ -184,8 +168,7 @@ def cmd_summary(arguments):
                 key, len(values), number(statistics.median(values)), number(max(values))))
         else:
             print("| {} | 0 | - | - |".format(key))
-    redactor = Redactor()
-    for key, name in (("error", error_name), ("target_app", redactor.app)):
+    for key, name in (("error", error_name), ("target_app", str)):
         counts = collections.Counter(name(row[key]) for row in rows if isinstance(row.get(key), str))
         listed = ", ".join("{}: {}".format(name, count) for name, count in counts.most_common())
         print()

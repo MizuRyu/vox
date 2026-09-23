@@ -20,8 +20,8 @@ description: >
 - **Vox を起動しない**（`AGENTS.md`）。再現は利用者に頼み、「再現したら教えてください」で止まる
 - ログは本文とパスを既定で書かない。`--log-text` で起動した回だけ `final_text` 行に本文が入る。
   スクリプトは `path=` `root=` `inserted=` `text=` の値、`final_text` の本文、マイクの機器名、絶対パス（行末まで）、
-  形式の違う行を `<redacted>` にし、他アプリの bundle identifier を `app-1` のような呼び名にする（1 回の実行の中で同じ名前）。
-  どのアプリかが切り分けに要るときは、呼び名を示して利用者に種類（エディタ・ターミナル・ブラウザ）を聞く
+  形式の違う行を `<redacted>` にする。bundle identifier（`target_app` `frontmost=` `target=`）は残す。
+  パレットの対応表（`PaletteTargetAdapter`）が bundle identifier で引くので、切り分けに要る
 
 ## 手順
 
@@ -75,8 +75,8 @@ description: >
    ## ログ（voxlog.py で伏せた行）
    ```
 
-   Issue に貼ってよいのは `voxlog.py` の出力だけ。**本文・パス・他アプリの情報を含めない**。
-   `app-1` などの呼び名は、利用者に聞いた種類に置き換えてもよい（アプリ名は書かない）
+   Issue に貼ってよいのは `voxlog.py` の出力だけ（bundle identifier は含めてよい）。
+   **本文・パス・ウィンドウ名、他アプリの画面の内容を含めない**
 6. 修正に進むときは `vox-change-docs` の規則どおり、`docs/MANUAL-VERIFICATION.md` に「再発したら気づける TC」を足す
 
 ## 検証
@@ -87,5 +87,5 @@ description: >
 ## やらないこと
 
 - Vox を起動する、キーを送る、前面アプリを調べる（`osascript` を含む）
-- `history.jsonl` の本文、`--log-text` の本文、パスを会話や Issue に出す
+- `history.jsonl` の本文、`--log-text` の本文、パス、ウィンドウ名を会話や Issue に出す
 - 修正の実装。仮説と再現手順までで止め、実装は別の依頼として受ける

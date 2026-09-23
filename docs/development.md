@@ -67,7 +67,7 @@ pasteboard とパレットの検査は API の意味を確かめるもので、�
 | Semgrep CE | リポジトリ内のローカルルール。Python の shell 実行、Swift の特定の危険パターン |
 | 公開情報の補助検査 | 個人の絶対ユーザーパス。架空 fixture は区別する |
 | SwiftLint | 重複 import、空コレクション判定、強制キャスト、強制 try |
-| ShellCheck / Python | shell の静的検査、Python の構文検査 |
+| ShellCheck / Python | `scripts/`・`benchmarks/scripts/`・`Tests/Tooling/`・`.agents/skills/` の shell の静的検査と Python の構文検査 |
 
 Swift 向け Semgrep ルールは generic パターンを使います。Swift AST・データフロー・依存関係の脆弱性を網羅する検査ではありません。リモートルール取得・ログインは不要で、metrics と version check は無効化します。解析エラーやツール失敗は不合格にします。
 
