@@ -125,9 +125,10 @@ private struct CoreAudioMicrophoneProvider: MicrophoneDeviceProviding {
     let name = try? stringValue(
       object: id, selector: kAudioObjectPropertyName,
       scope: kAudioObjectPropertyScopeGlobal)
-    let transport: UInt32 = (try? fixedValue(
+    // try? の中では T が UInt32? と推論され、サイズ照合で常に失敗するため型を明示する。
+    let transport = (try? fixedValue(
       object: id, selector: kAudioDevicePropertyTransportType,
-      scope: kAudioObjectPropertyScopeGlobal)) ?? kAudioDeviceTransportTypeUnknown
+      scope: kAudioObjectPropertyScopeGlobal) as UInt32) ?? kAudioDeviceTransportTypeUnknown
     let uid = try? stringValue(
       object: id, selector: kAudioDevicePropertyDeviceUID,
       scope: kAudioObjectPropertyScopeGlobal)
