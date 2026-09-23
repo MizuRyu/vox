@@ -103,6 +103,64 @@ struct DictionaryStoreTests {
     #expect(store.load().entries.isEmpty, "UTF-8 でない辞書が空にならない")
   }
 
+  @Test("表の編集は非公開で書かれ、コメント行を残したまま録音経路の辞書になる")
+  func savedDocumentIsPrivateAndKeepsComments() throws {
+    let (root, store) = fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    var document = DictionaryDocument(contents: "# 説明\n壊れた行\n")
+    try document.add(DictionaryEntry(from: "松尾", to: "末尾"))
+
+    try store.save(document)
+    let mode =
+      try FileManager.default.attributesOfItem(atPath: store.url.path)[.posixPermissions]
+      as? NSNumber
+    #expect(mode?.intValue == 0o600, "辞書の権限")
+    #expect(try store.contents() == "# 説明\n壊れた行\n松尾\t末尾\n", "書いた内容")
+    #expect(store.load().entries == [DictionaryEntry(from: "松尾", to: "末尾")], "読み直した項目")
+
+    // 2 度目は追記ではなく置き換える。
+    document.remove(at: 0)
+    try store.save(document)
+    #expect(try store.contents() == "# 説明\n壊れた行\n", "消した行が残った")
+  }
+
+  @Test("読み込みの上限を超える辞書は書かない")
+  func oversizedDocumentIsNotSaved() throws {
+    let (root, store) = fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    try store.save(DictionaryDocument(contents: "松尾\t末尾\n"))
+    let oversized = DictionaryDocument(contents: String(repeating: "#", count: 64 * 1024))
+
+    #expect(throws: (any Error).self) { try store.save(oversized) }
+    #expect(try store.contents() == "松尾\t末尾\n", "上限超過で既存の辞書を書き換えた")
+  }
+
+  /// 一時ファイルに書き切ってから置き換える。書けない回に元の辞書（コメントを含む）を切り詰めない。
+  @Test("書き込みに失敗しても元の辞書は残る")
+  func aFailedSaveKeepsTheOriginal() throws {
+    let (root, store) = fixture()
+    defer {
+      try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: root.path)
+      try? FileManager.default.removeItem(at: root)
+    }
+    try store.save(DictionaryDocument(contents: "# 説明\n松尾\t末尾\n"))
+    try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: root.path)
+
+    #expect(throws: (any Error).self) { try store.save(DictionaryDocument(contents: "")) }
+    #expect(try store.contents() == "# 説明\n松尾\t末尾\n", "失敗した保存で辞書を書き換えた")
+  }
+
+  @Test("symlink・hardlink・FIFO の辞書には書かない")
+  func unsafeDictionaryTargetsAreNotWritten() throws {
+    let (root, _) = fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+
+    try expectRejectsUnsafeTargets(in: root) { url in
+      try DictionaryStore(url: url).save(DictionaryDocument(contents: "松尾\t末尾\n"))
+    }
+  }
+
   @Test("symlink・hardlink・FIFO の辞書は読まない")
   func unsafeDictionaryTargetsAreRefused() throws {
     let (root, _) = fixture()

@@ -93,19 +93,7 @@ public struct SettingsView: View {
         }
 
         GroupBox {
-          VStack(alignment: .leading, spacing: 8) {
-            Text(model.dictionaryMessage).font(.callout)
-              .fixedSize(horizontal: false, vertical: true)
-            Text("認識された表記を、入れたい表記に置き換えます。録音のたびに読み込むので、保存した変更は次の録音から反映されます。")
-              .font(.caption).foregroundStyle(.secondary)
-              .fixedSize(horizontal: false, vertical: true)
-            HStack {
-              Button("辞書ファイルを開く") { model.openDictionaryFile() }
-              Button("更新") { model.refreshDictionary() }
-              Spacer(minLength: 0)
-            }
-          }
-          .padding(10)
+          DictionaryEditor(model: model).padding(10)
         } label: {
           Text("辞書").font(.headline)
         }
@@ -244,6 +232,121 @@ public struct SettingsView: View {
       .frame(width: 152, height: 30)
       .disabled(model.loadFailed || override != nil)
     }
+  }
+}
+
+/// 辞書の表（ADR-021）。セルの確定（Enter またはフォーカスを外す）ごとにファイルへ書く。
+private struct DictionaryEditor: View {
+  @ObservedObject var model: SettingsModel
+  @State private var selection: DictionaryRow.ID?
+  @State private var focusRequest: DictionaryRow.ID?
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Text("認識された表記を、入れたい表記に置き換えます。Enterを押すか別の欄に移ると保存し、次の録音から反映されます。")
+        .font(.caption).foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+      Table(rows, selection: $selection) {
+        TableColumn("認識される表記") { row in
+          DictionaryCell(
+            title: "認識される表記", text: row.entry.from, pending: row.isPending,
+            autofocus: autofocus(row)
+          ) {
+            model.updateDictionaryEntry(id: row.id, from: $0, to: row.entry.to)
+          }
+        }
+        TableColumn("入れたい表記") { row in
+          DictionaryCell(
+            title: "入れたい表記", text: row.entry.to, pending: row.isPending,
+            autofocus: .constant(false)
+          ) {
+            model.updateDictionaryEntry(id: row.id, from: row.entry.from, to: $0)
+          }
+        }
+      }
+      .frame(height: tableHeight)
+      .disabled(model.dictionaryRows == nil)
+      HStack {
+        Button("追加") {
+          selection = nil
+          focusRequest = model.addDictionaryEntry()
+        }
+        .disabled(model.dictionaryRows == nil)
+        Button("削除") {
+          guard let selection else { return }
+          self.selection = nil
+          model.removeDictionaryEntry(id: selection)
+        }
+        .disabled(!rows.contains { $0.id == selection })
+        Spacer(minLength: 12)
+        Button("辞書ファイルを開く") { model.openDictionaryFile() }
+        Button("更新") { model.refreshDictionary() }
+      }
+      Text(model.dictionaryMessage).font(.callout)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+  }
+
+  private var rows: [DictionaryRow] { model.dictionaryRows?.rows ?? [] }
+
+  /// 「追加」を押したときだけ、その行の左のセルが 1 度フォーカスを取る。
+  private func autofocus(_ row: DictionaryRow) -> Binding<Bool> {
+    Binding(get: { focusRequest == row.id }, set: { if !$0 { focusRequest = nil } })
+  }
+
+  /// why: 行数に合わせて伸ばし、8行を超えたら表の中でスクロールする。
+  private var tableHeight: CGFloat {
+    CGFloat(min(max(rows.count, 2), 8)) * 24 + 28
+  }
+}
+
+/// 1 つのセル。打ち込み中の文字はセルが持ち、確定したときだけ設定に渡す。
+/// 保存できなかった値も設定が画面の値として持つので、`text` と揃え続ける。
+private struct DictionaryCell: View {
+  let title: String
+  let text: String
+  let pending: Bool
+  @Binding var autofocus: Bool
+  let commit: (String) -> Void
+  @State private var draft: String
+  @FocusState private var focused: Bool
+
+  init(
+    title: String, text: String, pending: Bool, autofocus: Binding<Bool>,
+    commit: @escaping (String) -> Void
+  ) {
+    self.title = title
+    self.text = text
+    self.pending = pending
+    _autofocus = autofocus
+    self.commit = commit
+    _draft = State(initialValue: text)
+  }
+
+  var body: some View {
+    TextField(title, text: $draft)
+      .textFieldStyle(.plain)
+      .focused($focused)
+      .onSubmit(save)
+      .onChange(of: focused) { _, focused in
+        if !focused { save() }
+      }
+      .onChange(of: text) { _, text in draft = text }
+      // why: 新しい行は表示されたときに、既にある空行は「追加」を押し直したときに取る。
+      .onAppear(perform: takeFocusIfRequested)
+      .onChange(of: autofocus) { takeFocusIfRequested() }
+  }
+
+  private func takeFocusIfRequested() {
+    guard autofocus else { return }
+    autofocus = false
+    focused = true
+  }
+
+  /// why: 保存できなかった行は、同じ値のままでも確定し直す（重複元を消した後や書き込みの障害が直った後）。
+  private func save() {
+    guard draft != text || pending else { return }
+    commit(draft)
   }
 }
 

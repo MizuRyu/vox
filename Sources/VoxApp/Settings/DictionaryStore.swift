@@ -1,7 +1,7 @@
 import Foundation
 import VoxCore
 
-/// 辞書ファイルの場所と読み込み。形式の解釈は VoxCore（`DictionaryTable`）。
+/// 辞書ファイルの場所と読み書き。形式の解釈は VoxCore（`DictionaryTable` / `DictionaryDocument`）。
 /// 設定と同じ保存先に置き、同じ防御（通常ファイル・リンク数 1・所有者一致・上限）で読む。
 public struct DictionaryStore: Sendable {
   /// why: 1 行ずつ足す表なので、設定ファイルと同じ 64KiB を上限にする。
@@ -39,6 +39,26 @@ public struct DictionaryStore: Sendable {
     }
   }
 
+  /// 設定画面の表の編集を書く（ADR-021）。読めない大きさの内容は書かない。
+  /// why: 一時ファイルに書き切ってから名前を置き換える。途中で失敗しても元の辞書（コメントを含む）を残すため。
+  func save(_ document: DictionaryDocument) throws {
+    let data = Data(document.serialized.utf8)
+    guard data.count <= Self.maximumBytes else { throw DictionaryStoreError.tooLarge }
+    // 既存の辞書がリンク・FIFO・読めないファイルなら置き換えない（読み込みと同じ防御）。
+    _ = try contents()
+    let temporary = url.deletingLastPathComponent()
+      .appendingPathComponent(".\(url.lastPathComponent).\(UUID().uuidString)")
+    do {
+      try PrivateFileIO.write(data, creating: temporary)
+      guard rename(temporary.path, url.path) == 0 else {
+        throw PrivateFileSafetyError.systemCall("rename", errno)
+      }
+    } catch {
+      unlink(temporary.path)
+      throw error
+    }
+  }
+
   /// 無ければ書き方だけを書いたファイルを作る。あるなら触らない。
   func createIfMissing() throws {
     do {
@@ -52,7 +72,7 @@ public struct DictionaryStore: Sendable {
 
   /// why: 例の行は `#` を外すだけで使える形にする（`# 松尾` の空白を残すと左辺が一致しない）。
   private static let template = """
-    # vox の辞書。1 行に「置き換える表記」、タブ、「入れたい表記」を書きます。
+    # vox の辞書。1 行に「認識される表記」、タブ、「入れたい表記」を書きます。
     # # で始まる行と空行は無視します。右側を空にすると、その語を削除します。
     # 表計算アプリで開くと形式が変わることがあるので、テキストエディタで編集してください。
     # 例（行頭の # を外して使います）
@@ -64,4 +84,5 @@ public struct DictionaryStore: Sendable {
 
 enum DictionaryStoreError: Error {
   case invalidText
+  case tooLarge
 }

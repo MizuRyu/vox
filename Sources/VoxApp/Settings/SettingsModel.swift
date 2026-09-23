@@ -16,6 +16,8 @@ public final class SettingsModel: ObservableObject {
   @Published public private(set) var loadFailed = false
   @Published public private(set) var microphoneSnapshot: MicrophoneSnapshot = .unavailable
   @Published public private(set) var dictionaryMessage = ""
+  /// 辞書の表の行（ADR-021）。nil は読めない辞書で、表からは書かない。
+  @Published public private(set) var dictionaryRows: DictionaryRows?
   public let defaults: HotkeyConfiguration
   public let overrides: HotkeyOverrides
   public var onSaved: (() -> Void)?
@@ -25,6 +27,8 @@ public final class SettingsModel: ObservableObject {
   private var loadedData: Data?
   private var original = HotkeySettings()
   private var resetting = false
+  /// 読んだときの中身。書く前に比べて、エディタでの変更を上書きしない。nil はファイルが無い回。
+  private var dictionaryContents: String?
 
   public init(
     store: SettingsStore, defaults: HotkeyConfiguration, overrides: HotkeyOverrides = .init(),
@@ -43,19 +47,90 @@ public final class SettingsModel: ObservableObject {
     microphoneSnapshot = microphoneProvider()
   }
 
-  /// 辞書は設定画面で編集しないので、件数と直すべき行番号だけを出す（ADR-019）。
+  /// 件数と直すべき行番号を出す。壊れた行は表に出ないので、エディタで直してもらう（ADR-019）。
   public func refreshDictionary() {
     do {
-      guard let contents = try dictionary.contents() else {
+      let contents = try dictionary.contents()
+      dictionaryContents = contents
+      let document = DictionaryDocument(contents: contents ?? "")
+      if dictionaryRows == nil {
+        dictionaryRows = DictionaryRows(document: document)
+      } else {
+        dictionaryRows?.reload(document)
+      }
+      guard let contents else {
         dictionaryMessage = "辞書ファイルはまだありません。"
         return
       }
       let table = DictionaryTable(contents: contents)
       dictionaryMessage = "\(table.entries.count)件を読み込みました。"
         + skippedNotice(table.skippedLines)
+        + (dictionaryRows?.hasUnsavedEdits == true ? Self.unsavedNotice : "")
     } catch {
+      dictionaryRows = nil
       dictionaryMessage = "辞書ファイルを読み込めません。ファイルを確認してから「更新」を押してください。"
     }
+  }
+
+  /// 表に出す値。ファイルの項目のあとに、左の列がまだ空の打ち込み途中の行が続く。
+  public var dictionaryEntries: [DictionaryEntry] { dictionaryRows?.rows.map(\.entry) ?? [] }
+
+  /// 空の行を表の末尾に足し（1 行まで）、その行の ID を返す。左の列が入るまでファイルには書かない。
+  @discardableResult
+  public func addDictionaryEntry() -> Int? {
+    dictionaryRows?.addDraft()
+  }
+
+  /// セルの確定ごとに呼ぶ。保存できない値は画面に残し、ファイルは変えない。
+  public func updateDictionaryEntry(id: Int, from: String, to: String) {
+    let save: DictionaryRows.Save?
+    do {
+      save = try dictionaryRows?.edit(id, to: DictionaryEntry(from: from, to: to))
+    } catch {
+      if let message = Self.message(for: error) {
+        dictionaryMessage = message
+      } else if dictionaryRows?.hasUnsavedEdits == true {
+        dictionaryMessage = Self.unsavedNotice
+      }
+      return
+    }
+    if let save { write(save) }
+  }
+
+  public func removeDictionaryEntry(id: Int) {
+    guard let save = dictionaryRows?.remove(id) else {
+      // 打ち込み途中の行を消しただけの回も、未保存の知らせを出し直す。
+      refreshDictionary()
+      return
+    }
+    write(save)
+  }
+
+  private static let unsavedNotice = "保存していない行があります。Enterを押すと保存し直します。"
+
+  /// why: 左の列が空の追加行は打ち込み途中として黙って残す（ADR-021）。
+  private static func message(for failure: DictionaryDocument.EditFailure) -> String? {
+    switch failure {
+    case .emptySource: nil
+    case .duplicateSource(let source): "「\(source)」はすでにあります。"
+    case .unrepresentable: "タブ・改行と、認識される表記の先頭の「#」は使えません。取り除いてください。"
+    }
+  }
+
+  private func write(_ save: DictionaryRows.Save) {
+    do {
+      guard try dictionary.contents() == dictionaryContents else {
+        refreshDictionary()
+        dictionaryMessage = "辞書ファイルがほかで変更されていたため、読み込み直しました。もう一度編集してください。"
+        return
+      }
+      try dictionary.save(save.document)
+    } catch {
+      dictionaryMessage = "辞書を保存できませんでした。辞書ファイルを開いて直してください。"
+      return
+    }
+    dictionaryRows?.apply(save)
+    refreshDictionary()
   }
 
   /// why: タブの代わりに空白で書いた回は落ちる行が全行になるので、先頭だけ挙げる。
@@ -64,7 +139,7 @@ public final class SettingsModel: ObservableObject {
     let shown = lines.prefix(5).map(String.init).joined(separator: "・")
     let rest = lines.count > 5 ? "ほか" : ""
     return "\(shown)行目\(rest)を読み込めませんでした。"
-      + "1行に「置き換える表記」とタブ、「入れたい表記」を書いてください。"
+      + "1行に「認識される表記」とタブ、「入れたい表記」を書いてください。"
   }
 
   /// 無ければ書き方を書いたファイルを作ってから、利用者が使っているエディタに渡す。

@@ -34,3 +34,4 @@
 | [018](018-no-engine-switch.md) | 認識エンジンの切り替えを本体に入れない | 承認 | 2026-09-23 |
 | [019](019-dictionary-surface-replacement.md) | 辞書は表記の完全一致で置換し、読みの正規化と形態素解析は入れない | 提案 | 2026-09-23 |
 | [020](020-pause-triggered-segment-commit.md) | 発話の後に 700 ms 黙ったら、そこまでを本体から確定する | 承認 | 2026-09-23 |
+| [021](021-dictionary-edited-in-settings.md) | 辞書は設定画面の表で編集し、ファイルは正のまま残す | 提案 | 2026-09-24 |
