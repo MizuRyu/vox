@@ -12,20 +12,20 @@ public enum FilePathFormat {
   /// 1 つのパスの表記。`repositoryRoot` の配下なら root からの相対パス。
   public static func display(path: String, repositoryRoot: String?, homeDirectory: String)
     -> String {
-    let standardized = standardize(path)
-    if let root = repositoryRoot.map(standardize), !root.isEmpty {
+    let file = standardized(path)
+    if let root = repositoryRoot.map({ standardized($0) }), !root.isEmpty {
       let prefix = root.hasSuffix("/") ? root : root + "/"
-      if standardized.hasPrefix(prefix) {
-        return String(standardized.dropFirst(prefix.count))
+      if file.hasPrefix(prefix) {
+        return String(file.dropFirst(prefix.count))
       }
     }
-    let home = standardize(homeDirectory)
-    guard !home.isEmpty, home != "/" else { return standardized }
-    if standardized == home { return "~" }
-    if standardized.hasPrefix(home + "/") {
-      return "~/" + standardized.dropFirst(home.count + 1)
+    let home = standardized(homeDirectory)
+    guard !home.isEmpty, home != "/" else { return file }
+    if file == home { return "~" }
+    if file.hasPrefix(home + "/") {
+      return "~/" + file.dropFirst(home.count + 1)
     }
-    return standardized
+    return file
   }
 
   /// 複数ファイルをまとめて 1 つの文字列にする（半角空白区切り）。空のパスは落とす。
@@ -50,9 +50,10 @@ public enum FilePathFormat {
 
   /// 末尾の `/` と `.` / `..` を畳む。`standardizingPath` は `~` の展開もするので
   /// ペーストされた `~` 付きのパスもここで絶対パスになる。
-  private static func standardize(_ path: String) -> String {
-    let standardized = (path as NSString).standardizingPath
-    guard standardized.count > 1, standardized.hasSuffix("/") else { return standardized }
-    return String(standardized.dropLast())
+  /// T23 の最近使ったフォルダも、同じフォルダを二重に数えないためにこれを通す。
+  public static func standardized(_ path: String) -> String {
+    let folded = (path as NSString).standardizingPath
+    guard folded.count > 1, folded.hasSuffix("/") else { return folded }
+    return String(folded.dropLast())
   }
 }
