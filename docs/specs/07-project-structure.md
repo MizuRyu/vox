@@ -9,6 +9,7 @@
 Package.swift            外部依存なし
 Sources/
   VoxCore/               Foundation だけに依存する判定と変換。UI・プロセス起動・AppKit を持たない
+    Audio/               マイクの値型、入力選択、接続方式の分類
     Transcript/          本文モデル、キャレット、フィラー除去、sigil 検出、確定位置
     Injection/           貼り付け前後の安全判定、自動 Enter、アクティベーション方針
     Palette/             検索対象の解釈、索引、ツリー、あいまい一致、パス表記、プレビュー読み取り
@@ -18,7 +19,7 @@ Sources/
     Process/             子プロセス実行、単調時計
   VoxApp/                macOS 層。AppKit / SwiftUI / AVFoundation / Speech / CoreGraphics を使う唯一の場所
     Session/             録音セッションの接続点（App.swift）。開始・確定・破棄の流れ
-    Audio/               SpeechAnalyzer とマイク、音声診断
+    Audio/               SpeechAnalyzer、入力専用 AUHAL、録音用 Audio Unit の構成、音声診断
     Input/               ホットキー監視、貼り付け、入力欄の読み取り
     Hud/                 HUD パネルと本文エディタ
     Palette/             パレットのパネル・ビュー、対象フォルダの解決、索引の取得
@@ -64,7 +65,7 @@ images/                  README の画面例（合成データ）と再生成の
 | 目標 | 現在のファイル |
 |---|---|
 | Session/App.swift | App.swift（接続点。段階 2 で Recording / Palette / Injection の coordinator に分ける） |
-| Audio/ | SpeechLane.swift, AudioCaptureDiagnostics.swift |
+| Audio/ | SpeechLane.swift, HALInputCapture.swift, AudioCaptureDiagnostics.swift, AudioInputConfiguration.swift |
 | Input/ | HotkeyMonitor.swift, Injector.swift, AccessibleInput.swift |
 | Hud/ | HudPanel.swift, VoxHudSupport/HudTranscript.swift |
 | Palette/ | PalettePanel.swift, PaletteView.swift, PaletteTargetResolver.swift, FileIndexer.swift |
@@ -77,6 +78,7 @@ images/                  README の画面例（合成データ）と再生成の
 
 | 目標 | 現在のファイル |
 |---|---|
+| Audio/ | AudioTransport, MicrophoneInput（MicrophoneDevice / MicrophoneOutput を含む） |
 | Transcript/ | TranscriptBuffer, TranscriptCaret, FillerPass, SigilTrigger, AnalyzerFinalizePoint, SpeechAssetReadiness |
 | Injection/ | InjectionSafety, AutoEnter, TerminalAutoEnter, ActivationPolicy |
 | Palette/ | PaletteTarget, PaletteSigil, FileIndex, FileTree, FuzzyMatch, FilePathFormat, BoundedFileReader |
@@ -89,7 +91,7 @@ images/                  README の画面例（合成データ）と再生成の
 
 | testTarget | フォルダ |
 |---|---|
-| VoxCoreTests（VoxCore に依存） | Transcript/, Palette/, Injection/, Records/, Process/, Resident/, Settings/ と共有の Expectations.swift |
+| VoxCoreTests（VoxCore に依存） | Audio/, Transcript/, Palette/, Injection/, Records/, Process/, Resident/, Settings/ と共有の Expectations.swift |
 | VoxAppTests（VoxApp に `@testable` で依存） | Settings/, Resident/, Hud/, Injection/, Audio/, Palette/ |
 | Tooling/ | shell の検査（nix-sdk、pre-commit、package、署名） |
 | benchmarks/Tests | Tests/M0HarnessCoreTests, Tests/BenchmarkReport |

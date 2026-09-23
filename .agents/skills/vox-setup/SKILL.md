@@ -68,6 +68,9 @@ macOS が再起動を求めたら Vox を終了して開き直す。ソースか
 | `auto_enter_enabled` | bool | `false` | 貼り付け後に Enter を送る |
 | `auto_enter_unverified` | bool | `false` | ターミナルなど、入力欄を読み返せないアプリでも Enter を送る。貼り付け 0.5 秒後、同じアプリ・ウィンドウなら送る。以前の「Enter の送り方」で「貼り付け後に送る」を選んでいた設定は、これをオンとして引き継ぐ |
 | `voice_processing_enabled` | bool | `false` | Apple のエコー除去・ノイズ抑制（実験的。再生中の音楽が小さくなる場合がある） |
+| `microphone_input` | object | `{"mode":"automatic"}` | Vox の入力選択。`automatic` は既定の入出力が Bluetooth 系・出力稼働中なら内蔵入力を優先し、なければ既定入力。`system_default` は常に準備時の既定入力。`device` は `uid` で機器を固定し、未接続なら開始エラー |
+
+マイクの指定は設定画面「使用するマイク」で保存する。個別指定の形式は `{"mode":"device","uid":"機器のUID"}`。UID は機器の再接続で変わりうる AudioDeviceID と区別し、診断ログには出さない。古い設定に `microphone_input` がなければ「自動」になる。macOS 全体の既定入力・既定出力は変更しない。録音中の設定変更は次の録音から反映する。
 
 ### ショートカットの表記（`Sources/VoxCore/HotkeyBinding.swift`）
 
@@ -116,6 +119,8 @@ macOS が再起動を求めたら Vox を終了して開き直す。ソースか
 
 ## よくあるトラブル
 
+- **指定したマイクが見つからない**: 接続後に設定の「更新」を押すか、「使用するマイク」を選び直して保存する。別のマイクへ自動的には戻さない
+- **音楽が途切れる**: 「使用するマイク」を内蔵・USBなどへ指定して保存する。「自動」の切替は既定の入出力が Bluetooth 系かつ出力稼働中の場合だけ。「通話向けの音声処理」はオフにする。診断ログの `audio_input` が選択した機器、`audio_input_verified device_id= route=input_only` が開始後の機器確認を示す。録音直後に `audio_configuration_changed` が出る場合は録音が打ち切られている
 - **貼り付けが起きない**: メニューバー「診断ログを開く…」で `error` を見る。意味は `docs/development.md` の表。`input_target_changed_*` は確定時に前面アプリが変わっている
 - **Enter が省略される**: 修飾キーが押されたまま、入力先の変更、クリップボード競合で省略する。入力欄を読み返せないアプリ（ターミナル系）では `auto_enter_unverified` をオンにしないと送らない
 - **更新したら権限が消えた**: 署名 identity の変更。上の「署名と権限の関係」

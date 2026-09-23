@@ -48,6 +48,7 @@ FluidAudio は benchmarks の別 package だけが依存するので、本体は
 | `swift build --product Vox` | アプリ本体のビルド。起動しない |
 | `swift test --no-parallel`（VoxCoreTests / VoxAppTests） | 文字順序・編集・フィラー・検索・直列化・送出手順（VoxCore）と、設定の保存・HUD の描画・pasteboard・パレットの再描画・常駐（VoxApp） |
 | `swift test --no-parallel --filter 'StoreTests'` | 一部だけを走らせる例。`--filter` は型名・テスト名の正規表現 |
+| `swift test --no-parallel --filter 'MicrophoneInputTests\|MicrophoneTests\|InputConfigurationTests\|SettingsViewTests\|recordingSessionSnapshot'` | 入力選択・設定の保存と固定・合成 Audio Unit の構成検証・全選択肢のオフスクリーン描画。マイクを開かない |
 
 検査は Swift Testing の testTarget 2 本です（ADR-013）。`--no-parallel` を付けるのは、
 並列だと実プロセスの取り消しを待つ 1 件と開いているウィンドウ数を見る 2 件（HUD の本文とパレットの再描画）が、
@@ -80,7 +81,11 @@ swift run Vox
 
 `--repo /path/to/repository` で検索対象が自動解決できない場合のフォールバックを指定できます。録音・ファイル検索キーは HUD の歯車、または Vox にフォーカスがあるときの `⌘,` で変更できます。明示した `--toggle-key` / `--palette-key` は保存値より優先し、その起動中は画面で編集できません。キーや他のオプションは `Sources/VoxApp/Launch/Options.swift` の `usage()` にあります。
 
-設定画面には macOS の既定入力マイクと入力デバイス一覧を表示します。開くたびと「更新」で取得し、録音中の engine が使う入力と同一とは断定しません。情報取得は CoreAudio の property 読取りだけで、マイク権限の要求や録音開始はしません。表示用の一覧は設定ファイルに保存しません。
+設定画面では Vox のマイクを選択し、macOS の既定入力と入力デバイス一覧を確認できます。開くたびと「更新」で行う情報取得は CoreAudio の property 読取りだけで、マイク権限の要求や録音開始はしません。表示用の一覧は保存せず、`microphone_input` に選択方式と個別指定時の UID だけを保存します。
+
+通常録音は Vox が作る入力専用 AUHAL で選択した機器を開き、開始後に入力 IO・出力 IO・CurrentDevice を読み戻します（ADR-016）。通話向け処理をオンにした録音だけは AVAudioEngine を使い、選択した機器が既定入力と異なる場合に限って CurrentDevice を設定します。OS 全体の既定デバイスへの書込みは行いません。`audio_input` は選択方式・機器名・一時的なデバイス ID・transport・音声形式を示し、UID は出しません。開始後の検証成功は `audio_input_verified device_id= route=input_only`（通常）または `route=voice_processing selects_device=`（通話向け処理。機器を指定したか）です。構成変更時の `audio_configuration_changed transport=` は、変更前に録音で使っていた入力の接続方式です。
+
+合成 Audio Unit の検査はプロパティ設定順序・書込み失敗・読戻し不一致・受け取る形式を対象にします。AUHAL と実機の組合せ、再生継続・認識精度は [REC-09〜12](MANUAL-VERIFICATION.md#rec-09-自動選択で音楽再生と録音を併用する) の利用者確認が必要です。
 
 ## データの場所
 

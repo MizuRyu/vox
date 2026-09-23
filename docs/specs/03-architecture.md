@@ -2,7 +2,7 @@
 
 プロセス構成、キー体系、テキスト契約、テキスト挿入、実装上の落とし穴。
 
-最終確認日: 2026-09-07
+最終確認日: 2026-09-23
 
 **native Swift/SwiftUI 単一プロセス**。Python サイドカーも WebView も置きません。
 
@@ -12,7 +12,7 @@
 以下の図は確定レーンを含む将来構成であり、RingBuffer・VAD・ConfirmLane・辞書処理は現在の本体には未実装です。
 
 ```
-┌─ AudioTap ────────── AVAudioEngine, 16kHz mono
+┌─ AudioTap ────────── 入力専用 AUHAL（通話向け処理は AVAudioEngine）, 16kHz mono
 │      ↓
 ├─ RingBuffer ──────── 直近 30 秒を保持（確定レーンの再投入元 + 押下前プリロール）
 │      ↓         ↓
@@ -68,6 +68,20 @@ HUD 本体 (波形 + 状態 + テキスト) は Web 技術の利点がほぼ効�
 
 推奨を覆す条件は 1 つだけ。**Windows / Linux も出すなら Tauri** です (Handy がまさにそれで、ANE を捨てる代償を払っている)。
 
+## マイクの選択と録音出力
+
+入力の選択は `MicrophoneInput`（VoxCore）、CoreAudio の情報取得は `MicrophoneDevices`、録音用 Audio Unit の構成は `AudioInputConfiguration`、通常録音の取り込みは `HALInputCapture` が担います（[ADR-016](../adr/016-microphone-selection-input-only.md)）。
+
+保存設定 `microphone_input` は `automatic`（既定）、`system_default`、`device` の3方式です。`device` は機器の UID を持ち、録音の準備時に接続中の AudioDeviceID へ解決します。指定機器が見つからなければ開始エラーにし、別のマイクには戻しません。旧設定でフィールドが欠けている場合は `automatic` とします。
+
+自動選択では、macOS の既定入力・出力がともに Bluetooth / Bluetooth LE で、既定出力の `kAudioDevicePropertyDeviceIsRunningSomewhere` が1なら、利用可能な内蔵マイクを選びます。内蔵マイクがない場合、出力状態を取得できない場合、それ以外の組合せでは既定入力を使います。出力の稼働は音楽再生の近似であり、Apple Music の再生状態や入出力が同じ物理機器かまでは判定しません。OS 全体の既定デバイスは変更しません。
+
+設定は `RecordingSession` に写し取り、実際の機器は音声アセットの準備後に解決して、その録音で固定します。通常録音は AVAudioEngine を使わず、Vox が作る入力専用 AUHAL で選んだ機器だけを開きます。初期化前に入力 IO 有効（Input/1）、出力 IO 無効（Output/0）、CurrentDevice（Global/0）の順で設定し、開始後に読み戻します。AVAudioEngine は既定の入出力をまとめた集約デバイスで開くため、既定が Bluetooth ヘッドセットだと通話用プロファイルに切り替わり、組み上がった後に機器を変えると構成変更が通知されて録音が止まります（ADR-016）。取得・設定エラーや読み戻しの不一致は開始失敗として既存の abort 経路で片付けます。
+
+`voice_processing_enabled` は既定 false のままです。明示的に有効にした場合だけ AVAudioEngine で開き、voice processing を有効化します。選んだ機器が既定入力と異なる場合に限り、置き換わった Audio Unit の入力機器を Global/1 で設定します（既定以外の機器では構成変更で止まりうる）。EnableIO は変更しません。AGC は無効、ducking は最小ですが、音量低下を完全には無効化しません。
+
+AUHAL からは機器のサンプルレートとチャンネル数の float32 非インターリーブで受け取り（3ch 以上はチャンネルレイアウトを付ける）、tap と同じ `BufferBox` のストリーム → モノラル変換 → SpeechAnalyzer の経路へ渡します。選んだ機器の `DeviceIsAlive` か `NominalSampleRate` が変わったとき（通話向け処理では engine の構成変更通知）は、既存の世代管理と本文保存を使って録音を終え、通知ログの transport は録音で選んだ機器を示します。入力機器の選択は、マイクへ物理的に入る音楽を除去する処理ではありません。
+
 ## キー体系
 
 録音はトグルのみ、挿入は終了時に一括（[ADR-004](../adr/004-toggle-recording-batch-insert.md)）。この 2 つから `Enter` で録音を終える必要がなくなり、
@@ -91,6 +105,8 @@ HUD の歯車と `--settings` から設定画面を開けます。録音・フ�
 
 ## 実装上の落とし穴（M0 で踏んだもの。本実装で再発する）
 
+- AVAudioEngine が組み上げた入力 Audio Unit の CurrentDevice や EnableIO を後から書き換えない。engine が構成変更を通知して録音が止まる。機器を選ぶ録音は Vox が作る AUHAL で、初期化前に設定する。VoiceProcessingIO の CurrentDevice は入力が element 1、通常の AUHAL は element 0。engine が所有する Audio Unit を独自に初期化・終了しない。
+- AUHAL の入力コールバックは IO スレッドで呼ばれる。MainActor の型の中で作らず、`HALInputCapture` のような非隔離の型に置く。
 - **`AVAudioEngine` の tap クロージャを `@MainActor` の関数内に直書きすると main actor 隔離を継承し、
   オーディオスレッドで `dispatch_assert_queue` により SIGTRAP する**（Swift 6 言語モード）。
   `nonisolated static func makeTapBlock(...) -> AVAudioNodeTapBlock` の中で作って渡す形にすること
