@@ -138,9 +138,42 @@ private struct HudView: View {
 
 /// borderless の NSWindow は既定で key になれない。`makeKey()` を効かせるために上書きする。
 /// `.nonactivatingPanel` なので key になってもアプリは activate されない（前面アプリは変わらない）。
-private final class VoxPanel: NSPanel {
+final class VoxPanel: NSPanel {
   override var canBecomeKey: Bool { true }
   override var canBecomeMain: Bool { false }
+
+  /// 診断ログ `hud_key` の `since_key_ms`。key を失うまでの時間を実機で測る（仕様 03 の落とし穴）。
+  private var becameKeyMilliseconds: Double?
+
+  /// ⌘V などの定義は Edit メニューにしか無く、アプリが active でない間は届かない疑いがある。
+  /// main menu を通さず first responder へ直接送る。key を取り返す処理は入れない（他アプリへ移った時と衝突する）。
+  override func performKeyEquivalent(with event: NSEvent) -> Bool {
+    if super.performKeyEquivalent(with: event) { return true }
+    let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+    guard
+      let edit = HudEditCommand(
+        key: event.charactersIgnoringModifiers ?? "", command: flags.contains(.command),
+        shift: flags.contains(.shift), option: flags.contains(.option),
+        control: flags.contains(.control))
+    else { return false }
+    let handled = firstResponder?.tryToPerform(Selector(edit.actionName), with: self) ?? false
+    // why: キー文字は出さない（打った内容の手がかりになる）。修飾キーの種類だけ。
+    voxLog("hud_key_equivalent modifiers=\(flags.contains(.shift) ? "cmd+shift" : "cmd") handled=\(handled)")
+    return handled
+  }
+
+  override func becomeKey() {
+    super.becomeKey()
+    becameKeyMilliseconds = voxNowMilliseconds()
+    voxLog("hud_key state=became")
+  }
+
+  override func resignKey() {
+    super.resignKey()
+    let since = becameKeyMilliseconds.map { String(Int(voxNowMilliseconds() - $0)) } ?? "-"
+    becameKeyMilliseconds = nil
+    voxLog("hud_key state=resigned since_key_ms=\(since)")
+  }
 }
 
 @MainActor

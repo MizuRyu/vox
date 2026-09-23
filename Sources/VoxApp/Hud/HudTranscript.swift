@@ -229,7 +229,7 @@ public struct TranscriptEditor: NSViewRepresentable {
     textView.textContainerInset = NSSize(width: 0, height: 0)
     textView.isAutomaticQuoteSubstitutionEnabled = false
     textView.isAutomaticDashSubstitutionEnabled = false
-    // ⌘Z 用。Edit メニュー (main.swift) と組で効く。
+    // ⌘Z 用。HUD では VoxPanel が undo: を直接送る（HudEditCommand）。
     textView.allowsUndo = true
     coordinator.sync(textView)
     return scrollView
@@ -566,6 +566,8 @@ public struct TranscriptEditor: NSViewRepresentable {
 /// （`NSTextView` の既定はファイルを読めずに何も起きない）。それ以外のペーストは素の挙動に任せる。
 public final class TranscriptTextView: NSTextView {
   weak var coordinator: TranscriptEditor.Coordinator?
+  /// why: 検査が利用者のクリップボードを読まないため（`save` の `store` と同じ理由）。
+  var pasteboard = NSPasteboard.general
 
   public override func paste(_ sender: Any?) {
     guard let coordinator else {
@@ -573,7 +575,7 @@ public final class TranscriptTextView: NSTextView {
       return
     }
     if let value = TranscriptFilePaste.pathText(
-      from: NSPasteboard.general, repositoryRoot: coordinator.model.repositoryRoot),
+      from: pasteboard, repositoryRoot: coordinator.model.repositoryRoot),
       let insertion = coordinator.filePathInsertion(for: value, selection: selectedRange()) {
       // `insertText` は shouldChangeTextIn / textDidChange を通るので、
       // buffer と typed_chars は通常の打鍵と同じ経路で更新される。
@@ -581,7 +583,7 @@ public final class TranscriptTextView: NSTextView {
       return
     }
     // ADR-017。クリップボードに画像だけがある回。ファイルに書いてからパスを入れる。
-    switch TranscriptImagePaste.request(from: NSPasteboard.general) {
+    switch TranscriptImagePaste.request(from: pasteboard) {
     case .image(let data, let kind): save(data, kind: kind, coordinator: coordinator)
     case .unsupported: coordinator.model.showAttachmentNotice(
         TranscriptImagePaste.unsupportedNotice)
