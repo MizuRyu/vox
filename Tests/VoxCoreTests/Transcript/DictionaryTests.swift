@@ -174,4 +174,40 @@ struct DictionaryTests {
     #expect(DictionaryTable.empty.entries.isEmpty)
     #expect(DictionaryTable.empty.skippedLines.isEmpty)
   }
+
+  // MARK: 順序（辞書 → フィラー除去。ADR-019）
+
+  /// 除去を先に走らせると、`えー` が落ちて `あい` になり辞書の左辺が残らない。
+  /// この 1 件が順序を決めている。
+  @Test("The dictionary runs before filler removal")
+  func theDictionaryRunsBeforeFillerRemoval() throws {
+    let table = DictionaryTable(contents: "えーあい\tAI")
+    expect(
+      CommittedText.clean("えーあいを使う", dictionary: table, fillerRemovalEnabled: true),
+      "AIを使う", 0)
+  }
+
+  @Test("Filler removal still runs after the dictionary")
+  func fillerRemovalStillRunsAfterTheDictionary() throws {
+    let table = DictionaryTable(contents: "松尾\t末尾")
+    expect(
+      CommittedText.clean("えっと、松尾です", dictionary: table, fillerRemovalEnabled: true),
+      "末尾です", 1)
+  }
+
+  @Test("The dictionary applies while filler removal is off")
+  func theDictionaryAppliesWhileFillerRemovalIsOff() throws {
+    let table = DictionaryTable(contents: "松尾\t末尾")
+    expect(
+      CommittedText.clean("えっと、松尾です", dictionary: table, fillerRemovalEnabled: false),
+      "えっと、松尾です".replacingOccurrences(of: "松尾", with: "末尾"), 0)
+  }
+
+  @Test("An empty dictionary leaves filler removal alone")
+  func anEmptyDictionaryLeavesFillerRemovalAlone() throws {
+    let text = "えっと、開きます。あの、保存します。"
+    #expect(
+      CommittedText.clean(text, dictionary: .empty, fillerRemovalEnabled: true)
+        == FillerPass.remove(from: text))
+  }
 }

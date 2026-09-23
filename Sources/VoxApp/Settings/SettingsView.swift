@@ -92,6 +92,24 @@ public struct SettingsView: View {
           Text("マイク").font(.headline)
         }
 
+        GroupBox {
+          VStack(alignment: .leading, spacing: 8) {
+            Text(model.dictionaryMessage).font(.callout)
+              .fixedSize(horizontal: false, vertical: true)
+            Text("認識された表記を、入れたい表記に置き換えます。録音のたびに読み込むので、保存した変更は次の録音から反映されます。")
+              .font(.caption).foregroundStyle(.secondary)
+              .fixedSize(horizontal: false, vertical: true)
+            HStack {
+              Button("辞書ファイルを開く") { model.openDictionaryFile() }
+              Button("更新") { model.refreshDictionary() }
+              Spacer(minLength: 0)
+            }
+          }
+          .padding(10)
+        } label: {
+          Text("辞書").font(.headline)
+        }
+
         VStack(alignment: .leading, spacing: 6) {
           Text("キー表示をクリックして、新しい組み合わせを押します。")
           Text("録音中の変更は次の録音から反映されます。Escで取り消せます。")

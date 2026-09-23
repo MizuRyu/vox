@@ -95,7 +95,11 @@ func recordingSessionSnapshot() throws {
     palette: PaletteCoordinator(hud: hud))
 
   let recording = RecordingSession(
-    toggleOnMilliseconds: 1_000, settings: coordinator, target: nil)
+    toggleOnMilliseconds: 1_000, settings: coordinator,
+    dictionary: DictionaryTable(contents: "松尾\t末尾"), target: nil)
+  #expect(
+    recording.dictionary.entries == [DictionaryEntry(from: "松尾", to: "末尾")],
+    "the dictionary was not taken at the start of the recording")
   #expect(recording.autoEnterEnabled, "auto enter was not taken from the settings")
   #expect(recording.autoEnterUnverified, "unverified auto Enter was not taken from the settings")
   #expect(recording.voiceProcessingEnabled, "voice processing was not taken from the settings")
