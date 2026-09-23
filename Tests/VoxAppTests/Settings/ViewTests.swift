@@ -123,11 +123,11 @@ struct SettingsViewTests {
     #expect(model.dictionaryEntries.count == 3, "空行が表に出ない、または 2 行出た")
     #expect(try store.contents() == sample, "空行をファイルに書いた")
 
-    model.updateDictionaryEntry(at: 2, replacing: model.dictionaryEntries[2], from: "", to: "バグ")
+    model.updateDictionaryEntry(id: rowID(model, 2), from: "", to: "バグ")
     #expect(model.dictionaryEntries.last == DictionaryEntry(from: "", to: "バグ"), "打ち込み途中の行が消えた")
     #expect(try store.contents() == sample, "左の列が空の行をファイルに書いた")
 
-    model.updateDictionaryEntry(at: 2, replacing: model.dictionaryEntries[2], from: "ばぐ", to: "バグ")
+    model.updateDictionaryEntry(id: rowID(model, 2), from: "ばぐ", to: "バグ")
     #expect(try store.contents() == sample + "ばぐ\tバグ\n", "追加した行")
     #expect(model.dictionaryEntries.last == DictionaryEntry(from: "ばぐ", to: "バグ"))
     #expect(model.dictionaryMessage.hasPrefix("3件を読み込みました。"), "\(model.dictionaryMessage)")
@@ -139,12 +139,12 @@ struct SettingsViewTests {
     defer { try? FileManager.default.removeItem(at: root) }
 
     model.addDictionaryEntry()
-    model.updateDictionaryEntry(at: 2, replacing: model.dictionaryEntries[2], from: "松尾", to: "別")
+    model.updateDictionaryEntry(id: rowID(model, 2), from: "松尾", to: "別")
     #expect(model.dictionaryMessage == "「松尾」はすでにあります。")
     #expect(model.dictionaryEntries.last == DictionaryEntry(from: "松尾", to: "別"), "打ち込んだ行が消えた")
     #expect(try store.contents() == sample, "重複をファイルに書いた")
 
-    model.updateDictionaryEntry(at: 1, replacing: model.dictionaryEntries[1], from: "a\tb", to: "")
+    model.updateDictionaryEntry(id: rowID(model, 1), from: "a\tb", to: "")
     #expect(model.dictionaryMessage == "タブ・改行と、認識される表記の先頭の「#」は使えません。取り除いてください。")
     #expect(try store.contents() == sample, "書けない表記をファイルに書いた")
   }
@@ -154,24 +154,38 @@ struct SettingsViewTests {
     let (root, store, model) = try dictionaryFixture(sample)
     defer { try? FileManager.default.removeItem(at: root) }
 
-    model.removeDictionaryEntry(at: 0)
+    model.removeDictionaryEntry(id: rowID(model, 0))
     #expect(try store.contents() == "# 説明\n壊れた行\nオルカ\tOrca\n")
     #expect(model.dictionaryEntries == [DictionaryEntry(from: "オルカ", to: "Orca")])
 
-    model.updateDictionaryEntry(at: 0, replacing: model.dictionaryEntries[0], from: "おるか", to: "Orca")
+    model.updateDictionaryEntry(id: rowID(model, 0), from: "おるか", to: "Orca")
     #expect(try store.contents() == "# 説明\n壊れた行\nおるか\tOrca\n", "更新は元の位置")
   }
 
-  /// 削除で行の位置がずれた後に、前の行のセルの確定が遅れて届いても別の行を書き換えない。
-  @Test("位置がずれた後の遅れた確定は捨てる")
-  func aStaleCommitIsIgnored() throws {
+  /// 消した行のセルの確定が遅れて届いても、後ろの行を書き換えない。
+  @Test("消した行への遅れた確定は捨てる")
+  func aCommitToARemovedRowIsIgnored() throws {
     let (root, store, model) = try dictionaryFixture(sample)
     defer { try? FileManager.default.removeItem(at: root) }
-    let shown = model.dictionaryEntries[0]
+    let removed = rowID(model, 0)
 
-    model.removeDictionaryEntry(at: 0)
-    model.updateDictionaryEntry(at: 0, replacing: shown, from: "まつお", to: "末尾")
-    #expect(try store.contents() == "# 説明\n壊れた行\nオルカ\tOrca\n", "ずれた行を書き換えた")
+    model.removeDictionaryEntry(id: removed)
+    model.updateDictionaryEntry(id: removed, from: "まつお", to: "末尾")
+    #expect(try store.contents() == "# 説明\n壊れた行\nオルカ\tOrca\n", "ほかの行を書き換えた")
+  }
+
+  /// 左を空にして拒否された行で右を確定しても、画面に無い古い左辺で保存しない。
+  @Test("拒否された値は画面に残り、隣のセルの確定もその値で判断する")
+  func aRefusedValueStaysForTheNeighbouringCell() throws {
+    let (root, store, model) = try dictionaryFixture(sample)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let id = rowID(model, 0)
+
+    model.updateDictionaryEntry(id: id, from: "", to: "末尾")
+    let shown = model.dictionaryEntries[0]
+    #expect(shown == DictionaryEntry(from: "", to: "末尾"), "打ち込みが画面から消えた")
+    model.updateDictionaryEntry(id: id, from: shown.from, to: "別")
+    #expect(try store.contents() == sample, "画面に無い左辺で保存した")
   }
 
   /// エディタで書き換えた内容を、表の古い内容で上書きしない。
@@ -181,7 +195,7 @@ struct SettingsViewTests {
     defer { try? FileManager.default.removeItem(at: root) }
 
     try Data("松尾\t別\n".utf8).write(to: store.url)
-    model.removeDictionaryEntry(at: 1)
+    model.removeDictionaryEntry(id: rowID(model, 1))
     #expect(try store.contents() == "松尾\t別\n", "外の変更を上書きした")
     #expect(model.dictionaryEntries == [DictionaryEntry(from: "松尾", to: "別")], "読み直していない")
     #expect(model.dictionaryMessage == "辞書ファイルがほかで変更されていたため、読み込み直しました。もう一度編集してください。")
@@ -193,9 +207,13 @@ struct SettingsViewTests {
     defer { try? FileManager.default.removeItem(at: root) }
 
     try FileManager.default.linkItem(at: store.url, to: root.appendingPathComponent("hard"))
-    model.removeDictionaryEntry(at: 0)
+    model.removeDictionaryEntry(id: rowID(model, 0))
     #expect(model.dictionaryMessage == "辞書を保存できませんでした。辞書ファイルを開いて直してください。")
     #expect(try Data(contentsOf: store.url) == Data(sample.utf8), "書けない辞書を書き換えた")
+  }
+
+  private func rowID(_ model: SettingsModel, _ index: Int) -> DictionaryRow.ID {
+    model.dictionaryRows?.rows[index].id ?? -1
   }
 
   private func firstTableView(in view: NSView) -> NSTableView? {
