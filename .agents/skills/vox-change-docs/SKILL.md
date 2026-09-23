@@ -35,6 +35,7 @@ description: >
 | 05-text-postprocessing | フィラー除去、辞書、訂正 |
 | 06-permissions-and-risks | 権限、データの扱い、リスク |
 | 07-project-structure | ディレクトリ構成、責務の線、ファイルの置き場 |
+| 08-image-attachments | 画像の添付（振り分け、保存先、回収、文言） |
 | references | 出典（モデル、SDK、参考実装、理論、ベンチ） |
 
 新しい領域なら `NN-<名前>.md` を新設し、`docs/specs/README.md` と `docs/README.md` の索引に行を追加する。

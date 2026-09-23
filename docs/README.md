@@ -2,7 +2,7 @@
 
 「どのファイルが有効な仕様か」をここで一元管理します。
 
-最終確認日: 2026-09-07
+最終確認日: 2026-09-23
 
 ## 使う
 
@@ -37,8 +37,9 @@
 | [specs/05-text-postprocessing.md](specs/05-text-postprocessing.md) | 辞書と訂正（未実装） |
 | [specs/06-permissions-and-risks.md](specs/06-permissions-and-risks.md) | 権限と残っているリスク |
 | [specs/07-project-structure.md](specs/07-project-structure.md) | 目標のディレクトリ構成と責務の線 |
+| [specs/08-image-attachments.md](specs/08-image-attachments.md) | 貼った画像の保存とパスの挿入 |
 | [specs/references.md](specs/references.md) | 出典 |
-| [adr/README.md](adr/README.md) | 技術判断の理由と見直し条件（ADR 001〜013） |
+| [adr/README.md](adr/README.md) | 技術判断の理由と見直し条件（ADR 001〜017） |
 
 - 挙動を変えたら [specs/](specs/README.md) の該当ファイル、利用者に見える変更なら [usage.md](usage.md)、開発コマンドを変えたら [development.md](development.md)。
 - 「なぜそうしたか」が変わったら [adr/](adr/README.md) に追加する。既存の ADR は書き換えない。

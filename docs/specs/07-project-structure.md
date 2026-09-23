@@ -1,7 +1,7 @@
 # 07 プロジェクト構成
 
 リポジトリの目標構成と、各ディレクトリの責務。理由は [ADR-013](../adr/013-library-app-and-test-targets.md)。
-最終確認日: 2026-09-07。状態: **移行完了**（`Tools/DocImages` だけ未実施。現状は末尾）。
+最終確認日: 2026-09-23。状態: **移行完了**（`Tools/DocImages` だけ未実施。現状は末尾）。
 
 ## 目標
 
@@ -10,6 +10,7 @@ Package.swift            外部依存なし
 Sources/
   VoxCore/               Foundation だけに依存する判定と変換。UI・プロセス起動・AppKit を持たない
     Audio/               マイクの値型、入力選択、接続方式の分類
+    Attachments/         貼った画像の振り分け、ファイル名、回収の判定
     Transcript/          本文モデル、キャレット、フィラー除去、sigil 検出、確定位置
     Injection/           貼り付け前後の安全判定、自動 Enter、アクティベーション方針
     Palette/             検索対象の解釈、索引、ツリー、あいまい一致、パス表記、プレビュー読み取り
@@ -71,7 +72,7 @@ images/                  README の画面例（合成データ）と再生成の
 | Palette/ | PalettePanel.swift, PaletteView.swift, PaletteTargetResolver.swift, FileIndexer.swift |
 | Settings/ | VoxSettingsSupport/*（SettingsView, SettingsController, SettingsModel, SettingsStore, SettingsStartup, MicrophoneDevices） |
 | Resident/ | StatusItemController.swift, AppControlsWindow.swift, LoginItemService.swift, AppInstanceLock.swift |
-| Support/ | Shell.swift, AppLogRouter.swift, Metrics.swift, History.swift |
+| Support/ | Shell.swift, AppLogRouter.swift, Metrics.swift, History.swift, AttachmentStore.swift |
 | Launch/ | main.swift の引数解釈（`VoxOptions`, `parseOptions`, usage）と起動手順 |
 
 ### Sources/VoxCore（フォルダ分け）
@@ -79,6 +80,7 @@ images/                  README の画面例（合成データ）と再生成の
 | 目標 | 現在のファイル |
 |---|---|
 | Audio/ | AudioTransport, MicrophoneInput（MicrophoneDevice / MicrophoneOutput を含む） |
+| Attachments/ | AttachmentPaste, AttachmentImageKind, AttachmentFileName, AttachmentRetention |
 | Transcript/ | TranscriptBuffer, TranscriptCaret, FillerPass, SigilTrigger, AnalyzerFinalizePoint, SpeechAssetReadiness |
 | Injection/ | InjectionSafety, AutoEnter, TerminalAutoEnter, ActivationPolicy |
 | Palette/ | PaletteTarget, PaletteSigil, FileIndex, FileTree, FuzzyMatch, FilePathFormat, BoundedFileReader |
@@ -91,7 +93,7 @@ images/                  README の画面例（合成データ）と再生成の
 
 | testTarget | フォルダ |
 |---|---|
-| VoxCoreTests（VoxCore に依存） | Audio/, Transcript/, Palette/, Injection/, Records/, Process/, Resident/, Settings/ と共有の Expectations.swift |
+| VoxCoreTests（VoxCore に依存） | Audio/, Attachments/, Transcript/, Palette/, Injection/, Records/, Process/, Resident/, Settings/ と共有の Expectations.swift |
 | VoxAppTests（VoxApp に `@testable` で依存） | Settings/, Resident/, Hud/, Injection/, Audio/, Palette/ |
 | Tooling/ | shell の検査（nix-sdk、pre-commit、package、署名） |
 | benchmarks/Tests | Tests/M0HarnessCoreTests, Tests/BenchmarkReport |

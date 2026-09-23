@@ -54,6 +54,7 @@ macOS が再起動を求めたら Vox を終了して開き直す。ソースか
 ```
 ~/Library/Application Support/vox/settings.json   ← 設定（0600）
 ~/Library/Application Support/vox/history.jsonl   ← 確定本文の履歴（0600）
+~/Library/Application Support/vox/attachments/     ← HUD に貼った画像（0600。起動時に7日・合計500MiBで回収）
 ```
 
 ### settings.json フィールド一覧（`Sources/VoxCore/HotkeySettings.swift`）
@@ -85,6 +86,7 @@ macOS が再起動を求めたら Vox を終了して開き直す。ソースか
 | ファイル検索 | `⌃P`（HUD で `@` を入力しても開く） |
 | 設定を開く | `⌘,`（Vox にフォーカスがあるとき） |
 | パレットを閉じる／本文を破棄 | `Esc` |
+| HUD の本文に貼り付け | `⌘V`（画像は `attachments/` に保存してパスを挿入。ADR-017） |
 
 ### 優先順位
 

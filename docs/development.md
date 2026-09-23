@@ -93,6 +93,7 @@ swift run Vox
 |---|---|
 | ホットキー設定 | `~/Library/Application Support/vox/settings.json`（schema 1、ファイル権限 0600） |
 | 確定テキストの履歴 | `~/Library/Application Support/vox/history.jsonl` |
+| HUD に貼った画像 | `~/Library/Application Support/vox/attachments/<日付>/<時刻>-<連番>.<拡張子>`（0600。起動時に 7 日・合計 500MiB で回収） |
 | アプリの計測 | `benchmarks/m1/metrics.jsonl`（Git 対象外） |
 | M0 の音声・モデル・結果 | `benchmarks/m0/audio/`、`models/`、`results/`（Git 対象外） |
 

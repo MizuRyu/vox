@@ -29,3 +29,4 @@
 | [013](013-library-app-and-test-targets.md) | 本体をライブラリ + 薄い executable にし、検査は testTarget に統一する | 承認 | 2026-09-07 |
 | [014](014-auto-enter-readability-decides.md) | 自動 Enter は読み返せるかで自動判定し、読めないときの送信だけを設定にする | 承認 | 2026-09-08 |
 | [016](016-microphone-selection-input-only.md) | マイクを Vox 内で選び、通常録音を入力専用 AUHAL で開く | 承認 | 2026-09-23 |
+| [017](017-image-paste-as-file-path.md) | 貼り付けた画像は一時ファイルに書き、本文にはパスを入れる | 提案 | 2026-09-23 |
