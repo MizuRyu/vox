@@ -516,6 +516,9 @@ final class SpeechLane {
   /// `finalize(through:)` は入力列を閉じないので、この後もそのまま給餌を続けられる。
   func finalizeSegment(reason: SegmentFinalizeReason) async {
     guard let run, run.isRunning, let analyzer = run.analyzer else { return }
+    // 無音とパレットの締めが重なった回。前の締めが返ってから給餌済みの位置を取る（ADR-007 / ADR-020）。
+    await awaitSegmentFinalize(run)
+    guard run.isRunning, self.run === run else { return }
     guard
       let throughSeconds = AnalyzerFinalizePoint.throughSeconds(
         fedFrameCount: run.fedFrameCount, sampleRate: run.sampleRate)

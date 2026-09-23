@@ -91,9 +91,11 @@ final class VoxController {
     hotkeys.toggleChord = VoxConfig.toggleChord
     hotkeys.paletteChord = VoxConfig.paletteChord
     palette.finalizeSegment = { [weak self] in
-      guard let self else { return }
+      guard let self, let recording else { return }
+      // why: 起点は頼んだ時刻。締めを待つ間に話した分は、次の無音で区切る対象に残す。
+      let requestedAt = voxNowMilliseconds()
       await lane.finalizeSegment(reason: .palette)
-      recording?.pauseCommit.markCommitted(at: voxNowMilliseconds())
+      recording.pauseCommit.markCommitted(at: requestedAt)
     }
     palette.targetApplication = { [weak self] in
       self?.recording?.target
