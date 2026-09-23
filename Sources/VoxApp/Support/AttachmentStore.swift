@@ -68,11 +68,19 @@ struct AttachmentStore: Sendable {
     let removed = AttachmentRetention.purge(files, now: now)
     for path in removed { try? manager.removeItem(atPath: path) }
     // ファイルを消しただけでは日付のフォルダが残り続けるので、空になったものは畳む。
-    let days = (try? manager.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
-    for day in days where (try? manager.contentsOfDirectory(atPath: day.path))?.isEmpty == true {
-      try? manager.removeItem(at: day)
+    // リンクは中を見ずに飛ばす（差し替えられたリンク越しに外のファイルを消さない）。
+    let days = (try? manager.contentsOfDirectory(
+      at: root, includingPropertiesForKeys: [.isSymbolicLinkKey])) ?? []
+    for day in days where !isSymbolicLink(day) {
+      if (try? manager.contentsOfDirectory(atPath: day.path))?.isEmpty == true {
+        try? manager.removeItem(at: day)
+      }
     }
     if !removed.isEmpty { voxLog("attachment_purged count=\(removed.count)") }
     return removed.count
+  }
+
+  private func isSymbolicLink(_ url: URL) -> Bool {
+    (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink == true
   }
 }

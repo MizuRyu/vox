@@ -163,6 +163,52 @@ struct AttachmentPasteTests {
     #expect(model.tail == "first second", "貼った順に差し込んでいない: \(model.tail)")
   }
 
+  /// 保存の完了から本文への差し込みまでを本物のテキストビューで通す。
+  /// 書き込みの間に選んだ文字は消さない（長さ 0 の位置に入れる）。
+  @Test("保存が終わるとテキストビューにパスが入り、選択は消えない")
+  func savedImageIsInsertedWithoutReplacingTheSelection() async throws {
+    let (store, root) = store()
+    defer { try? FileManager.default.removeItem(at: root) }
+    NSApplication.shared.setActivationPolicy(.prohibited)
+    let model = HudModel()
+    let coordinator = TranscriptEditor.Coordinator(model: model)
+    let scrollView = TranscriptEditor.makeScrollView(coordinator: coordinator)
+    let textView = try #require(
+      scrollView.documentView as? TranscriptTextView, "本文のテキストビューが組めない")
+    model.head = "貼り付け先"
+    model.resetToken += 1
+    coordinator.sync(textView)
+
+    textView.save(sample, kind: .png, coordinator: coordinator, store: store)
+    // 書き込みの途中で「貼り付け先」を選んだまま待つ。
+    textView.setSelectedRange(NSRange(location: 0, length: 5))
+    await model.awaitPendingAttachments()
+
+    let attachment = try #require(
+      (try? FileManager.default.contentsOfDirectory(atPath: store.root.path))?.first,
+      "添付が保存されていない")
+    #expect(textView.string.contains(".png"), "本文にパスが入っていない: \(textView.string)")
+    #expect(textView.string.contains("貼り付け先"), "選択していた文字が消えた: \(textView.string)")
+    #expect(model.transcript.text == textView.string, "本文モデルとビューが食い違う")
+    #expect(!attachment.isEmpty, "保存した日付フォルダの名前が空")
+  }
+
+  /// 2 枚以上待っている状態で HUD を出し直したら、**どの**書き込みも本文に入らない。
+  @Test("HUD を出し直すと待っている書き込みは全部捨てる")
+  func resetDropsEveryPendingWrite() async throws {
+    let model = HudModel()
+    model.trackAttachment {
+      try? await Task.sleep(for: .milliseconds(30))
+      model.tail += "first"
+    }
+    model.trackAttachment {
+      model.tail += "second"
+    }
+    model.resetAttachments()
+    await model.awaitPendingAttachments()
+    #expect(model.tail.isEmpty, "取り消した書き込みが本文に入った: \(model.tail)")
+  }
+
   @Test("画像の通知はキーヒントに戻り、HUD を出し直すと消える")
   func attachmentNoticeIsCleared() throws {
     let model = HudModel()

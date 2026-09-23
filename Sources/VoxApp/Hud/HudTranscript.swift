@@ -100,22 +100,26 @@ public final class HudModel: ObservableObject {
   // MARK: ADR-017 画像の添付
 
   /// 走っている書き込み。前の分に続けて走らせ、差し込みの順を貼った順に保つ。
-  private var attachmentTask: Task<Void, Never>?
+  /// 全部持つのは、HUD を出し直すときに**走っている分をすべて**取り消すため
+  /// （最後の 1 つを取り消しても、待っている先行分は前の回のパスを入れてしまう）。
+  private var attachmentTasks: [Task<Void, Never>] = []
   private var attachmentNoticeTask: Task<Void, Never>?
 
   func trackAttachment(_ work: @escaping @MainActor @Sendable () async -> Void) {
-    let previous = attachmentTask
-    attachmentTask = Task { @MainActor in
-      await previous?.value
-      await work()
-    }
+    let previous = attachmentTasks.last
+    attachmentTasks.append(
+      Task { @MainActor in
+        await previous?.value
+        guard !Task.isCancelled else { return }
+        await work()
+      })
   }
 
   /// 確定はここで書き込みを待つ。待っている間に貼られた分も終わるまで待つ。
   func awaitPendingAttachments() async {
-    while let task = attachmentTask {
+    while let task = attachmentTasks.first {
       await task.value
-      if attachmentTask == task { attachmentTask = nil }
+      if attachmentTasks.first == task { attachmentTasks.removeFirst() }
     }
   }
 
@@ -135,8 +139,8 @@ public final class HudModel: ObservableObject {
     attachmentNoticeTask?.cancel()
     attachmentNoticeTask = nil
     attachmentNotice = nil
-    attachmentTask?.cancel()
-    attachmentTask = nil
+    for task in attachmentTasks { task.cancel() }
+    attachmentTasks = []
   }
 
   /// パレットの確定。`plan.location` は全文のオフセット（T17）。
@@ -587,10 +591,11 @@ public final class TranscriptTextView: NSTextView {
 
   /// 書き込みが終わってからパスを入れる（本文にパスがあるならファイルがある、を保つ）。
   /// 確定はこの仕事を `awaitPendingAttachments()` で待つ。
-  private func save(
-    _ data: Data, kind: AttachmentImageKind, coordinator: TranscriptEditor.Coordinator
+  /// `store` を渡せるのは、検査が実際の保存先を触らないため（`Injector` の pasteboard と同じ理由）。
+  func save(
+    _ data: Data, kind: AttachmentImageKind, coordinator: TranscriptEditor.Coordinator,
+    store: AttachmentStore = .standard
   ) {
-    let store = AttachmentStore.standard
     coordinator.model.trackAttachment { [weak self] in
       let outcome = await Task.detached { store.save(data, kind: kind) }.value
       guard !Task.isCancelled, let self, let coordinator = self.coordinator else { return }
@@ -598,8 +603,10 @@ public final class TranscriptTextView: NSTextView {
         for: outcome, repositoryRoot: coordinator.model.repositoryRoot,
         homeDirectory: NSHomeDirectory()) {
       case .insert(let path):
-        guard let insertion = coordinator.filePathInsertion(
-          for: path, selection: self.selectedRange())
+        // 選択は置き換えない。書き込みの間に選んだ文字を消さないため、長さ 0 の位置に入れる
+        // （同期のファイルペーストは選択を置き換えるが、そちらは打鍵と同じ瞬間の操作）。
+        let caret = NSRange(location: selectedRange().location, length: 0)
+        guard let insertion = coordinator.filePathInsertion(for: path, selection: caret)
         else { return }
         self.insertText(insertion.text, replacementRange: insertion.range)
       case .notice(let message):
