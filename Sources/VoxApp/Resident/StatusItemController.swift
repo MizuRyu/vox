@@ -57,7 +57,28 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     menu.addItem(quit)
     statusItem.menu = menu
     update(phase: .idle)
+    NotificationCenter.default.addObserver(
+      self, selector: #selector(screenParametersChanged),
+      name: NSApplication.didChangeScreenParametersNotification, object: nil)
+    logFrames(reason: "startup")
   }
+
+  /// 項目の位置と可視性は OS が決める（Vox は矩形を計算しない）。
+  /// 画面外に置かれた回を後から確かめられるよう、配置が変わりうる契機で座標だけ残す。
+  func logFrames(reason: String) {
+    voxLog(
+      StatusItemDiagnostics.framesLine(
+        reason: reason, visible: statusItem.isVisible,
+        button: (statusItem.button?.window?.frame).map(Self.diagnosticRect),
+        screens: NSScreen.screens.map { Self.diagnosticRect($0.frame) }))
+  }
+
+  private static func diagnosticRect(_ frame: CGRect) -> StatusItemDiagnostics.Rect {
+    .init(
+      x: frame.origin.x, y: frame.origin.y, width: frame.size.width, height: frame.size.height)
+  }
+
+  @objc private func screenParametersChanged() { logFrames(reason: "screen_change") }
 
   func update(phase: ResidentPhase, detail: String? = nil) {
     self.phase = phase

@@ -169,6 +169,8 @@ final class ResidentCoordinator: NSObject, NSApplicationDelegate {
 
   private func showSetup() {
     guard !isTerminating else { return }
+    // メニューバー項目を押せないときに利用者が取れる唯一の操作なので、ここで矩形を残す。
+    statusItemController?.logFrames(reason: "setup_opened")
     refreshSetupPermissions(retryHotkeys: true)
     appControlsWindow?.show()
   }

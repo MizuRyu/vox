@@ -369,6 +369,14 @@
 | **期待結果** | 2つ目のプロセスは起動せず、既存の1プロセスのまま動作を続ける |
 | **自動化済み** | ロック機構の単体検査（`swift test --filter "InstanceLockTests"` の `second instance rejected without stopping first`） |
 
+### RES-06 メニューバー項目の位置が診断ログに残る
+
+| 項目 | 内容 |
+|---|---|
+| **前提** | Vox が起動中。ディスプレイが2枚以上つながっている |
+| **手順** | ディスプレイを1枚外す（または配置を変える）。`~/Library/Application Support/vox/logs/vox.log` を開く |
+| **期待結果** | `status_item_frames reason=screen_change` の行が1行増え、項目の矩形（`button=`）、可視性（`visible=`）、各画面の範囲（`screens=`）が残る。項目が押せないときは `on_screen=false` になる |
+
 ## DIST — バンドル配布
 
 ### DIST-01 dmgからインストールできる
