@@ -16,6 +16,8 @@ public final class SettingsModel: ObservableObject {
   @Published public private(set) var loadFailed = false
   @Published public private(set) var microphoneSnapshot: MicrophoneSnapshot = .unavailable
   @Published public private(set) var dictionaryMessage = ""
+  /// 表に出す行。ファイルの項目のあとに、左の列がまだ空の打ち込み途中の行が続く（ADR-021）。
+  @Published public private(set) var dictionaryEntries: [DictionaryEntry] = []
   public let defaults: HotkeyConfiguration
   public let overrides: HotkeyOverrides
   public var onSaved: (() -> Void)?
@@ -25,6 +27,12 @@ public final class SettingsModel: ObservableObject {
   private var loadedData: Data?
   private var original = HotkeySettings()
   private var resetting = false
+  /// nil は読めない辞書。表からは書かない（読めないファイルを表の内容で上書きしない）。
+  private var dictionaryDocument: DictionaryDocument?
+  /// 読んだときの中身。書く前に比べて、エディタでの変更を上書きしない。nil はファイルが無い回。
+  private var dictionaryContents: String?
+  /// 「追加」で足した、左の列がまだ空の行。画面にだけあり、1 行に限る。
+  private var dictionaryDraft: DictionaryEntry?
 
   public init(
     store: SettingsStore, defaults: HotkeyConfiguration, overrides: HotkeyOverrides = .init(),
@@ -43,10 +51,14 @@ public final class SettingsModel: ObservableObject {
     microphoneSnapshot = microphoneProvider()
   }
 
-  /// 辞書は設定画面で編集しないので、件数と直すべき行番号だけを出す（ADR-019）。
+  /// 件数と直すべき行番号を出す。壊れた行は表に出ないので、エディタで直してもらう（ADR-019）。
   public func refreshDictionary() {
     do {
-      guard let contents = try dictionary.contents() else {
+      let contents = try dictionary.contents()
+      dictionaryContents = contents
+      dictionaryDocument = DictionaryDocument(contents: contents ?? "")
+      publishDictionaryEntries()
+      guard let contents else {
         dictionaryMessage = "辞書ファイルはまだありません。"
         return
       }
@@ -54,7 +66,86 @@ public final class SettingsModel: ObservableObject {
       dictionaryMessage = "\(table.entries.count)件を読み込みました。"
         + skippedNotice(table.skippedLines)
     } catch {
+      dictionaryDocument = nil
+      dictionaryDraft = nil
+      publishDictionaryEntries()
       dictionaryMessage = "辞書ファイルを読み込めません。ファイルを確認してから「更新」を押してください。"
+    }
+  }
+
+  public var dictionaryEditable: Bool { dictionaryDocument != nil }
+
+  /// 空の行を表の末尾に足す。左の列が入るまでファイルには書かない。
+  public func addDictionaryEntry() {
+    guard dictionaryDocument != nil, dictionaryDraft == nil else { return }
+    dictionaryDraft = DictionaryEntry(from: "", to: "")
+    publishDictionaryEntries()
+  }
+
+  /// セルの確定ごとに呼ぶ。保存できない行は画面に残し、ファイルは変えない。
+  /// `original` はセルが表示していた行。行の削除などで位置がずれた後の遅れた確定を捨てるため。
+  public func updateDictionaryEntry(
+    at index: Int, replacing original: DictionaryEntry, from: String, to: String
+  ) {
+    guard var document = dictionaryDocument, dictionaryEntries.indices.contains(index),
+      dictionaryEntries[index] == original
+    else { return }
+    let entry = DictionaryEntry(from: from, to: to)
+    let isDraft = index == document.entries.count
+    do {
+      if isDraft {
+        dictionaryDraft = entry
+        try document.add(entry)
+      } else {
+        try document.update(at: index, entry: entry)
+      }
+    } catch {
+      publishDictionaryEntries()
+      if let message = Self.message(for: error) { dictionaryMessage = message }
+      return
+    }
+    guard write(document) else { return }
+    if isDraft { dictionaryDraft = nil }
+    refreshDictionary()
+  }
+
+  public func removeDictionaryEntry(at index: Int) {
+    guard var document = dictionaryDocument, dictionaryEntries.indices.contains(index) else { return }
+    guard index < document.entries.count else {
+      dictionaryDraft = nil
+      publishDictionaryEntries()
+      return
+    }
+    document.remove(at: index)
+    guard write(document) else { return }
+    refreshDictionary()
+  }
+
+  private func publishDictionaryEntries() {
+    dictionaryEntries = (dictionaryDocument?.entries ?? []) + [dictionaryDraft].compactMap(\.self)
+  }
+
+  /// why: 左の列が空の行は打ち込み途中として黙って残す（ADR-021）。
+  private static func message(for failure: DictionaryDocument.EditFailure) -> String? {
+    switch failure {
+    case .emptySource: nil
+    case .duplicateSource(let source): "「\(source)」はすでにあります。"
+    case .unrepresentable: "タブ・改行と、認識される表記の先頭の「#」は使えません。取り除いてください。"
+    }
+  }
+
+  private func write(_ document: DictionaryDocument) -> Bool {
+    do {
+      guard try dictionary.contents() == dictionaryContents else {
+        refreshDictionary()
+        dictionaryMessage = "辞書ファイルがほかで変更されていたため、読み込み直しました。もう一度編集してください。"
+        return false
+      }
+      try dictionary.save(document)
+      return true
+    } catch {
+      dictionaryMessage = "辞書を保存できませんでした。辞書ファイルを開いて直してください。"
+      return false
     }
   }
 

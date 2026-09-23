@@ -1,7 +1,7 @@
 import Foundation
 import VoxCore
 
-/// 辞書ファイルの場所と読み込み。形式の解釈は VoxCore（`DictionaryTable`）。
+/// 辞書ファイルの場所と読み書き。形式の解釈は VoxCore（`DictionaryTable` / `DictionaryDocument`）。
 /// 設定と同じ保存先に置き、同じ防御（通常ファイル・リンク数 1・所有者一致・上限）で読む。
 public struct DictionaryStore: Sendable {
   /// why: 1 行ずつ足す表なので、設定ファイルと同じ 64KiB を上限にする。
@@ -39,6 +39,13 @@ public struct DictionaryStore: Sendable {
     }
   }
 
+  /// 設定画面の表の編集を書く（ADR-021）。読めない大きさの内容は書かない。
+  func save(_ document: DictionaryDocument) throws {
+    let data = Data(document.serialized.utf8)
+    guard data.count <= Self.maximumBytes else { throw DictionaryStoreError.tooLarge }
+    try PrivateFileIO.write(data, to: url)
+  }
+
   /// 無ければ書き方だけを書いたファイルを作る。あるなら触らない。
   func createIfMissing() throws {
     do {
@@ -64,4 +71,5 @@ public struct DictionaryStore: Sendable {
 
 enum DictionaryStoreError: Error {
   case invalidText
+  case tooLarge
 }
