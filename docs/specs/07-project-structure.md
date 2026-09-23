@@ -68,7 +68,7 @@ images/                  README の画面例（合成データ）と再生成の
 | Audio/ | SpeechLane.swift, HALInputCapture.swift, AudioCaptureDiagnostics.swift, AudioInputConfiguration.swift |
 | Input/ | HotkeyMonitor.swift, Injector.swift, AccessibleInput.swift |
 | Hud/ | HudPanel.swift, VoxHudSupport/HudTranscript.swift |
-| Palette/ | PalettePanel.swift, PaletteView.swift, PaletteTargetResolver.swift, FileIndexer.swift |
+| Palette/ | PalettePanel.swift, PaletteView.swift, PaletteTargetResolver.swift, ZedWorkspaceReader.swift, FileIndexer.swift |
 | Settings/ | VoxSettingsSupport/*（SettingsView, SettingsController, SettingsModel, SettingsStore, SettingsStartup, MicrophoneDevices） |
 | Resident/ | StatusItemController.swift, AppControlsWindow.swift, LoginItemService.swift, AppInstanceLock.swift |
 | Support/ | Shell.swift, AppLogRouter.swift, Metrics.swift, History.swift |
@@ -81,7 +81,7 @@ images/                  README の画面例（合成データ）と再生成の
 | Audio/ | AudioTransport, MicrophoneInput（MicrophoneDevice / MicrophoneOutput を含む） |
 | Transcript/ | TranscriptBuffer, TranscriptCaret, FillerPass, SigilTrigger, AnalyzerFinalizePoint, SpeechAssetReadiness |
 | Injection/ | InjectionSafety, AutoEnter, TerminalAutoEnter, ActivationPolicy |
-| Palette/ | PaletteTarget, PaletteSigil, FileIndex, FileTree, FuzzyMatch, FilePathFormat, BoundedFileReader |
+| Palette/ | PaletteTarget（方式の選択と ps の解釈）, ZedWorkspace, FolderHistory, PaletteSigil, FileIndex, FileTree, FuzzyMatch, FilePathFormat, BoundedFileReader |
 | Settings/ | HotkeySettings, HotkeyBinding, SettingsPresentationState, SetupPermissions |
 | Resident/ | ResidentPolicy |
 | Records/ | HistoryRecord, MetricsRecord |

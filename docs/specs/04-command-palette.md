@@ -39,10 +39,29 @@ sigil の割り当てを設定画面で変更する機能は未実装です。
 ## 検索対象の解決
 
 検索対象は「トグル ON 時の前面アプリ」から導きます（R15、[ADR-011](../adr/011-hud-edit-mode-and-context-cwd.md)）。
+前面アプリの bundle identifier で 3 つの方式に振り分けます（[ADR-015](../adr/015-palette-target-from-frontmost-app.md)）。
 
-- **Orca が前面のとき** — Orca の画面でアクティブなローカル worktree を検索対象にする。
-- **ターミナルが前面のとき** — その cwd を含むリポジトリを検索対象にする。
-- **一意に決まらないとき** — `--repo` で指定した検索フォルダを使う。
+| 方式 | 対象アプリ | 決め方 |
+|---|---|---|
+| A アプリ固有 | Orca | `orca worktree ps --json` の、UI でアクティブなローカル worktree |
+| A アプリ固有 | Zed（stable / Preview / Nightly） | workspace DB の最前面ウィンドウが開いているプロジェクト |
+| B ターミナル汎用 | Terminal.app、Ghostty、cmux、iTerm2、Warp | 子孫プロセスの tty → その tty の最前景プロセスの cwd → git のルート |
+| C 決まらないとき | それ以外 | `--repo` → 最近使ったフォルダの最新 → カレントディレクトリ |
+
+対応アプリの表は `PaletteTargetAdapter`（VoxCore）1 か所にあり、ターミナルを足すのは 1 行です。
+
+方式 B は「前面アプリの PID から子孫プロセスをたどり、tty を持つもののうち `/dev/<tty>` の mtime が
+最も新しいものを見ているタブとみなす」推定です。バックグラウンドのタブに出力が流れていると、
+そちらが選ばれることがあります。
+
+方式 A の Zed は `~/Library/Application Support/Zed/db/0-<channel>/db.sqlite` を**読み取り専用**で開き、
+`kv_store.session_window_stack` の先頭ウィンドウ → `scoped_kv_store`（namespace `multi_workspace_state`）の
+`active_workspace_id` → `workspaces.paths` の先頭をたどります。Zed が見せているのは workspace そのものなので、
+git のルートまでは広げません。DB が無い・ロックされている・スキーマが違う回は方式 C に落ちます（案内は出しません）。
+
+待ち上限は 500ms で、A / B が期限内に返らなければ C に落ちます。
+方式 C で決まった回のヘッダは、`--repo`・最近使ったフォルダ・カレントディレクトリのいずれでも
+「対象を特定できず」の表示になります（前面アプリからは決まっていないため）。
 
 ### 同一リポジトリの別 worktree
 
@@ -82,7 +101,8 @@ Tree 表示から入ったときは Changes に戻します（描くのがファ
 切り替えた対象はその録音の間だけ有効です。パレットを閉じて開き直しても同じフォルダで、
 次の録音は再び自動解決から始まります。同じフォルダに固定する設定は持ちません。
 
-計測 JSONL の `palette_target_source` は、自動解決が `orca` / `terminal` / `fallback`、
+計測 JSONL の `palette_target_source` は、自動解決が `orca` / `zed` / `terminal`（方式 B の全アプリ）/
+`fallback`（`--repo` とカレントディレクトリ）/ `recent`（方式 C の最近使ったフォルダ）、
 切り替えた回が `worktree` / `recent`（候補行）/ `manual`（`NSOpenPanel`）です。
 
 ## 索引とプレビュー
