@@ -66,7 +66,7 @@ images/                  README の画面例（合成データ）と再生成の
 | 目標 | 現在のファイル |
 |---|---|
 | Session/App.swift | App.swift（接続点。段階 2 で Recording / Palette / Injection の coordinator に分ける） |
-| Audio/ | SpeechLane.swift, HALInputCapture.swift, AudioCaptureDiagnostics.swift, AudioInputConfiguration.swift |
+| Audio/ | SpeechLane.swift, AudioLevelTracker.swift, HALInputCapture.swift, AudioCaptureDiagnostics.swift, AudioInputConfiguration.swift |
 | Input/ | HotkeyMonitor.swift, Injector.swift, AccessibleInput.swift |
 | Hud/ | HudPanel.swift, VoxHudSupport/HudTranscript.swift |
 | Palette/ | PalettePanel.swift, PaletteView.swift, PaletteTargetResolver.swift, ZedWorkspaceReader.swift, FileIndexer.swift |
