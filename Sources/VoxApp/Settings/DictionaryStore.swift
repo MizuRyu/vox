@@ -40,10 +40,23 @@ public struct DictionaryStore: Sendable {
   }
 
   /// 設定画面の表の編集を書く（ADR-021）。読めない大きさの内容は書かない。
+  /// why: 一時ファイルに書き切ってから名前を置き換える。途中で失敗しても元の辞書（コメントを含む）を残すため。
   func save(_ document: DictionaryDocument) throws {
     let data = Data(document.serialized.utf8)
     guard data.count <= Self.maximumBytes else { throw DictionaryStoreError.tooLarge }
-    try PrivateFileIO.write(data, to: url)
+    // 既存の辞書がリンク・FIFO・読めないファイルなら置き換えない（読み込みと同じ防御）。
+    _ = try contents()
+    let temporary = url.deletingLastPathComponent()
+      .appendingPathComponent(".\(url.lastPathComponent).\(UUID().uuidString)")
+    do {
+      try PrivateFileIO.write(data, creating: temporary)
+      guard rename(temporary.path, url.path) == 0 else {
+        throw PrivateFileSafetyError.systemCall("rename", errno)
+      }
+    } catch {
+      unlink(temporary.path)
+      throw error
+    }
   }
 
   /// 無ければ書き方だけを書いたファイルを作る。あるなら触らない。

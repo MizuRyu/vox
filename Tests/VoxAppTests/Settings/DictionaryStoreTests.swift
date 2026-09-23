@@ -135,6 +135,21 @@ struct DictionaryStoreTests {
     #expect(try store.contents() == "松尾\t末尾\n", "上限超過で既存の辞書を書き換えた")
   }
 
+  /// 一時ファイルに書き切ってから置き換える。書けない回に元の辞書（コメントを含む）を切り詰めない。
+  @Test("書き込みに失敗しても元の辞書は残る")
+  func aFailedSaveKeepsTheOriginal() throws {
+    let (root, store) = fixture()
+    defer {
+      try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: root.path)
+      try? FileManager.default.removeItem(at: root)
+    }
+    try store.save(DictionaryDocument(contents: "# 説明\n松尾\t末尾\n"))
+    try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: root.path)
+
+    #expect(throws: (any Error).self) { try store.save(DictionaryDocument(contents: "")) }
+    #expect(try store.contents() == "# 説明\n松尾\t末尾\n", "失敗した保存で辞書を書き換えた")
+  }
+
   @Test("symlink・hardlink・FIFO の辞書には書かない")
   func unsafeDictionaryTargetsAreNotWritten() throws {
     let (root, _) = fixture()
