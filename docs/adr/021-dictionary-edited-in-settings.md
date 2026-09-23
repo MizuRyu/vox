@@ -1,6 +1,6 @@
 # ADR-021: 辞書は設定画面の表で編集し、ファイルは正のまま残す
 
-- 状態: **提案**（2026-09-24）
+- 状態: **承認**（2026-09-24。DICT-03 を実機で確認: 表からの追加・削除がファイルに反映され、次の録音で効いた）
 - 関連: [ADR-019](019-dictionary-surface-replacement.md)（辞書の形式と照合。本文は変えない）、[仕様 05](../specs/05-text-postprocessing.md)、[content-guidelines](../content-guidelines.md)
 
 ## 文脈
