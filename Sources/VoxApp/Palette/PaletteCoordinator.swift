@@ -306,10 +306,8 @@ final class PaletteCoordinator {
   }
 
   private func show(_ index: RepositoryIndex) {
-    panel.model.files = index.files
-    panel.model.changedCount = index.changedCount
-    panel.model.totalCount = index.totalCount
-    panel.model.refreshRows()
+    panel.model.setIndex(
+      files: index.files, changedCount: index.changedCount, totalCount: index.totalCount)
     startPreviewUpdates()
   }
 

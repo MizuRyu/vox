@@ -10,9 +10,10 @@ struct ResidentIndexSource {
   var gitDirectory: @MainActor (String) async -> String?
   var snapshot: @MainActor (String) async -> IndexSnapshot?
   var changes: @MainActor (String) async -> [String: FileChangeStatus]?
-  /// 監視の開始。返り値を捨てると監視は止まる。
-  var watch: @MainActor (_ paths: [String], _ onChange: @escaping @Sendable ([String]) -> Void)
-    -> FolderWatch?
+  /// 監視の開始。始められなければ nil（そのフォルダは常駐させない）。
+  var watch:
+    @MainActor (_ paths: [String], _ onChange: @escaping @Sendable (FolderChange) -> Void)
+      -> FolderWatching?
 
   // why: git の実行とファイルの列挙は main を止めるので detached に逃がす。
   static let git = ResidentIndexSource(
@@ -31,11 +32,13 @@ final class ResidentIndexStore {
   private struct Entry {
     var index: RepositoryIndex
     let resolvedGitDirectory: String
-    var watch: FolderWatch?
+    let watch: FolderWatching
     var rebuildCount = 0
     var isRebuilding = false
     /// 読み直している間に届いた変更。終わってからもう一度読む。
     var queued: IndexRefresh?
+    /// 索引を入れ替えた回数。走っている読み込みの結果が古いかを見る。
+    var revision = 0
   }
 
   private let source: ResidentIndexSource
@@ -43,6 +46,7 @@ final class ResidentIndexStore {
   /// folders.json と同じ新しい順。捨てるのは末尾から。
   private var roots: [String] = []
   private var entries: [String: Entry] = [:]
+  private var startTask: Task<Void, Never>?
 
   init(source: ResidentIndexSource = .git, fileBudget: Int = defaultFileBudget) {
     self.source = source
@@ -51,59 +55,78 @@ final class ResidentIndexStore {
 
   /// 起動時に 1 回。folders.json の読み込みと索引づくりで起動を待たせない。
   func start() {
-    Task { @MainActor in
+    startTask = Task { @MainActor in
       let history = await Task.detached { FolderHistoryStore.load() }.value
       await register(folders: history.entries.map(\.path))
     }
   }
 
   func stop() {
+    startTask?.cancel()
+    startTask = nil
     entries.removeAll()
     roots.removeAll()
   }
 
   /// git 管理下のフォルダだけを、渡された（新しい）順に常駐させる。
   func register(folders: [String]) async {
-    stop()
+    entries.removeAll()
+    roots.removeAll()
     for folder in folders.prefix(FolderHistory.limit) {
-      let root = Self.key(folder)
-      guard entries[root] == nil, let gitDirectory = await source.gitDirectory(root),
-        let snapshot = await source.snapshot(root)
-      else { continue }
-      roots.append(root)
-      entries[root] = Entry(
-        index: RepositoryIndex(root: root, snapshot: snapshot),
-        resolvedGitDirectory: Self.resolved(gitDirectory))
-      startWatching(root: root)
+      guard !Task.isCancelled else { return }
+      // why: 上限に届いたところで打ち切る。全件読んでから捨てると、一時的に上限を超えて持つ。
+      guard await register(folder: folder) else { break }
     }
-    evictOverBudget()
     voxLog("index_resident folders=\(roots.count) files=\(residentFileCount)")
+  }
+
+  /// まだ常駐させる余地があるか。git 管理外や監視できないフォルダは飛ばして続ける。
+  private func register(folder: String) async -> Bool {
+    let root = Self.key(folder)
+    guard entries[root] == nil, let gitDirectory = await source.gitDirectory(root) else { return true }
+    let resolved = Self.resolved(gitDirectory)
+    // why: 走査より先に監視を始める（Apple の手順）。後から始めると、走査してから監視が
+    // 始まるまでの変更を取りこぼす。FSEvents は実体のパスを返すので、渡す側も実体にする。
+    let watch = source.watch([Self.resolved(root), resolved]) { [weak self] change in
+      Task { @MainActor in self?.changed(change, root: root) }
+    }
+    guard let watch else {
+      voxLog("index_watch_failed root=\(voxLoggable(path: root))")
+      return true
+    }
+    guard let snapshot = await source.snapshot(root) else { return true }
+    roots.append(root)
+    entries[root] = Entry(
+      index: RepositoryIndex(root: root, snapshot: snapshot), resolvedGitDirectory: resolved,
+      watch: watch)
+    evictOverBudget()
+    return entries[root] != nil
   }
 
   /// パレットが開いたときの索引。登録済みなら保持している索引を先に渡してから、
   /// 読み直した索引をもう一度渡す。未登録は読み直した 1 度だけ。
   func load(root: String, show: @MainActor (RepositoryIndex) -> Void) async {
     let key = Self.key(root)
+    let revision = entries[key]?.revision
     if let resident = entries[key]?.index { show(resident) }
     let index = await source.load(root)
     show(index)
-    guard entries[key] != nil else { return }
-    entries[key]?.index = index
+    // why: 読んでいる間に監視の読み直しが新しい索引を入れた回は、古い結果で上書きしない。
+    guard let entry = entries[key], entry.revision == revision else { return }
+    replace(index, for: key)
+  }
+
+  private func replace(_ index: RepositoryIndex, for root: String) {
+    entries[root]?.index = index
+    entries[root]?.revision += 1
     evictOverBudget()
   }
 
-  private func startWatching(root: String) {
-    guard let gitDirectory = entries[root]?.resolvedGitDirectory else { return }
-    // why: FSEvents は実体のパスを返すので、監視する側も実体にしないと突き合わせがずれる。
-    entries[root]?.watch = source.watch([Self.resolved(root), gitDirectory]) { [weak self] paths in
-      Task { @MainActor in self?.changed(paths: paths, root: root) }
-    }
-  }
-
-  private func changed(paths: [String], root: String) {
+  private func changed(_ change: FolderChange, root: String) {
     guard let entry = entries[root],
       let refresh = ResidentIndexPolicy.refresh(
-        forChangedPaths: paths, gitDirectory: entry.resolvedGitDirectory)
+        forChangedPaths: change.paths, rescanRequired: change.rescanRequired,
+        gitDirectory: entry.resolvedGitDirectory)
     else { return }
     rebuild(root: root, refresh: refresh)
   }
@@ -143,7 +166,10 @@ final class ResidentIndexStore {
     guard var entry = entries[root] else { return }
     entry.isRebuilding = false
     entry.rebuildCount += 1
-    if let updated { entry.index = updated }
+    if let updated {
+      entry.index = updated
+      entry.revision += 1
+    }
     let queued = entry.queued
     entry.queued = nil
     entries[root] = entry

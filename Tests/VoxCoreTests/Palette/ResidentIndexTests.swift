@@ -9,22 +9,25 @@ import VoxCore
 struct ResidentIndexTests {
   private let gitDirectory = "/repos/vox/.git"
 
+  private func refresh(
+    _ paths: [String], rescanRequired: Bool = false, gitDirectory: String? = nil
+  ) -> IndexRefresh? {
+    ResidentIndexPolicy.refresh(
+      forChangedPaths: paths, rescanRequired: rescanRequired,
+      gitDirectory: gitDirectory ?? self.gitDirectory)
+  }
+
   // MARK: 読み直す範囲
 
   @Test("作業ツリーのファイルは status だけ読み直す")
   func aWorkingTreeChangeRereadsOnlyTheStatus() {
-    #expect(
-      ResidentIndexPolicy.refresh(
-        forChangedPaths: ["/repos/vox/Sources/App.swift", "/repos/vox/README.md"],
-        gitDirectory: gitDirectory) == .changesOnly)
+    #expect(refresh(["/repos/vox/Sources/App.swift", "/repos/vox/README.md"]) == .changesOnly)
   }
 
   @Test("`.git/index` と `.git/HEAD` は追跡ファイルの一覧も読み直す")
   func theIndexAndHeadRereadTheTrackedPaths() {
     for path in ["/repos/vox/.git/index", "/repos/vox/.git/HEAD"] {
-      #expect(
-        ResidentIndexPolicy.refresh(forChangedPaths: [path], gitDirectory: gitDirectory)
-          == .trackedAndChanges, "\(path) で追跡ファイルを読み直していない")
+      #expect(refresh([path]) == .trackedAndChanges, "\(path) で追跡ファイルを読み直していない")
     }
   }
 
@@ -35,9 +38,7 @@ struct ResidentIndexTests {
       "/repos/vox/.git/refs/heads/main", "/repos/vox/.git/objects/ab/cdef", "/repos/vox/.git"
     ]
     for path in paths {
-      #expect(
-        ResidentIndexPolicy.refresh(forChangedPaths: [path], gitDirectory: gitDirectory) == nil,
-        "\(path) で読み直しが走る")
+      #expect(refresh([path]) == nil, "\(path) で読み直しが走る")
     }
   }
 
@@ -45,33 +46,37 @@ struct ResidentIndexTests {
   func aLinkedWorktreeFindsItsOwnIndex() {
     let linked = "/repos/vox/.git/worktrees/feature"
     #expect(
-      ResidentIndexPolicy.refresh(forChangedPaths: ["\(linked)/index"], gitDirectory: linked)
-        == .trackedAndChanges, "worktree の index を見分けていない")
+      refresh(["\(linked)/index"], gitDirectory: linked) == .trackedAndChanges,
+      "worktree の index を見分けていない")
     #expect(
-      ResidentIndexPolicy.refresh(
-        forChangedPaths: ["/work/feature/Sources/App.swift"], gitDirectory: linked)
-        == .changesOnly, "作業ツリーの変更が status の読み直しにならない")
+      refresh(["/work/feature/Sources/App.swift"], gitDirectory: linked) == .changesOnly,
+      "作業ツリーの変更が status の読み直しにならない")
   }
 
   @Test("変更が無ければ読み直さない")
   func noPathsMeanNoWork() {
-    #expect(ResidentIndexPolicy.refresh(forChangedPaths: [], gitDirectory: gitDirectory) == nil)
+    #expect(refresh([]) == nil)
   }
 
   @Test("作業ツリーと index が同じ束で届いたら追跡ファイルも読み直す")
   func aBatchWithTheIndexRereadsTheTrackedPaths() {
     #expect(
-      ResidentIndexPolicy.refresh(
-        forChangedPaths: ["/repos/vox/Sources/App.swift", "/repos/vox/.git/index"],
-        gitDirectory: gitDirectory) == .trackedAndChanges)
+      refresh(["/repos/vox/Sources/App.swift", "/repos/vox/.git/index"]) == .trackedAndChanges)
+  }
+
+  @Test("取りこぼしを申告された回は、パスを見ずに全部読み直す")
+  func aDroppedBatchRereadsEverything() {
+    #expect(
+      refresh(["/repos/vox/.git/objects/ab/cdef"], rescanRequired: true) == .trackedAndChanges,
+      "無視するパスで読み直しを省いた")
+    #expect(
+      refresh([], rescanRequired: true) == .trackedAndChanges, "パスが無い申告で読み直しを省いた")
   }
 
   @Test("末尾の `/` が付いた git ディレクトリでも index を見分ける")
   func aTrailingSlashDoesNotHideTheIndex() {
     #expect(
-      ResidentIndexPolicy.refresh(
-        forChangedPaths: ["/repos/vox/.git/index"], gitDirectory: "/repos/vox/.git/")
-        == .trackedAndChanges)
+      refresh(["/repos/vox/.git/index"], gitDirectory: "/repos/vox/.git/") == .trackedAndChanges)
   }
 
   // MARK: status だけ読み直した更新

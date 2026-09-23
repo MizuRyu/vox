@@ -2,7 +2,7 @@
 // 並びと検索は VoxCore.FileIndex / FuzzyMatch が持つ（テストのため）。
 //
 // git 管理外のディレクトリでは `fd -t f` にフォールバックする（指示書）。
-// M3 は「開いたときに 1 回読む」。FSEvents の差分更新（設計書 §5）は入れていない。
+// 開いたときに 1 回読む。登録フォルダを FSEvents で追い続けるのは ResidentIndexStore（T38-b）。
 
 import Foundation
 import VoxCore
@@ -15,8 +15,6 @@ struct RepositoryIndex: Sendable {
   /// ヘッダの「Changes  n / total」用。
   var changedCount: Int { snapshot.changes.count }
   var totalCount: Int { files.count }
-
-  static let empty = RepositoryIndex(root: "", snapshot: .empty)
 
   init(root: String, snapshot: IndexSnapshot) {
     self.root = root

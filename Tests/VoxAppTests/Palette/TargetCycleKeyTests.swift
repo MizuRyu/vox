@@ -66,6 +66,24 @@ struct TargetCycleKeyTests {
     #expect(model.cycleTargets.map(\.root) == expected, "Tree 表示で輪が変わった: \(model.cycleTargets)")
   }
 
+  @Test("同じフォルダが worktree 候補と履歴の両方にあっても輪には 1 度だけ出る")
+  func theCycleKeepsEachFolderOnce() {
+    let model = PaletteModel()
+    model.resolvingTarget = false
+    model.target = PaletteTarget(root: "/repos/vox", source: .orca)
+    model.setWorktrees([WorktreeCandidate(path: "/work/feature", branch: "feature")])
+    model.setFolderHistory(
+      FolderHistory(
+        entries: [
+          FolderHistoryEntry(path: "/work/feature/", lastUsedAt: at(40), useCount: 3),
+          FolderHistoryEntry(path: "/repos/alpha", lastUsedAt: at(30), useCount: 2)
+        ]))
+    #expect(
+      model.cycleTargets.map(\.root) == ["/work/feature", "/repos/alpha"],
+      "同じフォルダが輪に二重に入っている: \(model.cycleTargets.map(\.root))")
+    #expect(model.cycleTargets.first?.source == .worktree, "先に出た worktree 候補を落とした")
+  }
+
   @Test("押すたびに次の候補へ移り、選び直した後は輪を写し直す")
   func cyclingWalksTheCandidatesAndIsRecapturedAfterAPick() async throws {
     let allowCurrentDirectory = VoxConfig.allowCurrentDirectoryFallback

@@ -9,6 +9,9 @@ import VoxCore
 @MainActor
 @Suite("Palette: 常駐索引")
 struct ResidentIndexStoreTests {
+  /// FSEvents を開かない監視の代わり。常駐索引は生存だけを見る。
+  private final class NoWatch: FolderWatching {}
+
   /// git の代わりに答える置き場。`tracked` にあるフォルダだけ git 管理下として扱う。
   @MainActor
   final class Repositories {
@@ -17,14 +20,19 @@ struct ResidentIndexStoreTests {
     var trackedReads: [String] = []
     var changeReads: [String] = []
     var watched: [[String]] = []
-    /// 監視を始めた口。検査から変更を流し込む。
-    private var handlers: [@Sendable ([String]) -> Void] = []
+    /// 監視を始められないフォルダ（`FSEventStreamStart` の失敗に相当）。
+    var unwatchable: Set<String> = []
+    /// 開くたびの読み込みを止めておく。検査が `resumeLoad` で進める。
+    var holdsLoad = false
+    private var heldLoad: CheckedContinuation<Void, Never>?
+    private var handlers: [@Sendable (FolderChange) -> Void] = []
 
     var source: ResidentIndexSource {
       ResidentIndexSource(
         // 常駐索引と見分けられるように、開くたびの読み込みは別の中身を返す。
-        load: { root in
-          RepositoryIndex(
+        load: { [self] root in
+          if holdsLoad { await withCheckedContinuation { heldLoad = $0 } }
+          return RepositoryIndex(
             root: root, snapshot: IndexSnapshot(trackedPaths: ["reloaded.swift"], changes: [:]))
         },
         gitDirectory: { [self] root in tracked[root] == nil ? nil : root + "/.git" },
@@ -39,13 +47,24 @@ struct ResidentIndexStoreTests {
         },
         watch: { [self] paths, onChange in
           watched.append(paths)
+          guard let root = paths.first, !unwatchable.contains(root) else { return nil }
           handlers.append(onChange)
-          return nil
+          return NoWatch()
         })
     }
 
-    func emit(_ paths: [String]) {
-      for handler in handlers { handler(paths) }
+    var isLoadHeld: Bool { heldLoad != nil }
+
+    func resumeLoad() {
+      let held = heldLoad
+      heldLoad = nil
+      held?.resume()
+    }
+
+    func emit(_ paths: [String], rescanRequired: Bool = false) {
+      for handler in handlers {
+        handler(FolderChange(paths: paths, rescanRequired: rescanRequired))
+      }
     }
   }
 
@@ -128,6 +147,77 @@ struct ResidentIndexStoreTests {
     #expect(await shown(store, root: "/new").count == 2, "上限内の索引を捨てた")
     #expect(
       await shown(store, root: "/old").count == 1, "上限を超えたのに古い索引が残った")
+  }
+
+  @Test("常駐させるのは新しい順に 20 件まで")
+  func onlyTheNewestTwentyFoldersBecomeResident() async {
+    let repositories = Repositories()
+    let folders = (0..<21).map { "/git\($0)" }
+    for folder in folders { repositories.tracked[folder] = ["a.swift"] }
+    let store = ResidentIndexStore(source: repositories.source, fileBudget: 1000)
+    await store.register(folders: folders)
+
+    #expect(await shown(store, root: folders[19]).count == 2, "20 件目を常駐させていない")
+    #expect(await shown(store, root: folders[20]).count == 1, "21 件目を常駐させた")
+  }
+
+  @Test("取りこぼしの申告では、パスに関係なく追跡ファイルも読み直す")
+  func aDroppedBatchRereadsTheTrackedPaths() async {
+    let repositories = Repositories()
+    repositories.tracked["/git"] = ["a.swift"]
+    let store = ResidentIndexStore(source: repositories.source, fileBudget: 1000)
+    await store.register(folders: ["/git"])
+
+    repositories.tracked["/git"] = ["a.swift", "c.swift"]
+    repositories.emit(["/git/.git/objects/ab/cdef"], rescanRequired: true)
+    await waitUntil { repositories.trackedReads.count == 2 }
+
+    let shown = await shown(store, root: "/git")
+    #expect(shown.first == ["a.swift", "c.swift"], "取りこぼしの後に追跡ファイルを読み直していない: \(shown)")
+  }
+
+  @Test("監視を始められないフォルダは常駐させない")
+  func anUnwatchableFolderIsNotResident() async {
+    let repositories = Repositories()
+    repositories.tracked["/git"] = ["a.swift"]
+    repositories.tracked["/other"] = ["b.swift"]
+    repositories.unwatchable = ["/git"]
+    let store = ResidentIndexStore(source: repositories.source, fileBudget: 1000)
+    await store.register(folders: ["/git", "/other"])
+
+    #expect(await shown(store, root: "/git").count == 1, "監視できないフォルダを常駐させた")
+    #expect(await shown(store, root: "/other").count == 2, "後続のフォルダまで飛ばした")
+  }
+
+  @Test("開くたびの読み込みが遅れても、先に届いた監視の更新を上書きしない")
+  func aSlowReloadDoesNotOverwriteANewerRebuild() async {
+    let repositories = Repositories()
+    repositories.tracked["/git"] = ["a.swift"]
+    let store = ResidentIndexStore(source: repositories.source, fileBudget: 1000)
+    await store.register(folders: ["/git"])
+
+    repositories.holdsLoad = true
+    var shownDuringLoad: [[String]] = []
+    let opening = Task { @MainActor in
+      await store.load(root: "/git") { shownDuringLoad.append(paths(of: $0)) }
+    }
+    await waitUntil { repositories.isLoadHeld }
+
+    // 読み込みを待たせている間に .git/index が動く（新しい索引が入る）。
+    repositories.tracked["/git"] = ["a.swift", "c.swift"]
+    repositories.emit(["/git/.git/index"])
+    await waitUntil { repositories.trackedReads.count == 2 }
+    repositories.holdsLoad = false
+    repositories.resumeLoad()
+    await opening.value
+
+    #expect(
+      shownDuringLoad == [["a.swift"], ["reloaded.swift"]],
+      "開いた側には読み込んだ索引を出す: \(shownDuringLoad)")
+    let shown = await shown(store, root: "/git")
+    #expect(
+      shown.first == ["a.swift", "c.swift"],
+      "古い読み込みが新しい索引を上書きした: \(shown)")
   }
 
   @Test("末尾の `/` が付いたパスでも同じ索引を返す")

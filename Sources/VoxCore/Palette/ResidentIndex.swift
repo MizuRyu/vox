@@ -17,8 +17,6 @@ public struct IndexSnapshot: Equatable, Sendable {
   public let trackedPaths: [String]
   public let changes: [String: FileChangeStatus]
 
-  public static let empty = IndexSnapshot(trackedPaths: [], changes: [:])
-
   public init(trackedPaths: [String], changes: [String: FileChangeStatus]) {
     self.trackedPaths = trackedPaths
     self.changes = changes
@@ -48,7 +46,11 @@ public struct ResidentIndexSize: Equatable, Sendable {
 public enum ResidentIndexPolicy {
   /// FSEvents が伝えたパスから読み直す範囲を決める。`nil` は読み直さない。
   /// git ディレクトリの中は `index` と `HEAD` だけ見る（`index.lock` や `refs/` は無視する）。
-  public static func refresh(forChangedPaths paths: [String], gitDirectory: String) -> IndexRefresh? {
+  /// why: `rescanRequired`（取りこぼしや集約の申告）の回はパスが当てにならないので、全部読み直す。
+  public static func refresh(
+    forChangedPaths paths: [String], rescanRequired: Bool, gitDirectory: String
+  ) -> IndexRefresh? {
+    guard !rescanRequired else { return .trackedAndChanges }
     let gitDirectory = FilePathFormat.standardized(gitDirectory)
     var refresh: IndexRefresh?
     for path in paths {
