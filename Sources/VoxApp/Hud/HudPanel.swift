@@ -170,9 +170,10 @@ final class VoxPanel: NSPanel {
 
   override func resignKey() {
     super.resignKey()
-    let since = becameKeyMilliseconds.map { String(Int(voxNowMilliseconds() - $0)) } ?? "-"
+    // hide() は確定時の resign の後にもう一度呼ぶ。key を持っていなかった回は出さない。
+    guard let became = becameKeyMilliseconds else { return }
     becameKeyMilliseconds = nil
-    voxLog("hud_key state=resigned since_key_ms=\(since)")
+    voxLog("hud_key state=resigned since_key_ms=\(Int(voxNowMilliseconds() - became))")
   }
 }
 

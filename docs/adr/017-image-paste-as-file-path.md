@@ -1,6 +1,6 @@
 # ADR-017 貼り付けた画像は一時ファイルに書き、本文にはパスを入れる
 
-- 状態: 提案
+- 状態: 承認（2026-09-24。ATT-01 を実機で確認: 画像だけを貼るとパスが本文に入り、貼り付け先にも渡った）
 - 日付: 2026-09-23
 - 関連: [ADR-009 テキスト挿入は promise pasteboard 方式](009-text-insertion-promise-pasteboard.md)、[ADR-014 自動 Enter は読み返せるかで決める](014-auto-enter-readability-decides.md)、[08 画像の添付](../specs/08-image-attachments.md)、[使い方](../usage.md#録音と貼り付け)
 

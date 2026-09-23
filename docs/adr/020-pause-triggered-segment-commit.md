@@ -1,6 +1,6 @@
 # ADR-020: 発話の間（無音）を検出して、そこまでを本体側から確定する
 
-- 状態: **提案**（2026-09-23）
+- 状態: **承認**（2026-09-24。REC-13 を実機で確認: 1 回の録音で 4 回区切り、確定までの体感が明確に短くなった）
 - 関連: [ADR-002](002-two-lane-transcription.md)（二段構成、確定レーンは未実装）、[ADR-007](007-latency-measurement-method.md)（`finalize` の呼び方）、[仕様 03](../specs/03-architecture.md)、[仕様 04](../specs/04-command-palette.md)
 
 ## 文脈

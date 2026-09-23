@@ -126,6 +126,7 @@ HUD の歯車と `--settings` から設定画面を開けます。録音・フ�
 - **main queue を溢れさせると CGEventTap がタイムアウトで停止し、ホットキーが効かなくなる。** 波形更新（毎秒 15 回）の `updateNSView` で
   `DispatchQueue.main.async` を積んだら発生した。UI 更新は同期・回数制限で行う
 - `.nonactivatingPanel` の `makeKey()` は約 1.2 秒後に key を失う挙動が観測されている。
+  2026-09-24 の実機ログでは HUD が 25 秒間 key を保持した（`hud_key state=resigned since_key_ms=25099`）。再現しない場合がある
   HUD を常時 key にする設計（R14）では `show()` で取り直しているが、維持されるかは実機確認が要る
 
 ## テキスト契約 — Handy 方式を採用する
