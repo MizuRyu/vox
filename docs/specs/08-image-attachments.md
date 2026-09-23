@@ -20,6 +20,7 @@ HUD に貼った画像の扱い。判断の理由は [ADR-017](../adr/017-image-
 ## 振り分け
 
 `⌘V` の分岐は VoxCore の `AttachmentPaste` が決める（純粋関数。利用可能な型だけを見る）。
+HUD の `VoxPanel` は `⌘V` `⌘C` `⌘X` `⌘A` `⌘Z` `⌘⇧Z` を Edit メニューを通さず、自分の first responder へ直接送る（対応は VoxCore の `HudEditCommand`）。アプリが active でない間は main menu のキー等価が届かない疑いがあるため。Edit メニューはそのまま残す。
 
 | 順 | 条件 | 結果 |
 |---|---|---|
