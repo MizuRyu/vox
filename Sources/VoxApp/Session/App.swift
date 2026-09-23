@@ -91,8 +91,8 @@ final class VoxController {
       guard let self else { return }
       await lane.finalizeSegment()
     }
-    palette.targetBundleIdentifier = { [weak self] in
-      self?.recording?.target?.bundleIdentifier
+    palette.targetApplication = { [weak self] in
+      self?.recording?.target
     }
     palette.onMetric = { [weak self] metric in self?.record(metric) }
     // T13。HUD のテキスト領域に打った sigil。shouldChangeTextIn からここに来る。

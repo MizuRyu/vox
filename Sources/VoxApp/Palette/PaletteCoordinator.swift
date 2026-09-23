@@ -20,8 +20,8 @@ final class PaletteCoordinator {
 
   /// 開いた時点の tentative を final として締める。給餌ループとは別のタスクから呼ぶ（ADR-007）。
   var finalizeSegment: @MainActor () async -> Void = {}
-  /// R16 で固定した挿入先。検索対象の解決に使う。
-  var targetBundleIdentifier: @MainActor () -> String? = { nil }
+  /// R16 で固定した挿入先。bundle id で解決の方式を選び、pid から子孫の tty を辿る（ADR-015）。
+  var targetApplication: @MainActor () -> NSRunningApplication? = { nil }
   var onMetric: @MainActor (Metric) -> Void = { _ in }
 
   private(set) var isOpen = false
@@ -87,26 +87,31 @@ final class PaletteCoordinator {
 
     setupTask = Task { @MainActor in
       // T23。最近使ったフォルダはファイル読み込みなので detached。候補行は索引より先に出る。
-      let folders = Task.detached { FolderHistoryStore.load() }
-      let repositories = VoxConfig.fallbackRepositories
+      // ADR-015 方式 C は最新のフォルダを使うので、解決より先に読み終える。
+      let folders = await Task.detached { FolderHistoryStore.load() }.value
+      let application = targetApplication()
       // T23。この録音で選び直したフォルダがあれば、自動解決に戻さない。
       let target: PaletteTarget?
       if let chosenTarget {
         target = chosenTarget
       } else {
         target = await PaletteTargetResolver.resolve(
-          bundleIdentifier: targetBundleIdentifier(), fallbackRepositories: repositories)
+          bundleIdentifier: application?.bundleIdentifier,
+          processID: application?.processIdentifier,
+          fallbackRepositories: VoxConfig.fallbackRepositories,
+          recentFolder: folders.entries.first?.path)
       }
       // 計測は取り消し判定より先に入れる（早く閉じた回も何で解決したかは残す）。
       onMetric(.targetResolved(target?.source.rawValue))
       guard !Task.isCancelled else { return }
       panel.model.target = target
-      panel.model.targetUnresolved = target == nil || target?.source == .fallback
+      panel.model.targetUnresolved = chosenTarget == nil
+        && target?.source.resolvedFromFrontmostApp != true
       panel.model.resolvingTarget = false
       // T20。HUD にファイルをペーストしたときの相対パスの基準（未解決なら nil のまま）。
       hud.model.repositoryRoot = target?.root
       // 対象を置いた後に履歴を入れる（今の対象を候補から外すため）。
-      panel.model.setFolderHistory(await folders.value)
+      panel.model.setFolderHistory(folders)
       guard !Task.isCancelled else { return }
 
       guard let root = target?.root else { return }

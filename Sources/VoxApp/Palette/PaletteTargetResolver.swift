@@ -1,11 +1,12 @@
-// R15 / ADR-011。パレットの検索対象を、トグル ON 時に固定した targetApp から導く。
+// R15 / ADR-011 / ADR-015。パレットの検索対象を、トグル ON 時に固定した targetApp から導く。
 //
-//   com.stablyai.orca  → `orca worktree ps --json` の UI-active local worktree path
-//   com.apple.Terminal → AppleScript で tty → ps で最前景プロセス → proc_pidinfo で cwd → git のルート
-//   それ以外            → 設定のリポジトリ（--repo）、無ければカレントディレクトリ
+//   Orca       → `orca worktree ps --json` の UI-active local worktree path
+//   Zed        → workspace DB の最前面ウィンドウが開いているプロジェクト
+//   ターミナル → 子孫プロセスの tty → その tty の最前景プロセス → cwd → git のルート
+//   それ以外   → `--repo` → 最近使ったフォルダ → カレントディレクトリ
 //
 // アダプタはパレットを開いた瞬間に非同期で走らせ、500ms 以内に返らなければフォールバックする。
-// 解釈（JSON / ps の出力）は VoxCore 側でテストしている。
+// 解釈（JSON / ps / DB の行）は VoxCore 側でテストしている。
 
 import Darwin
 import Foundation
@@ -15,39 +16,44 @@ enum PaletteTargetResolver {
   /// アダプタの待ち上限（指示書「500ms 以内に来なければフォールバック」）。
   static let timeoutMilliseconds = 500
 
-  /// `fallbackRepositories` は `--repo` の指定。空ならカレントディレクトリ。
+  /// `fallbackRepositories` は `--repo` の指定。`recentFolder` は最近使ったフォルダの最新（T23）。
   /// 対象を 1 つも作れなかったときだけ nil（ヘッダに「対象を特定できず」を出す側の判断材料）。
-  static func resolve(bundleIdentifier: String?, fallbackRepositories: [String]) async
-    -> PaletteTarget? {
-    let adapter = PaletteTargetAdapter.forBundleIdentifier(bundleIdentifier)
+  static func resolve(
+    bundleIdentifier: String?, processID: Int32?, fallbackRepositories: [String],
+    recentFolder: String?
+  ) async -> PaletteTarget? {
     let deadline = ContinuousClock.now.advanced(by: .milliseconds(timeoutMilliseconds))
-    if adapter != .none, let root = adapterRoot(adapter, deadline: deadline) {
-      let source: PaletteTargetSource = adapter == .orca ? .orca : .terminal
-      voxLog("palette_target source=\(source.rawValue) root=\(voxLoggable(path: root))")
-      return PaletteTarget(root: root, source: source)
-    }
-    guard
-      let root = fallbackRoot(
-        fallbackRepositories, allowCurrentDirectory: VoxConfig.allowCurrentDirectoryFallback)
-    else {
+    let target =
+      frontmostAppTarget(
+        bundleIdentifier: bundleIdentifier, processID: processID, deadline: deadline)
+      ?? fallbackTarget(
+        repositories: fallbackRepositories, recentFolder: recentFolder,
+        allowCurrentDirectory: VoxConfig.allowCurrentDirectoryFallback)
+    guard let target else {
       voxLog("palette_target source=none")
       return nil
     }
-    voxLog("palette_target source=fallback root=\(voxLoggable(path: root))")
-    return PaletteTarget(root: root, source: .fallback)
+    voxLog(
+      "palette_target source=\(target.source.rawValue) root=\(voxLoggable(path: target.root))")
+    return target
   }
 
-  private static func adapterRoot(
-    _ adapter: PaletteTargetAdapter, deadline: ContinuousClock.Instant
-  ) -> String? {
-    switch adapter {
-    case .orca: orcaWorktreePath(deadline: deadline)
-    case .terminalApp: terminalAppRepositoryRoot(deadline: deadline)
-    case .none: nil
+  private static func frontmostAppTarget(
+    bundleIdentifier: String?, processID: Int32?, deadline: ContinuousClock.Instant
+  ) -> PaletteTarget? {
+    switch PaletteTargetAdapter.forBundleIdentifier(bundleIdentifier) {
+    case .orca:
+      orcaWorktreePath(deadline: deadline).map { PaletteTarget(root: $0, source: .orca) }
+    case .zed(let channel):
+      zedProjectRoot(channel: channel, deadline: deadline)
+        .map { PaletteTarget(root: $0, source: .zed) }
+    case .terminal:
+      processID.flatMap { terminalRepositoryRoot(of: $0, deadline: deadline) }
+        .map { PaletteTarget(root: $0, source: .terminal) }
+    case .none:
+      nil
     }
   }
-
-  // MARK: Orca
 
   private static func orcaWorktreePath(deadline: ContinuousClock.Instant) -> String? {
     guard
@@ -60,37 +66,51 @@ enum PaletteTargetResolver {
       voxLog("palette_target orca_parse_failed")
       return nil
     }
-    var isDirectory: ObjCBool = false
-    guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory),
-      isDirectory.boolValue
-    else {
+    guard isDirectory(path) else {
       voxLog("palette_target orca_path_unavailable")
       return nil
     }
     return path
   }
 
-  // MARK: Terminal.app
+  /// why: Zed が見せているのは workspace そのものなので、`git rev-parse` でリポジトリの
+  /// ルートまで広げない（サブディレクトリを開いている回に対象が勝手に広がる）。
+  private static func zedProjectRoot(channel: String, deadline: ContinuousClock.Instant) -> String? {
+    guard let root = ZedWorkspaceReader.frontmostRoot(channel: channel, deadline: deadline),
+      isDirectory(root)
+    else { return nil }
+    return root
+  }
 
-  private static func terminalAppRepositoryRoot(deadline: ContinuousClock.Instant) -> String? {
-    let script = "tell application \"Terminal\" to tty of selected tab of front window"
-    guard let ttyOutput = Shell.run("osascript", ["-e", script], deadline: deadline),
-      ttyOutput.succeeded
-    else {
-      return nil
-    }
-    let tty = ttyOutput.standardOutput.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard tty.hasPrefix("/dev/") else { return nil }
-    let device = String(tty.dropFirst("/dev/".count))
+  // MARK: ターミナル
+
+  /// ADR-015 方式 B。前面アプリの子孫プロセスのうち、最後に書き込みがあった tty を使う。
+  private static func terminalRepositoryRoot(
+    of processID: Int32, deadline: ContinuousClock.Instant
+  ) -> String? {
+    guard
+      let tree = Shell.run("ps", ["-axo", "pid,ppid,tty,comm"], deadline: deadline),
+      tree.succeeded
+    else { return nil }
+    let devices = ProcessTree.terminalDevices(
+      fromPsOutput: tree.standardOutput, ofDescendantsOf: processID)
+    guard let device = TerminalDevice.mostRecentlyUsed(devices.compactMap(device(named:)))
+    else { return nil }
 
     guard
-      let psOutput = Shell.run(
-        "ps", ["-t", device, "-o", "pid=,comm="], deadline: deadline),
-      psOutput.succeeded,
-      let pid = ProcessListParser.foregroundProcessID(fromPsOutput: psOutput.standardOutput),
+      let processes = Shell.run("ps", ["-t", device, "-o", "pid=,comm="], deadline: deadline),
+      processes.succeeded,
+      let pid = ProcessListParser.foregroundProcessID(fromPsOutput: processes.standardOutput),
       let cwd = workingDirectory(of: pid)
     else { return nil }
     return repositoryRoot(containing: cwd, deadline: deadline) ?? cwd
+  }
+
+  /// mtime を取れない tty は候補から落とす（閉じかけのタブ）。
+  private static func device(named name: String) -> TerminalDevice? {
+    let attributes = try? FileManager.default.attributesOfItem(atPath: "/dev/\(name)")
+    guard let modifiedAt = attributes?[.modificationDate] as? Date else { return nil }
+    return TerminalDevice(name: name, modifiedAt: modifiedAt)
   }
 
   /// `proc_pidinfo(PROC_PIDVNODEPATHINFO)` で cwd を取る（ADR-011）。
@@ -123,7 +143,7 @@ enum PaletteTargetResolver {
     return root.isEmpty ? nil : root
   }
 
-  /// T38-a。切り替え先に出す兄弟 worktree。消えたパスは候補から落とす。
+  /// why: T38-a。git は消えたディレクトリの worktree も出力に残すので、存在するものだけ候補にする。
   static func worktreeCandidates(root: String, deadline: ContinuousClock.Instant)
     -> [WorktreeCandidate] {
     guard
@@ -132,26 +152,28 @@ enum PaletteTargetResolver {
       output.succeeded
     else { return [] }
     return GitWorktreeList.candidates(fromPorcelain: output.standardOutput, excluding: root)
-      .filter { candidate in
-        var isDirectory: ObjCBool = false
-        return FileManager.default.fileExists(atPath: candidate.path, isDirectory: &isDirectory)
-          && isDirectory.boolValue
-      }
+      .filter { isDirectory($0.path) }
   }
 
-  private static func fallbackRoot(
-    _ repositories: [String], allowCurrentDirectory: Bool
-  ) -> String? {
+  /// ADR-015 方式 C。`--repo` → 最近使ったフォルダ → カレントディレクトリ。
+  private static func fallbackTarget(
+    repositories: [String], recentFolder: String?, allowCurrentDirectory: Bool
+  ) -> PaletteTarget? {
     for repository in repositories {
       let expanded = (repository as NSString).expandingTildeInPath
-      var isDirectory: ObjCBool = false
-      if FileManager.default.fileExists(atPath: expanded, isDirectory: &isDirectory),
-        isDirectory.boolValue {
-        return expanded
-      }
+      if isDirectory(expanded) { return PaletteTarget(root: expanded, source: .fallback) }
+    }
+    if let recentFolder, isDirectory(recentFolder) {
+      return PaletteTarget(root: recentFolder, source: .recent)
     }
     guard allowCurrentDirectory else { return nil }
     let current = FileManager.default.currentDirectoryPath
-    return current.isEmpty ? nil : current
+    return current.isEmpty ? nil : PaletteTarget(root: current, source: .fallback)
+  }
+
+  private static func isDirectory(_ path: String) -> Bool {
+    var isDirectory: ObjCBool = false
+    return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
+      && isDirectory.boolValue
   }
 }
