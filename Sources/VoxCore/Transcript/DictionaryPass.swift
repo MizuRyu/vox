@@ -34,24 +34,45 @@ public struct DictionaryTable: Sendable {
   /// `置き換える表記<TAB>入れたい表記` の行を読む。`#` で始まる行と空白だけの行は無視し、
   /// 列数が合わない行・左辺が空の行・左辺が重複する行は落として行番号を残す。
   public init(contents: String) {
-    var entries: [DictionaryEntry] = []
-    var skipped: [Int] = []
+    let lines = DictionaryLine.parse(contents)
+    // 長い左辺から試すために並べ替える（「松尾さん」を「松尾」より先に当てる）。
+    entries = lines.compactMap(\.entry).sorted { $0.from.count > $1.from.count }
+    skippedLines = lines.indices.filter { lines[$0].isSkipped }.map { $0 + 1 }
+  }
+}
+
+/// 辞書ファイルの 1 行の解釈。表（`DictionaryTable`）と編集（`DictionaryDocument`）が
+/// 同じ規則で読むように、行の判定はここだけに置く。
+enum DictionaryLine: Equatable, Sendable {
+  case entry(DictionaryEntry)
+  /// `#` で始まる行と空白だけの行。
+  case ignored(String)
+  /// 列数が合わない行・左辺が空の行・左辺が重複する行。
+  case skipped(String)
+
+  var entry: DictionaryEntry? {
+    if case .entry(let entry) = self { return entry }
+    return nil
+  }
+
+  var isSkipped: Bool {
+    if case .skipped = self { return true }
+    return false
+  }
+
+  static func parse(_ contents: String) -> [Self] {
     var seen: Set<String> = []
     // why: 区切りは `\.isNewline` で見る。CRLF は 1 Character なので `separator: "\n"` では切れず、
     // 右辺の末尾に見えない改行が残る。
     let lines = contents.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline)
-    for (offset, line) in lines.enumerated() {
-      if line.hasPrefix("#") || line.allSatisfy(\.isWhitespace) { continue }
+    return lines.map { line in
+      if line.hasPrefix("#") || line.allSatisfy(\.isWhitespace) { return .ignored(String(line)) }
       let columns = line.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
       guard columns.count == 2, !columns[0].isEmpty, seen.insert(columns[0]).inserted else {
-        skipped.append(offset + 1)
-        continue
+        return .skipped(String(line))
       }
-      entries.append(DictionaryEntry(from: columns[0], to: columns[1]))
+      return .entry(DictionaryEntry(from: columns[0], to: columns[1]))
     }
-    // 長い左辺から試すために並べ替える（「松尾さん」を「松尾」より先に当てる）。
-    self.entries = entries.sorted { $0.from.count > $1.from.count }
-    skippedLines = skipped
   }
 }
 
