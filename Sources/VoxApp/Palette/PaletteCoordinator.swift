@@ -17,6 +17,8 @@ final class PaletteCoordinator {
 
   private let panel = PalettePanel()
   private let hud: HudPanel
+  /// T38-b。登録フォルダの常駐索引。未登録の対象では今までどおり開くたびに読む。
+  private let indexes: ResidentIndexStore
 
   /// 開いた時点の tentative を final として締める。給餌ループとは別のタスクから呼ぶ（ADR-007）。
   var finalizeSegment: @MainActor () async -> Void = {}
@@ -44,9 +46,12 @@ final class PaletteCoordinator {
   private var chosenTarget: PaletteTarget?
   /// T23。表示中のフォルダ選択パネル。esc と後片付けで閉じる。
   private var folderPanel: NSOpenPanel?
+  /// T38-c。`⌘]` で巡回する輪。候補を選び直すと写し直す。
+  private var cycle = TargetCycle(current: nil, candidates: [])
 
-  init(hud: HudPanel) {
+  init(hud: HudPanel, indexes: ResidentIndexStore) {
     self.hud = hud
+    self.indexes = indexes
     panel.model.onCommit = { [weak self] path, fileNameOnly in
       self?.close(insert: path, fileNameOnly: fileNameOnly)
     }
@@ -61,6 +66,10 @@ final class PaletteCoordinator {
     // T23。履歴に無いフォルダを選ぶ導線。
     panel.model.onChooseFolder = { [weak self] in
       self?.chooseFolder()
+    }
+    // T38-c。`⌘]` で候補を巡回する。
+    panel.onCycleTarget = { [weak self] in
+      self?.cycleTarget()
     }
   }
 
@@ -81,6 +90,8 @@ final class PaletteCoordinator {
     }
 
     panel.reset(committedTail: String(hud.model.head.suffix(40)))
+    // T38-c。候補は開くたびに読み直すので、輪も写し直す。
+    resetCycle()
     // T22。録音は続いているので状態表示は「録音中」のまま。
     panel.show()
     voxLog("palette_opened at_ms=\(atMilliseconds)")
@@ -189,6 +200,7 @@ final class PaletteCoordinator {
     openedAtMilliseconds = nil
     // T23。選び直したフォルダはこの録音までで、次の録音は自動解決から始める。
     chosenTarget = nil
+    resetCycle()
     dismissFolderPanel()
     panel.hide()
   }
@@ -201,8 +213,27 @@ final class PaletteCoordinator {
     dismissFolderPanel()
   }
 
-  /// T38-a / T23。候補行で選んだ worktree・フォルダを検索対象にし、索引と候補を組み直す。
+  /// T38-a / T23。候補行やフォルダ選択で選び直した対象。輪は写し直す（T38-c）。
   func switchTarget(to target: PaletteTarget) {
+    resetCycle()
+    applyTarget(target)
+  }
+
+  private func resetCycle() {
+    cycle = TargetCycle(current: nil, candidates: [])
+  }
+
+  /// T38-c。`⌘]`。候補を輪の順に進む。最初の打鍵で今の候補を写し取る。
+  func cycleTarget() {
+    guard isOpen else { return }
+    if cycle.isEmpty {
+      cycle = TargetCycle(current: panel.model.target, candidates: panel.model.cycleTargets)
+    }
+    guard let next = cycle.next() else { return }
+    applyTarget(next)
+  }
+
+  private func applyTarget(_ target: PaletteTarget) {
     guard isOpen else { return }
     setupTask?.cancel()
     let root = target.root
@@ -263,6 +294,7 @@ final class PaletteCoordinator {
   }
 
   /// 索引と worktree 候補を並行して読む。候補は索引より遅れて届いてよい。
+  /// T38-b。登録済みのフォルダでは保持している索引が先に来て、読み直した索引で差し替わる。
   private func loadContents(root: String) async {
     let candidates = Task.detached {
       PaletteTargetResolver.worktreeCandidates(
@@ -270,16 +302,20 @@ final class PaletteCoordinator {
         deadline: ContinuousClock.now.advanced(
           by: .milliseconds(PaletteTargetResolver.timeoutMilliseconds)))
     }
-    let index = await Task.detached { FileIndexer.load(root: root) }.value
+    await indexes.load(root: root) { [weak self] index in
+      guard !Task.isCancelled else { return }
+      self?.show(index)
+    }
     guard !Task.isCancelled else { return }
-    panel.model.files = index.files
-    panel.model.changedCount = index.changedCount
-    panel.model.totalCount = index.totalCount
-    panel.model.refreshRows()
-    startPreviewUpdates()
     let worktrees = await candidates.value
     guard !Task.isCancelled else { return }
     panel.model.setWorktrees(worktrees)
+  }
+
+  private func show(_ index: RepositoryIndex) {
+    panel.model.setIndex(
+      files: index.files, changedCount: index.changedCount, totalCount: index.totalCount)
+    startPreviewUpdates()
   }
 
   /// 右ペイン。選択が変わったら先頭 40 行を読み直す（ファイル IO なので detached）。

@@ -95,6 +95,18 @@ final class PaletteModel: ObservableObject {
       + folders(matching: "", limit: Self.recentFolderLimit).map(TargetRow.folder)
   }
 
+  /// T38-c。巡回キーで進む候補。並びは既定表示の候補行と同じ。
+  /// why: 検索中と Tree 表示でも同じ輪を使う（表示でキーの意味を変えない）。
+  /// why: 同じフォルダが worktree 候補と履歴の両方にあると、打っても対象が変わらない回ができる。
+  var cycleTargets: [PaletteTarget] {
+    var seen = Set<String>()
+    let candidates = worktrees.map { PaletteTarget(root: $0.path, source: .worktree) }
+      + folders(matching: "", limit: Self.recentFolderLimit).map {
+        PaletteTarget(root: $0.path, source: .recent)
+      }
+    return candidates.filter { seen.insert(($0.root as NSString).standardizingPath).inserted }
+  }
+
   /// 選択中の候補行。ファイル行を選んでいるときは nil。
   var selectedTargetRow: TargetRow? {
     let candidates = targetRows
@@ -175,6 +187,35 @@ final class PaletteModel: ObservableObject {
   func refreshRows() {
     rows = FileIndex.rows(query: query, in: files)
     refreshTreeRows()
+  }
+
+  /// T38-b。索引を入れ替える（常駐索引を先に出し、読み直した索引で差し替える）。
+  /// why: 差し替えで並びが変わるので、選んでいた行はパスで選び直す。まだ選んでいない回は
+  /// 既定（ファイルの先頭）のまま（`adjustingTargetRows` と同じ扱い）。
+  func setIndex(files: [IndexedFile], changedCount: Int, totalCount: Int) {
+    let wasDefault = selection == defaultSelection
+    let selected = selectedDisplayID
+    self.files = files
+    self.changedCount = changedCount
+    self.totalCount = totalCount
+    refreshRows()
+    if wasDefault {
+      selection = defaultSelection
+    } else if let selected, let index = selectionIndex(ofDisplayID: selected) {
+      selection = index
+    } else {
+      selection = defaultSelection
+    }
+    clampSelection()
+  }
+
+  private func selectionIndex(ofDisplayID id: String) -> Int? {
+    if let index = targetRows.firstIndex(where: { $0.id == id }) { return index }
+    if fileViewMode == .tree {
+      return treeRows.firstIndex { "tree:" + $0.id == id }
+    }
+    guard let index = rows.firstIndex(where: { "changes:" + $0.file.path == id }) else { return nil }
+    return targetRows.count + index
   }
 
   func setFileViewMode(_ mode: FileViewMode) {
@@ -337,15 +378,38 @@ final class PaletteModel: ObservableObject {
   }
 }
 
+/// T38-c。検索対象を巡回するキー（`⌘]`）。
+/// why: メニュー項目にも field editor の key binding にも無い組み合わせなので、
+/// ↑↓・Enter と違って `doCommandBy` には来ない。パネルの key equivalent で受ける。
+enum PaletteKeys {
+  static func isCycleTarget(_ event: NSEvent) -> Bool {
+    event.charactersIgnoringModifiers == "]"
+      && event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command
+  }
+}
+
 /// HUD と同じ理由で canBecomeKey を上書きする（borderless は既定で key になれない）。
 private final class VoxPalettePanel: NSPanel {
+  var onCycleTarget: (() -> Void)?
+
   override var canBecomeKey: Bool { true }
   override var canBecomeMain: Bool { false }
+
+  override func performKeyEquivalent(with event: NSEvent) -> Bool {
+    guard PaletteKeys.isCycleTarget(event) else { return super.performKeyEquivalent(with: event) }
+    onCycleTarget?()
+    return true
+  }
 }
 
 @MainActor
 final class PalettePanel {
   let model = PaletteModel()
+  /// T38-c。`⌘]` の打鍵。巡回する輪は PaletteCoordinator が持つ。
+  var onCycleTarget: (() -> Void)? {
+    get { panel.onCycleTarget }
+    set { panel.onCycleTarget = newValue }
+  }
   private let panel: VoxPalettePanel
 
   init() {
