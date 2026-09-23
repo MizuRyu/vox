@@ -12,6 +12,7 @@ final class RecordingSession {
   let autoEnterEnabled: Bool
   let autoEnterUnverified: Bool
   let voiceProcessingEnabled: Bool
+  let microphoneInput: MicrophoneInput
   /// R16。トグル ON 時の前面アプリ。確定までここに固定する。
   let target: NSRunningApplication?
   let injectionTarget: CapturedInjectionTarget?
@@ -31,6 +32,7 @@ final class RecordingSession {
     autoEnterEnabled = settings.autoEnterEnabled
     autoEnterUnverified = settings.autoEnterUnverified
     voiceProcessingEnabled = settings.voiceProcessingEnabled
+    microphoneInput = settings.microphoneInput
     self.target = target
     injectionTarget = target.map {
       Injector.captureTarget(

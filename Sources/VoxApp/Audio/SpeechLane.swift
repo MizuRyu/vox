@@ -204,7 +204,7 @@ enum SpeechLaneError: Error, CustomStringConvertible {
       "AssetInventory が導入要求を返さなかった (status=\(status))"
     case .assetNotInstalled(let status): "アセット導入後も installed にならなかった (status=\(status))"
     case .noCompatibleAudioFormat: "SpeechAnalyzer.bestAvailableAudioFormat が nil を返した"
-    case .noAudioInputDevice: "オーディオ入力デバイスが見つからない（inputNode の sampleRate が 0）"
+    case .noAudioInputDevice: "マイクの音声形式を取得できませんでした。マイクの接続を確認してください"
     case .voiceProcessingActivationFailed(let detail):
       "周囲の音を抑える処理を開始できませんでした。設定をオフにするか、マイクを確認してください（\(detail)）"
     case .notRunning: "録音していない状態で finalize が呼ばれた"
@@ -224,6 +224,7 @@ private final class RecognitionRun {
 
   var analyzer: SpeechAnalyzer?
   var engine: AVAudioEngine?
+  var halCapture: HALInputCapture?
   var configurationObserver: (any NSObjectProtocol)?
   var inputBuilder: AsyncStream<AnalyzerInput>.Continuation?
   var bufferBuilder: AsyncStream<BufferBox>.Continuation?
@@ -266,7 +267,9 @@ final class SpeechLane {
   private var interruption = CaptureInterruption()
 
   /// 戻り値は `analyzer_start_ms`（`SpeechAnalyzer.start` が返った時刻）。
-  func start(voiceProcessingEnabled: Bool = false) async throws -> Double {
+  func start(
+    voiceProcessingEnabled: Bool = false, microphoneInput: MicrophoneInput = .automatic
+  ) async throws -> Double {
     let generation = lifecycle.begin()
     recognitionGeneration = generation
     let run = RecognitionRun()
@@ -315,17 +318,15 @@ final class SpeechLane {
 
     // Asset/permission awaits may finish after Quit cancelled the start task.
     try Task.checkCancellation()
-    let engine = AVAudioEngine()
-    run.engine = engine
-    let inputNode = engine.inputNode
-    if voiceProcessingEnabled { try Self.enableVoiceProcessing(on: inputNode) }
-    let bufferStream = try startCapture(
-      run, engine: engine, inputNode: inputNode, analyzerFormat: analyzerFormat,
-      voiceProcessingEnabled: voiceProcessingEnabled)
+    let device = try MicrophoneDevices.resolve(microphoneInput)
+    let bufferStream = voiceProcessingEnabled
+      ? try startVoiceProcessingCapture(
+        run, device: device, selection: microphoneInput, analyzerFormat: analyzerFormat, generation: generation)
+      : try startHALCapture(
+        run, device: device, selection: microphoneInput, analyzerFormat: analyzerFormat, generation: generation)
     startFeedTask(
       run, bufferStream: bufferStream, inputBuilder: inputBuilder,
       analyzerFormat: analyzerFormat)
-    observeConfigurationChange(run, engine: engine, generation: generation)
 
     run.isRunning = true
     return analyzerStartMilliseconds
@@ -349,21 +350,67 @@ final class SpeechLane {
     }
   }
 
+  /// 通常の録音。選んだ機器だけを入力専用 AUHAL で開く（ADR-016）。戻り値は AUHAL が流す音声。
+  private func startHALCapture(
+    _ run: RecognitionRun, device: MicrophoneDevice, selection: MicrophoneInput,
+    analyzerFormat: AVAudioFormat, generation: RecognitionGeneration
+  ) throws -> AsyncStream<BufferBox> {
+    let (bufferStream, bufferBuilder) = AsyncStream<BufferBox>.makeStream(bufferingPolicy: .unbounded)
+    run.bufferBuilder = bufferBuilder
+    let transport = device.transport
+    let capture = try HALInputCapture(deviceID: device.id, builder: bufferBuilder, levels: levels) { [weak self] in
+      Task { @MainActor in self?.captureInterrupted(generation: generation, transport: transport) }
+    }
+    run.halCapture = capture
+    logAudioInput(
+      device: device, selection: selection, format: capture.format, analyzerFormat: analyzerFormat,
+      voiceProcessing: false)
+    voxLog("audio_input_verified device_id=\(device.id) route=input_only")
+    return bufferStream
+  }
+
+  /// 通話向け処理（実験的）。VoiceProcessingIO が要るので AVAudioEngine で開く。
+  private func startVoiceProcessingCapture(
+    _ run: RecognitionRun, device: MicrophoneDevice, selection: MicrophoneInput,
+    analyzerFormat: AVAudioFormat, generation: RecognitionGeneration
+  ) throws -> AsyncStream<BufferBox> {
+    // engine が組み上げた後に入力機器を書き換えると構成変更が通知され録音が止まりうるため、
+    // 既定入力と同じ機器なら Audio Unit に触れない（ADR-016 決定 6）。
+    // 撤去条件: 通話向け処理を廃止するか、Vox が作る VoiceProcessingIO へ移したとき。`rg selectsDevice Sources` で確認。
+    let selectsDevice = device.id != MicrophoneDevices.defaultInputDeviceID()
+    let engine = AVAudioEngine()
+    run.engine = engine
+    let inputNode = engine.inputNode
+    try Self.enableVoiceProcessing(on: inputNode)
+    if selectsDevice {
+      // 有効化で Audio Unit が置き換わるため、有効化の後に取得する。
+      try AudioInputConfiguration.prepare(
+        CoreAudioInputUnit(inputNode.audioUnit), deviceID: device.id, route: .voiceProcessing)
+    }
+    let bufferStream = try startEngineCapture(
+      run, engine: engine, inputNode: inputNode, analyzerFormat: analyzerFormat,
+      device: device, selection: selection, selectsDevice: selectsDevice)
+    observeConfigurationChange(run, engine: engine, generation: generation, transport: device.transport)
+    return bufferStream
+  }
+
+  /// 録音中断を上へ渡す。古い録音からの遅れた通知は捨てる。
+  private func captureInterrupted(generation: RecognitionGeneration, transport: AudioTransport) {
+    guard interruption.decide(generation: generation, current: recognitionGeneration) else { return }
+    onCaptureInterrupted?(transport)
+  }
+
   /// 入力の形式やチャンネル数が変わると engine は自分で止まる（AVAudioEngine.h）。
   /// 止まったことに気づけないと `isRunning` だけが残るので、録音の終わりとして上へ渡す。
   /// 通知は任意のスレッドから来る。ここでは engine に触らない。
   private func observeConfigurationChange(
-    _ run: RecognitionRun, engine: AVAudioEngine, generation: RecognitionGeneration
+    _ run: RecognitionRun, engine: AVAudioEngine, generation: RecognitionGeneration,
+    transport: AudioTransport
   ) {
     run.configurationObserver = NotificationCenter.default.addObserver(
       forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil
     ) { [weak self] _ in
-      Task { @MainActor in
-        guard let self,
-          self.interruption.decide(generation: generation, current: self.recognitionGeneration)
-        else { return }
-        self.onCaptureInterrupted?(MicrophoneDevices.defaultInputIdentity()?.transport ?? .unknown)
-      }
+      Task { @MainActor in self?.captureInterrupted(generation: generation, transport: transport) }
     }
   }
 
@@ -381,22 +428,16 @@ final class SpeechLane {
   }
 
   /// 入力ノードの形式を確かめて tap を張り、engine を起動する。戻り値は tap が流す音声。
-  private func startCapture(
+  private func startEngineCapture(
     _ run: RecognitionRun,
     engine: AVAudioEngine, inputNode: AVAudioInputNode, analyzerFormat: AVAudioFormat,
-    voiceProcessingEnabled: Bool
+    device: MicrophoneDevice, selection: MicrophoneInput, selectsDevice: Bool
   ) throws -> AsyncStream<BufferBox> {
     let inputFormat = inputNode.outputFormat(forBus: 0)
     guard inputFormat.sampleRate > 0 else { throw SpeechLaneError.noAudioInputDevice }
-    // 診断 (T12)。どのマイクから、どの形式で拾っているか。
-    let inputDeviceName = AVCaptureDevice.default(for: .audio)?.localizedName ?? "unknown"
-    let identity = MicrophoneDevices.defaultInputIdentity()
-    voxLog(
-      "audio_input device=\"\(inputDeviceName)\" "
-        + "transport=\(identity?.transport.logLabel ?? "unknown") "
-        + "sample_rate=\(inputFormat.sampleRate) "
-        + "channels=\(inputFormat.channelCount) analyzer_rate=\(analyzerFormat.sampleRate) "
-        + "voice_processing=\(voiceProcessingEnabled)")
+    logAudioInput(
+      device: device, selection: selection, format: inputFormat, analyzerFormat: analyzerFormat,
+      voiceProcessing: true)
 
     let (bufferStream, bufferBuilder) = AsyncStream<BufferBox>.makeStream(
       bufferingPolicy: .unbounded)
@@ -408,8 +449,33 @@ final class SpeechLane {
       block: Self.makeTapBlock(builder: bufferBuilder, levels: levels))
 
     engine.prepare()
+    try validateSelection(inputNode, deviceID: device.id, selectsDevice: selectsDevice)
     try engine.start()
+    guard engine.isRunning, inputNode.isVoiceProcessingEnabled else {
+      throw AudioInputConfigurationError.configurationChanged
+    }
+    try validateSelection(inputNode, deviceID: device.id, selectsDevice: selectsDevice)
+    voxLog("audio_input_verified device_id=\(device.id) route=voice_processing selects_device=\(selectsDevice)")
     return bufferStream
+  }
+
+  private func validateSelection(_ inputNode: AVAudioInputNode, deviceID: UInt32, selectsDevice: Bool) throws {
+    guard selectsDevice else { return }
+    try AudioInputConfiguration.validate(
+      CoreAudioInputUnit(inputNode.audioUnit), deviceID: deviceID, route: .voiceProcessing)
+  }
+
+  /// 診断 (T12)。どのマイクから、どの形式で拾っているか。
+  private func logAudioInput(
+    device: MicrophoneDevice, selection: MicrophoneInput, format: AVAudioFormat,
+    analyzerFormat: AVAudioFormat, voiceProcessing: Bool
+  ) {
+    voxLog(
+      "audio_input device=\"\(device.name)\" selection=\(selection.logLabel) "
+        + "device_id=\(device.id) transport=\(device.transport.logLabel) "
+        + "sample_rate=\(format.sampleRate) "
+        + "channels=\(format.channelCount) analyzer_rate=\(analyzerFormat.sampleRate) "
+        + "voice_processing=\(voiceProcessing)")
   }
 
   private func startFeedTask(
@@ -569,6 +635,8 @@ final class SpeechLane {
   /// 締めと破棄で共通の前半。給餌を止めて入力列を閉じる。
   private func stopFeeding(_ run: RecognitionRun) async {
     run.isRunning = false
+    run.halCapture?.stop()
+    run.halCapture = nil
     run.engine?.stop()
     run.engine?.inputNode.removeTap(onBus: 0)
     run.engine = nil

@@ -307,7 +307,8 @@ final class VoxController {
         }
         guard proceed(recording) else { close(); return }
         let analyzerStart = try await lane.start(
-          voiceProcessingEnabled: recording.voiceProcessingEnabled)
+          voiceProcessingEnabled: recording.voiceProcessingEnabled,
+          microphoneInput: recording.microphoneInput)
         recording.metrics?.analyzerStartMilliseconds = analyzerStart
         if recording.captureInterrupted {
           await lane.abort()

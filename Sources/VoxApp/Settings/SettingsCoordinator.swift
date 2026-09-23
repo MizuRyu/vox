@@ -47,6 +47,7 @@ final class SettingsCoordinator {
   var autoEnterEnabled: Bool { controller.autoEnterEnabled }
   var autoEnterUnverified: Bool { controller.autoEnterUnverified }
   var voiceProcessingEnabled: Bool { controller.voiceProcessingEnabled }
+  var microphoneInput: MicrophoneInput { controller.microphoneInput }
 
   func listen() { controller.listen() }
   func reload() { controller.reload() }

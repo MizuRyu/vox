@@ -12,12 +12,14 @@ private struct SyntheticMicrophoneProvider: MicrophoneDeviceProviding {
   var ids: Result<[UInt32], Error>
   var defaultID: Result<UInt32?, Error> = .success(nil)
   var states: [UInt32: Result<MicrophoneDeviceState?, Error>] = [:]
+  var output: MicrophoneOutput?
 
   func deviceIDs() throws -> [UInt32] { try ids.get() }
   func defaultInputDeviceID() throws -> UInt32? { try defaultID.get() }
   func state(for id: UInt32) throws -> MicrophoneDeviceState? {
     try states[id, default: .success(nil)].get()
   }
+  func defaultOutput() throws -> MicrophoneOutput? { output }
 }
 
 @Suite("Settings: マイクの一覧")
@@ -71,7 +73,7 @@ struct MicrophoneTests {
   }
 
   @Test("microphone snapshot carries the transport of each device")
-  func microphoneSnapshotCarriesTransport() {
+  func microphoneSnapshotCarriesTransport() throws {
     let provider = SyntheticMicrophoneProvider(
       ids: .success([11, 22]),
       defaultID: .success(22),
@@ -88,19 +90,71 @@ struct MicrophoneTests {
     #expect(
       MicrophoneDevices.snapshot(using: provider) == .available(
         devices: [
-          .init(id: 11, name: "Synthetic Built-in", transport: .builtIn),
-          .init(id: 22, name: "Synthetic Headset", transport: .bluetooth)
+          .init(id: 11, name: "Synthetic Built-in", transport: .builtIn, uid: "synthetic-builtin"),
+          .init(id: 22, name: "Synthetic Headset", transport: .bluetooth, uid: "synthetic-headset")
         ], defaultDeviceID: 22),
       "the transport of each device was lost")
     #expect(
-      MicrophoneDevices.defaultInputIdentity(using: provider)
-        == MicrophoneIdentity(transport: .bluetooth, uid: "synthetic-headset"),
-      "the default input identity used for the diagnostic log is wrong")
+      try MicrophoneDevices.resolve(.systemDefault, using: provider)
+        == MicrophoneDevice(id: 22, name: "Synthetic Headset", transport: .bluetooth, uid: "synthetic-headset"),
+      "the resolved input identity used for the diagnostic log is wrong")
 
     let noDefault = SyntheticMicrophoneProvider(ids: .success([11]))
-    #expect(
-      MicrophoneDevices.defaultInputIdentity(using: noDefault) == nil,
-      "an absent default input still produced an identity")
+    #expect(throws: MicrophoneInputError.noInput) {
+      try MicrophoneDevices.resolve(.systemDefault, using: noDefault)
+    }
+  }
+
+  @Test("録音用の解決は接続中の入力と出力状態を使い、指定機器の消失を隠さない")
+  func recordingDeviceResolution() throws {
+    var provider = SyntheticMicrophoneProvider(
+      ids: .success([11, 22, 33]), defaultID: .success(22),
+      states: [
+        11: .success(.init(isAlive: true, hasInputStreams: true, name: "Synthetic Built-in",
+                          transport: kAudioDeviceTransportTypeBuiltIn, uid: "builtin")),
+        22: .success(.init(isAlive: true, hasInputStreams: true, name: "Synthetic Headset",
+                          transport: kAudioDeviceTransportTypeBluetooth, uid: "headset")),
+        33: .success(.init(isAlive: false, hasInputStreams: true, name: "Synthetic Gone", uid: "gone"))
+      ], output: .init(transport: .bluetooth, isRunning: true))
+    #expect(try MicrophoneDevices.resolve(.automatic, using: provider).id == 11)
+    #expect(try MicrophoneDevices.resolve(.systemDefault, using: provider).id == 22)
+    #expect(throws: MicrophoneInputError.deviceUnavailable) {
+      try MicrophoneDevices.resolve(.device("gone"), using: provider)
+    }
+    provider.output = nil
+    #expect(try MicrophoneDevices.resolve(.automatic, using: provider).id == 22)
+    provider.ids = .failure(SyntheticFailure.failed)
+    #expect(throws: MicrophoneInputError.unavailable) {
+      try MicrophoneDevices.resolve(.automatic, using: provider)
+    }
+  }
+
+  @MainActor
+  @Test("マイクの選択は保存で反映し、更新で下書きを失わず、再読み込みと初期化ができる")
+  func microphonePreferenceDraft() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("vox-input-draft-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = SettingsStore(url: root.appendingPathComponent("settings.json"))
+    let model = SettingsModel(store: store, defaults: .standard)
+    #expect(model.microphoneInput == .automatic)
+    model.microphoneInput = .device("synthetic-uid")
+    model.refreshMicrophones()
+    #expect(model.microphoneInput == .device("synthetic-uid"))
+    #expect(try store.load().microphoneInput == .automatic)
+    #expect(model.save())
+    #expect(try store.load().microphoneInput == .device("synthetic-uid"))
+    model.resetDraft()
+    #expect(model.microphoneInput == .automatic)
+    model.reload()
+    #expect(model.microphoneInput == .device("synthetic-uid"))
+    model.microphoneInput = .systemDefault
+    #expect(model.save())
+    let controller = SettingsController(store: store, defaults: .standard, configuration: .standard)
+    #expect(controller.microphoneInput == .systemDefault)
+    model.resetDraft()
+    #expect(model.save())
+    controller.reload()
+    #expect(controller.microphoneInput == .automatic)
   }
 
   @MainActor

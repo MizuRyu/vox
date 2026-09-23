@@ -85,7 +85,8 @@ func recordingSessionSnapshot() throws {
   let store = SettingsStore(url: root.appendingPathComponent("settings.json"))
   try store.save(
     HotkeySettings(
-      autoEnterEnabled: true, autoEnterUnverified: true, voiceProcessingEnabled: true))
+      autoEnterEnabled: true, autoEnterUnverified: true, voiceProcessingEnabled: true,
+      microphoneInput: .device("synthetic-session-mic")))
   let settings = SettingsController(
     store: store, defaults: .standard, configuration: .standard)
   let hud = HudPanel()
@@ -98,6 +99,7 @@ func recordingSessionSnapshot() throws {
   #expect(recording.autoEnterEnabled, "auto enter was not taken from the settings")
   #expect(recording.autoEnterUnverified, "unverified auto Enter was not taken from the settings")
   #expect(recording.voiceProcessingEnabled, "voice processing was not taken from the settings")
+  #expect(recording.microphoneInput == .device("synthetic-session-mic"))
   #expect(recording.metrics?.toggleOnMilliseconds == 1_000, "the toggle time was not recorded")
   #expect(recording.injectionTarget == nil, "a session without a target app captured one")
 
@@ -108,4 +110,5 @@ func recordingSessionSnapshot() throws {
     recording.autoEnterEnabled && recording.autoEnterUnverified
       && recording.voiceProcessingEnabled,
     "a settings change during the recording reached the running session")
+  #expect(recording.microphoneInput == .device("synthetic-session-mic"))
 }

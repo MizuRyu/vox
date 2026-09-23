@@ -43,17 +43,19 @@ public struct HotkeySettings: Codable, Equatable, Sendable {
   public var autoEnterEnabled: Bool
   public var autoEnterUnverified: Bool
   public var voiceProcessingEnabled: Bool
+  public var microphoneInput: MicrophoneInput
 
   public init(
     toggleKey: String? = nil, paletteKey: String? = nil,
     autoEnterEnabled: Bool = false, autoEnterUnverified: Bool = false,
-    voiceProcessingEnabled: Bool = false
+    voiceProcessingEnabled: Bool = false, microphoneInput: MicrophoneInput = .automatic
   ) {
     self.toggleKey = toggleKey
     self.paletteKey = paletteKey
     self.autoEnterEnabled = autoEnterEnabled
     self.autoEnterUnverified = autoEnterUnverified
     self.voiceProcessingEnabled = voiceProcessingEnabled
+    self.microphoneInput = microphoneInput
   }
 
   enum CodingKeys: String, CodingKey {
@@ -63,6 +65,7 @@ public struct HotkeySettings: Codable, Equatable, Sendable {
     case autoEnterEnabled = "auto_enter_enabled"
     case autoEnterUnverified = "auto_enter_unverified"
     case voiceProcessingEnabled = "voice_processing_enabled"
+    case microphoneInput = "microphone_input"
   }
 
   /// 方式の設定は廃止した。`after_paste` を選んでいた意図は「確認できなくても送る」なので、
@@ -82,10 +85,12 @@ public struct HotkeySettings: Codable, Equatable, Sendable {
     autoEnterUnverified =
       try container.decodeIfPresent(Bool.self, forKey: .autoEnterUnverified) ?? migrated
     voiceProcessingEnabled = try container.decodeIfPresent(Bool.self, forKey: .voiceProcessingEnabled) ?? false
+    microphoneInput = try container.decodeIfPresent(MicrophoneInput.self, forKey: .microphoneInput) ?? .automatic
   }
 
   public func validate() throws {
     guard schemaVersion == 1 else { throw HotkeySettingsError.unsupportedVersion }
+    try microphoneInput.validate()
     for value in [toggleKey, paletteKey].compactMap({ $0 }) {
       try HotkeyBinding.parse(value).validateForSettings()
     }

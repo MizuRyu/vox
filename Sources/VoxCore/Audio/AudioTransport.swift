@@ -14,6 +14,8 @@ public enum AudioTransport: Equatable, Sendable {
   /// 分類していない接続方式（HDMI、Thunderbolt など）。
   case other(UInt32)
 
+  public var isBluetooth: Bool { self == .bluetooth || self == .bluetoothLowEnergy }
+
   public init(rawValue: UInt32) {
     switch rawValue {
     case 0: self = .unknown

@@ -60,6 +60,7 @@ public struct SettingsView: View {
 
         GroupBox {
           VStack(alignment: .leading, spacing: 12) {
+            microphonePicker
             HStack(alignment: .firstTextBaseline) {
               VStack(alignment: .leading, spacing: 3) {
                 Text("macOSの既定入力")
@@ -140,6 +141,37 @@ public struct SettingsView: View {
     }
     guard let defaultDeviceID else { return "確認できません" }
     return devices.first(where: { $0.id == defaultDeviceID })?.name ?? "名前を取得できません"
+  }
+
+  private var selectableMicrophones: [MicrophoneDevice] {
+    guard case .available(let devices, _) = model.microphoneSnapshot else { return [] }
+    return devices.filter { $0.uid?.isEmpty == false }
+  }
+
+  private var microphonePicker: some View {
+    VStack(alignment: .leading, spacing: 5) {
+      Picker("使用するマイク", selection: $model.microphoneInput) {
+        Text("自動").tag(MicrophoneInput.automatic)
+        Text("macOSの既定").tag(MicrophoneInput.systemDefault)
+        ForEach(selectableMicrophones) { device in
+          if let uid = device.uid {
+            Text(device.name).tag(MicrophoneInput.device(uid))
+          }
+        }
+        if case .device(let uid) = model.microphoneInput,
+          !selectableMicrophones.contains(where: { $0.uid == uid }) {
+          Text("指定したマイク（未接続）").tag(model.microphoneInput)
+        }
+      }
+      .disabled(model.loadFailed)
+      Text("自動では、既定の入出力がBluetoothで再生中のとき、内蔵マイクがあれば使用します。macOSの設定は変更しません。")
+        .font(.caption).foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+      if case .device = model.microphoneInput {
+        Text("指定したマイクが未接続のときは録音を開始しません。")
+          .font(.caption).foregroundStyle(.secondary)
+      }
+    }
   }
 
   @ViewBuilder private var microphoneList: some View {

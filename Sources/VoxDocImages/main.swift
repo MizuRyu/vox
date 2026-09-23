@@ -35,15 +35,15 @@ func render() throws {
     store: SettingsStore(url: temporary.appendingPathComponent("settings.json")), defaults: .standard,
     microphoneProvider: {
       .available(devices: [
-        MicrophoneDevice(id: 1, name: "内蔵マイク", transport: .builtIn),
-        MicrophoneDevice(id: 2, name: "USB マイク", transport: .usb)
+        MicrophoneDevice(id: 1, name: "内蔵マイク", transport: .builtIn, uid: "synthetic-builtin"),
+        MicrophoneDevice(id: 2, name: "USB マイク", transport: .usb, uid: "synthetic-usb")
       ], defaultDeviceID: 1)
     })
   settings.toggleKey = "cmd+opt+space"
   settings.refreshMicrophones()
   let settingsView = SettingsView(model: settings)
     .background(Color(nsColor: .windowBackgroundColor))
-  let settingsHeight: CGFloat = 780 // Show the scrollable settings form including its save controls.
+  let settingsHeight: CGFloat = 900 // Show the scrollable settings form including its save controls.
   try save(settingsView, size: CGSize(width: 548, height: settingsHeight), to: output.appendingPathComponent("settings.png"))
 
   let model = HudModel()

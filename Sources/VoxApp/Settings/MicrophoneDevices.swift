@@ -2,27 +2,9 @@ import CoreAudio
 import Foundation
 import VoxCore
 
-public struct MicrophoneDevice: Identifiable, Equatable, Sendable {
-  public let id: UInt32
-  public let name: String
-  public let transport: AudioTransport
-
-  public init(id: UInt32, name: String, transport: AudioTransport = .unknown) {
-    self.id = id
-    self.name = name
-    self.transport = transport
-  }
-}
-
 public enum MicrophoneSnapshot: Equatable, Sendable {
   case available(devices: [MicrophoneDevice], defaultDeviceID: UInt32?)
   case unavailable
-}
-
-/// 既定入力の素性。録音の診断ログ（`audio_input`）だけが使う。
-struct MicrophoneIdentity: Equatable, Sendable {
-  let transport: AudioTransport
-  let uid: String?
 }
 
 struct MicrophoneDeviceState {
@@ -36,6 +18,7 @@ struct MicrophoneDeviceState {
 protocol MicrophoneDeviceProviding {
   func deviceIDs() throws -> [UInt32]
   func defaultInputDeviceID() throws -> UInt32?
+  func defaultOutput() throws -> MicrophoneOutput?
   func state(for id: UInt32) throws -> MicrophoneDeviceState?
 }
 
@@ -58,23 +41,27 @@ public enum MicrophoneDevices {
       let trimmedName = state.name?.trimmingCharacters(in: .whitespacesAndNewlines)
       return MicrophoneDevice(
         id: id, name: trimmedName.flatMap { $0.isEmpty ? nil : $0 } ?? "Microphone",
-        transport: AudioTransport(rawValue: state.transport))
+        transport: AudioTransport(rawValue: state.transport), uid: state.uid)
     }
     return .available(devices: devices, defaultDeviceID: defaultID)
   }
 
-  /// 録音開始時の診断ログ用。一覧と同じ取得経路を使う。
-  static func defaultInputIdentity() -> MicrophoneIdentity? {
-    defaultInputIdentity(using: CoreAudioMicrophoneProvider())
+  static func resolve(_ selection: MicrophoneInput) throws -> MicrophoneDevice {
+    try resolve(selection, using: CoreAudioMicrophoneProvider())
   }
 
-  static func defaultInputIdentity(
-    using provider: some MicrophoneDeviceProviding
-  ) -> MicrophoneIdentity? {
-    guard let id = (try? provider.defaultInputDeviceID()) ?? nil,
-      let state = (try? provider.state(for: id)) ?? nil
-    else { return nil }
-    return MicrophoneIdentity(transport: AudioTransport(rawValue: state.transport), uid: state.uid)
+  static func defaultInputDeviceID() -> UInt32? {
+    (try? CoreAudioMicrophoneProvider().defaultInputDeviceID()) ?? nil
+  }
+
+  static func resolve(
+    _ selection: MicrophoneInput, using provider: some MicrophoneDeviceProviding
+  ) throws -> MicrophoneDevice {
+    guard case .available(let devices, let defaultID) = snapshot(using: provider) else {
+      throw MicrophoneInputError.unavailable
+    }
+    let output = selection == .automatic ? try? provider.defaultOutput() : nil
+    return try selection.resolve(devices: devices, defaultDeviceID: defaultID, output: output)
   }
 }
 
@@ -113,6 +100,20 @@ private struct CoreAudioMicrophoneProvider: MicrophoneDeviceProviding {
       selector: kAudioHardwarePropertyDefaultInputDevice,
       scope: kAudioObjectPropertyScopeGlobal)
     return value == kAudioObjectUnknown ? nil : value
+  }
+
+  func defaultOutput() throws -> MicrophoneOutput? {
+    let id: AudioDeviceID = try fixedValue(
+      object: Self.system, selector: kAudioHardwarePropertyDefaultOutputDevice,
+      scope: kAudioObjectPropertyScopeGlobal)
+    guard id != kAudioObjectUnknown else { return nil }
+    let transport: UInt32 = try fixedValue(
+      object: id, selector: kAudioDevicePropertyTransportType,
+      scope: kAudioObjectPropertyScopeGlobal)
+    let running: UInt32 = try fixedValue(
+      object: id, selector: kAudioDevicePropertyDeviceIsRunningSomewhere,
+      scope: kAudioObjectPropertyScopeGlobal)
+    return MicrophoneOutput(transport: AudioTransport(rawValue: transport), isRunning: running == 1)
   }
 
   func state(for id: UInt32) throws -> MicrophoneDeviceState? {

@@ -9,6 +9,7 @@ public final class SettingsModel: ObservableObject {
   @Published public var autoEnterEnabled = false
   @Published public var autoEnterUnverified = false
   @Published public var voiceProcessingEnabled = false
+  @Published public var microphoneInput: MicrophoneInput = .automatic
   @Published public var errorMessage: String?
   @Published public var savedMessage: String?
   @Published public private(set) var loadFailed = false
@@ -60,6 +61,7 @@ public final class SettingsModel: ObservableObject {
     autoEnterEnabled = original.autoEnterEnabled
     autoEnterUnverified = original.autoEnterUnverified
     voiceProcessingEnabled = original.voiceProcessingEnabled
+    microphoneInput = original.microphoneInput
   }
 
   public func resetDraft() {
@@ -68,6 +70,7 @@ public final class SettingsModel: ObservableObject {
     autoEnterEnabled = false
     autoEnterUnverified = false
     voiceProcessingEnabled = false
+    microphoneInput = .automatic
     resetting = true
     savedMessage = nil
   }
@@ -82,7 +85,7 @@ public final class SettingsModel: ObservableObject {
         paletteKey: resetting && paletteKey == defaults.palette.spec ? nil : paletteKey,
         autoEnterEnabled: autoEnterEnabled,
         autoEnterUnverified: autoEnterUnverified,
-        voiceProcessingEnabled: voiceProcessingEnabled)
+        voiceProcessingEnabled: voiceProcessingEnabled, microphoneInput: microphoneInput)
       // A CLI override is not editable here and must never become a persisted preference.
       if overrides.toggle != nil { settings.toggleKey = original.toggleKey }
       if overrides.palette != nil { settings.paletteKey = original.paletteKey }
