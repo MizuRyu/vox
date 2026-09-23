@@ -91,8 +91,8 @@ struct DictionaryDocumentTests {
     document.remove(at: 1)
     let table = DictionaryTable(contents: document.serialized)
     // 表は長い左辺を先に並べ替えるので、順番は比べない。
-    #expect(table.entries.map(\.from).sorted() == document.entries.map(\.from).sorted())
-    #expect(table.entries.count == document.entries.count)
+    let byFrom: (DictionaryEntry, DictionaryEntry) -> Bool = { $0.from < $1.from }
+    #expect(table.entries.sorted(by: byFrom) == document.entries.sorted(by: byFrom))
     #expect(table.skippedLines == [4], "壊れた行が位置ごと残っていない")
   }
 
