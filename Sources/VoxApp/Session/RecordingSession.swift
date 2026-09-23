@@ -13,6 +13,8 @@ final class RecordingSession {
   let autoEnterUnverified: Bool
   let voiceProcessingEnabled: Bool
   let microphoneInput: MicrophoneInput
+  /// ADR-019。トグル ON 時に読んだ辞書。録音中にファイルを変えてもこの回には効かない。
+  let dictionary: DictionaryTable
   /// R16。トグル ON 時の前面アプリ。確定までここに固定する。
   let target: NSRunningApplication?
   let injectionTarget: CapturedInjectionTarget?
@@ -27,12 +29,14 @@ final class RecordingSession {
   var task: Task<Void, Never>?
 
   init(
-    toggleOnMilliseconds: Double, settings: SettingsCoordinator, target: NSRunningApplication?
+    toggleOnMilliseconds: Double, settings: SettingsCoordinator, dictionary: DictionaryTable,
+    target: NSRunningApplication?
   ) {
     autoEnterEnabled = settings.autoEnterEnabled
     autoEnterUnverified = settings.autoEnterUnverified
     voiceProcessingEnabled = settings.voiceProcessingEnabled
     microphoneInput = settings.microphoneInput
+    self.dictionary = dictionary
     self.target = target
     injectionTarget = target.map {
       Injector.captureTarget(

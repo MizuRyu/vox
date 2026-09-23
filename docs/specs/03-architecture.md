@@ -6,10 +6,11 @@
 
 **native Swift/SwiftUI 単一プロセス**。Python サイドカーも WebView も置きません。
 
-現在の経路は `SpeechLane` → `VoxController`（フィラー除去）→ HUD → `Injector`。
+現在の経路は `SpeechLane` → `VoxController`（辞書の表記置換 → フィラー除去。`CommittedText.clean`）→ HUD → `Injector`。
 録音セッションと認識実行は 1 回分の値として生成・破棄します（`RecordingSession` と `RecognitionRun`）。
 長寿命の `VoxController` / `SpeechLane` は現在の 1 つだけを持ち、開始で作って終了で捨てます。
-以下の図は確定レーンを含む将来構成であり、RingBuffer・VAD・ConfirmLane・辞書処理は現在の本体には未実装です。
+以下の図は確定レーンを含む将来構成であり、RingBuffer・VAD・ConfirmLane は現在の本体には未実装です。
+辞書は認識後の表記置換（[ADR-019](../adr/019-dictionary-surface-replacement.md)）だけが入っており、デコード段の語彙バイアスと読み一致は未実装です。
 
 ```
 ┌─ AudioTap ────────── 入力専用 AUHAL（通話向け処理は AVAudioEngine）, 16kHz mono

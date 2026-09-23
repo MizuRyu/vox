@@ -30,6 +30,7 @@ final class VoxController {
   private let metrics: MetricsWriter
   private let history: HistoryWriter
   private let settings: SettingsCoordinator
+  private let dictionary = DictionaryStore.standard
 
   var onResidentPhaseChange: ((ResidentPhase, String?) -> Void)?
 
@@ -242,7 +243,7 @@ final class VoxController {
   // MARK: R18 テキストの受け取り
 
   /// 速報レーンは raw な committed / tentative を全文で返す。committed は追記専用なので差分だけ取り、
-  /// **committed に足す前に**フィラーを除去する（ADR-012。tentative には掛けない）。
+  /// **committed に足す前に**辞書を当ててフィラーを除去する（ADR-019 / ADR-012。tentative には掛けない）。
   /// 編集モード中でもここは追記なので、ユーザーが打った内容を壊さない。
   private func acceptText(committed: String, tentative: String) {
     guard let recording else { return }
@@ -275,7 +276,9 @@ final class VoxController {
   }
 
   private func clean(_ text: String, into recording: RecordingSession) -> String {
-    let removal = FillerPass.remove(from: text, enabled: VoxConfig.fillerRemovalEnabled)
+    let removal = CommittedText.clean(
+      text, dictionary: recording.dictionary,
+      fillerRemovalEnabled: VoxConfig.fillerRemovalEnabled)
     recording.metrics?.fillerRemovedCount += removal.removedCount
     return removal.text
   }
@@ -295,7 +298,8 @@ final class VoxController {
     let target = targetOverride ?? (ResidentTargetPolicy.isEligible(
       bundleIdentifier: frontmost?.bundleIdentifier) ? frontmost : nil)
     let recording = RecordingSession(
-      toggleOnMilliseconds: toggleOnMilliseconds, settings: settings, target: target)
+      toggleOnMilliseconds: toggleOnMilliseconds, settings: settings,
+      dictionary: dictionary.load(), target: target)
     self.recording = recording
     hud.reset(status: "準備中")
     hud.show()

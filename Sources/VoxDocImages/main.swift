@@ -31,8 +31,11 @@ func render() throws {
   let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
   try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
   defer { try? FileManager.default.removeItem(at: temporary) }
+  let dictionary = DictionaryStore(url: temporary.appendingPathComponent("dictionary.tsv"))
+  try Data("合成語\t架空語\n例示\t例示語\n".utf8).write(to: dictionary.url)
   let settings = SettingsModel(
     store: SettingsStore(url: temporary.appendingPathComponent("settings.json")), defaults: .standard,
+    dictionary: dictionary,
     microphoneProvider: {
       .available(devices: [
         MicrophoneDevice(id: 1, name: "内蔵マイク", transport: .builtIn, uid: "synthetic-builtin"),
@@ -41,9 +44,10 @@ func render() throws {
     })
   settings.toggleKey = "cmd+opt+space"
   settings.refreshMicrophones()
+  settings.refreshDictionary()
   let settingsView = SettingsView(model: settings)
     .background(Color(nsColor: .windowBackgroundColor))
-  let settingsHeight: CGFloat = 900 // Show the scrollable settings form including its save controls.
+  let settingsHeight: CGFloat = 1020 // Show the scrollable settings form including its save controls.
   try save(settingsView, size: CGSize(width: 548, height: settingsHeight), to: output.appendingPathComponent("settings.png"))
 
   let model = HudModel()

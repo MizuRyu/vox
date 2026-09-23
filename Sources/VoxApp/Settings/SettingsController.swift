@@ -107,6 +107,7 @@ public final class SettingsController: NSObject, NSWindowDelegate {
       }
       self.model = model
       model.refreshMicrophones()
+      model.refreshDictionary()
       let panel = NSPanel(
         contentRect: NSRect(x: 0, y: 0, width: 520, height: 580),
         styleMask: [.titled, .closable, .nonactivatingPanel], backing: .buffered, defer: false)
@@ -124,6 +125,7 @@ public final class SettingsController: NSObject, NSWindowDelegate {
     } else if panel?.isVisible != true {
       model?.reload()
       model?.refreshMicrophones()
+      model?.refreshDictionary()
     }
     panel?.orderFrontRegardless()
     panel?.makeKey()

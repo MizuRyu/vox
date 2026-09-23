@@ -34,12 +34,12 @@
 | [specs/02-speech-engines.md](specs/02-speech-engines.md) | 採用エンジン、実測値、却下した候補 |
 | [specs/03-architecture.md](specs/03-architecture.md) | プロセス構成、キー体系、テキスト契約、挿入 |
 | [specs/04-command-palette.md](specs/04-command-palette.md) | パレット、sigil、検索対象の解決 |
-| [specs/05-text-postprocessing.md](specs/05-text-postprocessing.md) | 辞書と訂正（未実装） |
+| [specs/05-text-postprocessing.md](specs/05-text-postprocessing.md) | フィラー除去、辞書、訂正（訂正 UI は未実装） |
 | [specs/06-permissions-and-risks.md](specs/06-permissions-and-risks.md) | 権限と残っているリスク |
 | [specs/07-project-structure.md](specs/07-project-structure.md) | 目標のディレクトリ構成と責務の線 |
 | [specs/08-image-attachments.md](specs/08-image-attachments.md) | 貼った画像の保存とパスの挿入 |
 | [specs/references.md](specs/references.md) | 出典 |
-| [adr/README.md](adr/README.md) | 技術判断の理由と見直し条件（ADR 001〜017） |
+| [adr/README.md](adr/README.md) | 技術判断の理由と見直し条件（ADR 001〜019） |
 
 - 挙動を変えたら [specs/](specs/README.md) の該当ファイル、利用者に見える変更なら [usage.md](usage.md)、開発コマンドを変えたら [development.md](development.md)。
 - 「なぜそうしたか」が変わったら [adr/](adr/README.md) に追加する。既存の ADR は書き換えない。
