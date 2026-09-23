@@ -14,6 +14,8 @@ Apple `SpeechTranscriber` でローカル認識し、HUD で手入力・ファ�
 - インストール・設定ファイル・ショートカット・トラブルシュート: `.agents/skills/vox-setup/SKILL.md`
 - リリース手順: `.agents/skills/vox-release/SKILL.md`（タグ = Release = dmg をワンセット、手書きノート）
 - 変更後の docs 同期: `.agents/skills/vox-change-docs/SKILL.md`（specs / usage / setup スキルの 3 点）
+- 辞書に入れる語の提案と登録: `.agents/skills/vox-add-dictionary/SKILL.md`（履歴のカタカナ語を数える。本文は出さない）
+- 不具合の切り分け: `.agents/skills/vox-debug/SKILL.md`（診断ログ・計測を伏せて読む。修正は含まない）
 
 ## 処理の流れ（鍵になる型）
 

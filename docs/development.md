@@ -49,6 +49,7 @@ FluidAudio は benchmarks の別 package だけが依存するので、本体は
 | `swift test --no-parallel`（VoxCoreTests / VoxAppTests） | 文字順序・編集・フィラー・検索・直列化・送出手順（VoxCore）と、設定の保存・HUD の描画・pasteboard・パレットの再描画・常駐（VoxApp） |
 | `swift test --no-parallel --filter 'StoreTests'` | 一部だけを走らせる例。`--filter` は型名・テスト名の正規表現 |
 | `swift test --no-parallel --filter 'MicrophoneInputTests\|MicrophoneTests\|InputConfigurationTests\|SettingsViewTests\|recordingSessionSnapshot'` | 入力選択・設定の保存と固定・合成 Audio Unit の構成検証・全選択肢のオフスクリーン描画。マイクを開かない |
+| `just tooling-test` | pre-commit フック・配布・署名の隔離検査と、skill のスクリプト（`vox-add-dictionary` の `dictionary.py`、`vox-debug` の `voxlog.py`）を合成データで叩く `Tests/Tooling/*-script-tests.sh` |
 
 検査は Swift Testing の testTarget 2 本です（ADR-013）。`--no-parallel` を付けるのは、
 並列だと実プロセスの取り消しを待つ 1 件と開いているウィンドウ数を見る 2 件（HUD の本文とパレットの再描画）が、

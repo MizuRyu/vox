@@ -23,7 +23,7 @@
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | 変更の進め方と守ること |
 | [images/README.md](../images/README.md) | README の画面例の由来と再生成 |
 
-リリース手順は `.agents/skills/vox-release/SKILL.md`、インストールと設定の早見表は `.agents/skills/vox-setup/SKILL.md` にあります。
+リリース手順は `.agents/skills/vox-release/SKILL.md`、インストールと設定の早見表は `.agents/skills/vox-setup/SKILL.md`、辞書に入れる語の提案は `.agents/skills/vox-add-dictionary/SKILL.md`、不具合の切り分けは `.agents/skills/vox-debug/SKILL.md` にあります。
 
 ## 仕様と判断
 

@@ -23,11 +23,13 @@ lint:
 security:
     scripts/security --all
 
-# pre-commit と同じ隔離テストを一時 Git repository で実行する。
+# pre-commit と同じ隔離テストを一時 Git repository で実行する。skill のスクリプトは合成データで検査する。
 tooling-test:
     Tests/Tooling/security-hook-tests.sh
     Tests/Tooling/package-tests.sh
     Tests/Tooling/development-signing-tests.sh
+    Tests/Tooling/dictionary-script-tests.sh
+    Tests/Tooling/voxlog-script-tests.sh
 
 # ビルドやアプリ起動を含まない開発用チェック。
 check: security lint tooling-test

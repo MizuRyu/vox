@@ -46,7 +46,7 @@ scripts/                 配布と検査だけ: bundle-app, sign-app, make-dmg, 
 Resources/               Info.plist, entitlements, アイコン
 docs/                    adr/ specs/ usage.md development.md MANUAL-VERIFICATION.md KNOWN-ISSUES.md
 images/                  README の画面例（合成データ）と再生成の手順
-.agents/skills/          vox-release, vox-setup, vox-change-docs
+.agents/skills/          vox-release, vox-setup, vox-change-docs, vox-add-dictionary, vox-debug（scripts/ に python）
 ```
 
 ## 責務の線
@@ -57,7 +57,7 @@ images/                  README の画面例（合成データ）と再生成の
 | VoxApp ↔ Vox | Vox（executable）は `main.swift` 1 ファイル。テストから import できるものはすべて VoxApp |
 | Session ↔ 各 coordinator | `Session/App.swift` は録音セッションの流れ（開始・確定・破棄・貼り付け）と、それが同時に触る状態だけを持つ。パレット・設定・常駐は coordinator。行数を理由に `private` を落として分けない（見直しは確定レーン導入時） |
 | 本体 ↔ benchmarks | 別 package。本体は benchmarks に依存せず、benchmarks も VoxCore に依存しない |
-| Tests ↔ scripts | Swift の検査は `swift test`。shell の検査は `Tests/Tooling`。python の検査は benchmarks 側だけ |
+| Tests ↔ scripts | Swift の検査は `swift test`。shell の検査は `Tests/Tooling`。python の検査は benchmarks 側と、skill のスクリプトを合成データで叩く `Tests/Tooling` の shell 検査 |
 
 ## ファイル単位の対応（現状 → 目標）
 
@@ -95,7 +95,7 @@ images/                  README の画面例（合成データ）と再生成の
 |---|---|
 | VoxCoreTests（VoxCore に依存） | Audio/, Attachments/, Transcript/, Palette/, Injection/, Records/, Process/, Resident/, Settings/ と共有の Expectations.swift |
 | VoxAppTests（VoxApp に `@testable` で依存） | Settings/, Resident/, Hud/, Injection/, Audio/, Palette/ |
-| Tooling/ | shell の検査（nix-sdk、pre-commit、package、署名） |
+| Tooling/ | shell の検査（nix-sdk、pre-commit、package、署名、skill のスクリプト） |
 | benchmarks/Tests | Tests/M0HarnessCoreTests, Tests/BenchmarkReport |
 
 ## 現状（2026-09-07。移行完了）
