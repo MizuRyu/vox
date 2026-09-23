@@ -14,7 +14,7 @@ lacks() { [[ "$1" != *"$2"* ]] || fail "$3: unexpected '$2' in: $1"; }
 
 data="$temporary_root/data"
 mkdir -p "$data/logs"
-# 4 回の録音: 成功 / 挿入先の変化 / 破棄 / 開始の失敗。録音の外の行も混ぜる。
+# 5 回の録音: 成功 / 挿入先の変化 / 破棄 / 準備中の Esc（計測なし）/ 開始の失敗。録音の外の行も混ぜる。
 cat >"$data/logs/vox.log" <<'LOG'
 permissions ax_process_trusted=true listen_event_access=true post_event_access=true
 index_rebuilt scope=changes count=1 ms=3 files=10 root=/tmp/example/outside
@@ -43,13 +43,23 @@ injection_rejected reason=input_target_changed_focus frontmost=com.example.edito
 metrics_appended {"axis_a_ms":null,"error":"input_target_changed_focus","first_token_ms":90,"pause_commit_count":0,"target_app":"com.example.editor"}
 history_appended inserted=false error=input_target_changed_focus
 hotkey toggle_pressed at_ms=8000
+target_app fixed=com.example.terminal
 escape
 discarded
+hotkey toggle_pressed at_ms=8500
+target_app fixed=-
+escape queued state=starting
 hotkey toggle_pressed at_ms=9000
-start_error Error Domain=Example Code=1 file:///Users/example/Library/x.bin
+target_app fixed=com.example.editor
+audio_input device="Example "Quoted" Mic" selection=automatic device_id=7 transport=usb
+start_error Error Domain=Example Code=1 NSFilePath=/Users/example/Private Folder/secret.bin
+start_error symbolicLink(file:///Users/example/Library/x.bin)
 segment_finalize_timeout reason=pause through_s=1.5
 metrics_appended {"axis_a_ms":null,"error":"start_failed","first_token_ms":null,"pause_commit_count":0,"target_app":null}
 LOG
+# 本体が \n にしない改行（U+2028、CR）を本文に含む行。
+python3 -c 'import sys; open(sys.argv[1], "a", encoding="utf-8", newline="").write("final_text 公開\u2028秘密の続き\rCR の後\n")' \
+  "$data/logs/vox.log"
 cat >"$data/metrics.jsonl" <<'JSONL'
 {"axis_a_ms":100,"error":null,"first_token_ms":50,"pause_commit_count":0,"target_app":"com.example.editor"}
 {"axis_a_ms":600,"error":null,"first_token_ms":70,"pause_commit_count":2,"target_app":"com.example.terminal"}
@@ -65,7 +75,7 @@ lacks "$out" '/Users/example' 'last redacts paths in error lines'
 pass
 
 # last N: 録音ごとに切り出し、確定の再押下では切らない。録音の外の行は出さない。
-out="$(python3 "$script" last 4 --dir "$data")"
+out="$(python3 "$script" last 5 --dir "$data")"
 contains "$out" 'at_ms=2000' 'the confirming toggle stays in the block'
 contains "$out" 'clipboard_restore done' 'a block ends at clipboard_restore'
 contains "$out" 'discarded' 'a discarded recording is a block'
@@ -75,7 +85,8 @@ headings=0
 while IFS= read -r line; do
   [[ "$line" != '## '* ]] || headings=$((headings + 1))
 done <<<"$out"
-[[ "$headings" == 4 ]] || fail "last 4 prints four headings, got $headings"
+[[ "$headings" == 5 ]] || fail "last 5 prints five headings, got $headings"
+contains "$out" $'escape queued state=starting\n\n## ' 'a start without metrics still ends at the next start'
 pass
 
 # result index= は 1 行にまとめる。
@@ -88,18 +99,22 @@ contains "$out" 'path=<redacted>' 'path is redacted'
 contains "$out" 'root=<redacted>' 'root is redacted'
 contains "$out" 'final_text <redacted>' 'final text is redacted'
 contains "$out" 'device="<redacted>"' 'device name is redacted'
-for secret in '/tmp/example' 'x.png' '合成の本文' '合成の値' 'Example Mic'; do
+contains "$out" 'fixed=app-1' 'bundle identifiers become aliases'
+contains "$out" 'fixed=app-2' 'different apps get different aliases'
+for secret in '/tmp/example' 'x.png' '合成の本文' '合成の値' 'Example Mic' 'Quoted' 'Private' 'Folder' \
+  'secret' '秘密' 'CR の後' 'com.example'; do
   lacks "$out" "$secret" 'redaction'
 done
 pass
 
 # errors: 計測の error と *_error / *_failed / *_timeout の行を回ごとに。
-out="$(python3 "$script" errors 4 --dir "$data")"
+out="$(python3 "$script" errors 5 --dir "$data")"
 contains "$out" 'error=input_target_changed_focus' 'errors lists metrics error'
 contains "$out" 'error=start_failed' 'errors lists start_failed'
 contains "$out" 'start_error' 'errors lists *_error lines'
 contains "$out" 'segment_finalize_timeout' 'errors lists *_timeout lines'
 lacks "$out" '/Users/example' 'errors redacts paths'
+lacks "$out" 'Folder' 'errors redacts paths with spaces'
 lacks "$out" 'at_ms=1000' 'errors skips recordings without errors'
 pass
 
@@ -109,14 +124,14 @@ contains "$out" '| axis_a_ms | 3 | 200 | 600 |' 'summary axis_a'
 contains "$out" '| first_token_ms | 2 | 60 | 70 |' 'summary first_token'
 contains "$out" '| pause_commit_count | 3 | 1 | 2 |' 'summary pause_commit_count'
 contains "$out" 'paste_receipt_timeout: 1' 'summary error counts'
-contains "$out" 'com.example.editor: 2' 'summary target_app counts'
+contains "$out" 'app-1: 2' 'summary target_app counts by alias'
+lacks "$out" 'com.example' 'summary hides bundle identifiers'
 out="$(python3 "$script" summary 1 --dir "$data")"
 contains "$out" '| axis_a_ms | 1 | 200 | 200 |' 'summary N takes the latest rows'
 pass
 
-if python3 "$script" last --dir "$temporary_root/missing" >/dev/null 2>&1; then
-  fail 'missing log must fail'
-fi
+err="$(python3 "$script" last --dir "$temporary_root/missing" 2>&1)" && fail 'missing log must fail'
+lacks "$err" "$temporary_root" 'errors do not print the storage path'
 pass
 
 printf 'voxlog-script-tests: %d passed\n' "$pass_count"

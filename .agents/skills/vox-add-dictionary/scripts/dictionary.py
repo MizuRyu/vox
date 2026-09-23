@@ -8,6 +8,7 @@ import os
 import re
 import stat
 import sys
+import unicodedata
 
 DEFAULT_DIR = os.path.expanduser("~/Library/Application Support/vox")
 MAXIMUM_BYTES = 64 * 1024
@@ -23,6 +24,8 @@ TEMPLATE = (
 )
 
 KATAKANA = re.compile(r"[ァ-ヶー]{2,}")
+# why: 本体は Character.isNewline で行を割るので、U+2028 なども改行として拒否する（str.splitlines と同じ集合）。
+LINE_BREAKS = "\n\r\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029"
 TYPED_WORD = re.compile(r"[a-z][a-z0-9+.-]{1,}", re.IGNORECASE)
 
 KANA = dict(zip(
@@ -44,7 +47,8 @@ def fail(message):
 def open_private(path, flags):
     """リンクを辿らず、本人の通常ファイル（リンク数 1）だけを開く。アプリの読み込みと同じ条件。"""
     try:
-        descriptor = os.open(path, flags | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+        # why: O_NONBLOCK は FIFO を開いたまま待たないため（本体の PrivateFileIO と同じ）。
+        descriptor = os.open(path, flags | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK, 0o600)
     except FileNotFoundError:
         return None
     except OSError as error:
@@ -77,12 +81,17 @@ def parse_dictionary(text):
         if line.startswith("#") or not line.strip():
             continue
         columns = line.split("\t")
-        if len(columns) != 2 or not columns[0] or columns[0] in seen:
+        if len(columns) != 2 or not columns[0] or same_key(columns[0]) in seen:
             broken.append(number)
             continue
-        seen[columns[0]] = number
+        seen[same_key(columns[0])] = number
         entries.append((columns[0], columns[1]))
     return seen, entries, broken
+
+
+def same_key(left):
+    """Swift の String は正準等価で比べる（「ガ」と「カ + 濁点」は同じ左辺）。重複の判定だけに使う。"""
+    return unicodedata.normalize("NFC", left)
 
 
 def dictionary_path(directory):
@@ -154,6 +163,8 @@ def count_katakana(history_path):
         handle = open(history_path, encoding="utf-8", errors="replace")
     except FileNotFoundError:
         fail("history.jsonl がありません。録音して確定すると溜まります")
+    except OSError as error:
+        fail("history.jsonl を読めません（{}）".format(error.strerror))
     with handle:
         for line in handle:
             try:
@@ -170,12 +181,16 @@ def count_katakana(history_path):
 
 def count_typed(paths):
     counts = collections.Counter()
-    for path in paths:
-        with open(path, encoding="utf-8", errors="replace") as handle:
-            for word in TYPED_WORD.findall(handle.read()):
-                word = word.lower().rstrip(".-")
-                if len(word) >= 2:
-                    counts[word] += 1
+    for number, path in enumerate(paths, start=1):
+        try:
+            with open(path, encoding="utf-8", errors="replace") as handle:
+                text = handle.read()
+        except OSError as error:
+            fail("{} 番目の --typed を読めません（{}）".format(number, error.strerror))
+        for word in TYPED_WORD.findall(text):
+            word = word.lower().rstrip(".-")
+            if len(word) >= 2:
+                counts[word] += 1
     return counts
 
 
@@ -188,7 +203,7 @@ def group_long_vowels(counts):
 
 
 def registered_mark(variants, registered):
-    hits = [word for word in variants if word in registered]
+    hits = [word for word in variants if same_key(word) in registered]
     if not hits:
         return ""
     if len(hits) == len(variants):
@@ -239,7 +254,7 @@ def cmd_suggest(arguments):
 # --- add / list ------------------------------------------------------------
 
 def parse_row(row):
-    if "\n" in row or "\r" in row:
+    if any(character in LINE_BREAKS for character in row):
         fail("1 つの引数に改行があります。1 行ずつ別の引数で渡してください")
     columns = row.split("\t")
     if len(columns) != 2:
@@ -263,17 +278,18 @@ def ensure_directory(directory):
 def cmd_add(arguments):
     rows = [parse_row(row) for row in arguments.rows]
     lefts = [left for left, _ in rows]
-    for left in lefts:
-        if lefts.count(left) > 1:
+    keys = [same_key(left) for left in lefts]
+    for left, key in zip(lefts, keys):
+        if keys.count(key) > 1:
             fail("「{}」を 2 回渡しています".format(left))
 
     path = dictionary_path(arguments.dir)
     existing = read_dictionary(path)
     base = TEMPLATE if existing is None else existing
     seen = parse_dictionary(base)[0]
-    for left in lefts:
-        if left in seen:
-            fail("「{}」はすでに {} 行目にあります".format(left, seen[left]))
+    for left, key in zip(lefts, keys):
+        if key in seen:
+            fail("「{}」はすでに {} 行目にあります".format(left, seen[key]))
 
     separator = "\n" if base and not base.endswith(("\n", "\r")) else ""
     payload = separator + "".join("{}\t{}\n".format(left, right) for left, right in rows)

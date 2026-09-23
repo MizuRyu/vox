@@ -13,13 +13,15 @@ description: >
 
 この skill が持つ: 症状の分類、直近の録音のログと計測の読み取り、既知の問題との突き合わせ、
 結論（設定 / 権限 / 既知の問題 / 未知）と Issue の雛形。
-渡す: 設定値の意味と直し方は `vox-setup`、修正の実装と docs 同期は `vox-change-docs`、辞書の中身は `vox-add-dictionary`。
+渡す: 設定値の意味と直し方は `vox-setup`、修正の実装は別の依頼（実装後の docs 同期は `vox-change-docs`）、辞書の中身は `vox-add-dictionary`。
 
 ## 事前条件
 
 - **Vox を起動しない**（`AGENTS.md`）。再現は利用者に頼み、「再現したら教えてください」で止まる
 - ログは本文とパスを既定で書かない。`--log-text` で起動した回だけ `final_text` 行に本文が入る。
-  スクリプトは `path=` `root=` `inserted=` `text=` の値、`final_text` の本文、マイクの機器名、絶対パスを `<redacted>` にする
+  スクリプトは `path=` `root=` `inserted=` `text=` の値、`final_text` の本文、マイクの機器名、絶対パス（行末まで）、
+  形式の違う行を `<redacted>` にし、他アプリの bundle identifier を `app-1` のような呼び名にする（1 回の実行の中で同じ名前）。
+  どのアプリかが切り分けに要るときは、呼び名を示して利用者に種類（エディタ・ターミナル・ブラウザ）を聞く
 
 ## 手順
 
@@ -74,7 +76,7 @@ description: >
    ```
 
    Issue に貼ってよいのは `voxlog.py` の出力だけ。**本文・パス・他アプリの情報を含めない**。
-   bundle identifier（`target_app` `frontmost=` `target=`）は「ターミナル」などの種類に置き換えてから貼る
+   `app-1` などの呼び名は、利用者に聞いた種類に置き換えてもよい（アプリ名は書かない）
 6. 修正に進むときは `vox-change-docs` の規則どおり、`docs/MANUAL-VERIFICATION.md` に「再発したら気づける TC」を足す
 
 ## 検証

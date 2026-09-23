@@ -40,9 +40,12 @@ pass
 out="$(python3 "$script" suggest --dir "$data" --min-count 1)"
 contains "$out" '| ソロ | 1 |' 'suggest honours --min-count'
 pass
-if python3 "$script" suggest --dir "$temporary_root/missing" >/dev/null 2>&1; then
-  fail 'suggest without history must fail'
-fi
+err="$(python3 "$script" suggest --dir "$temporary_root/missing" 2>&1)" && fail 'suggest without history must fail'
+lacks "$err" "$temporary_root" 'errors do not print the storage path'
+err="$(python3 "$script" suggest --dir "$data" --typed "$temporary_root/none.txt" 2>&1)" \
+  && fail 'suggest with a missing --typed file must fail'
+lacks "$err" "$temporary_root" 'errors do not print the --typed path'
+lacks "$err" 'Traceback' '--typed errors are handled'
 pass
 
 # add: 無ければテンプレート付きで 0600 で作る。テンプレートは DictionaryStore.swift と同じ文面。
@@ -59,7 +62,9 @@ pass
 
 # add: タブ 1 つ、左辺あり、# で始まらない。1 つでも不正なら何も書かない。
 before="$(<"$fresh/dictionary.tsv")"
-for bad in 'タブなし' $'a\tb\tc' $'\tempty-left' $'#コメント\tx' $'改\n行\tx' $'  \tx'; do
+line_separator="$(python3 -c 'print("\u2028", end="")')"
+for bad in 'タブなし' $'a\tb\tc' $'\tempty-left' $'#コメント\tx' $'改\n行\tx' $'  \tx' \
+  "改${line_separator}行"$'\tx' $'右\t改\r'; do
   if python3 "$script" add --dir "$fresh" $'クワイエル\tquiel' "$bad" 2>/dev/null; then
     fail "add must reject: $bad"
   fi
@@ -72,6 +77,11 @@ err="$(python3 "$script" add --dir "$fresh" $'ゾルテック\tother' 2>&1)" && 
 contains "$err" '7 行目' 'duplicate reports the line number'
 if python3 "$script" add --dir "$fresh" $'ピンゴラ\ta' $'ピンゴラ\tb' 2>/dev/null; then
   fail 'duplicate arguments must fail'
+fi
+# 「ガ」と「カ + 結合濁点」は本体（Swift の String）では同じ左辺。
+decomposed="$(python3 -c 'print("\u30ab\u3099", end="")')"
+if python3 "$script" add --dir "$fresh" $'ガ\ta' "$decomposed"$'\tb' 2>/dev/null; then
+  fail 'canonically equal left sides must be duplicates'
 fi
 [[ "$(<"$fresh/dictionary.tsv")" == "$before" ]] || fail 'duplicate add must not write'
 pass
@@ -99,6 +109,12 @@ mkdir -p "$linked"
 ln -s "$kept/dictionary.tsv" "$linked/dictionary.tsv"
 if python3 "$script" add --dir "$linked" $'ソロ\tsolo' 2>/dev/null; then
   fail 'add must not follow a symbolic link'
+fi
+fifo="$temporary_root/fifo"
+mkdir -p "$fifo"
+mkfifo "$fifo/dictionary.tsv"
+if python3 "$script" list --dir "$fifo" 2>/dev/null; then
+  fail 'a FIFO must be rejected without waiting'
 fi
 pass
 
