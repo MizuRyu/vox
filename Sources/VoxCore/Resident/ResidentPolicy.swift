@@ -40,7 +40,7 @@ public enum ResidentPresentation {
 public enum ResidentTargetPolicy {
   public static func isEligible(bundleIdentifier: String?) -> Bool {
     guard let bundleIdentifier, !bundleIdentifier.isEmpty else { return false }
-    return bundleIdentifier != "local.vox.app"
+    return bundleIdentifier != VoxIdentity.bundleIdentifier
       && bundleIdentifier.caseInsensitiveCompare("com.apple.systemuiserver") != .orderedSame
   }
 }

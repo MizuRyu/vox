@@ -147,6 +147,6 @@ func voxWrite(_ data: Data, to handle: FileHandle) {
   do {
     try handle.write(contentsOf: data)
   } catch {
-    Logger(subsystem: "local.vox.app", category: "log").error("log_write_failed")
+    Logger(subsystem: VoxIdentity.bundleIdentifier, category: "log").error("log_write_failed")
   }
 }

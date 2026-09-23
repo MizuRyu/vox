@@ -20,7 +20,7 @@ struct VoxIdentityTests {
     let values = try #require(
       PropertyListSerialization.propertyList(from: try Data(contentsOf: infoPlist), format: nil)
         as? [String: Any])
-    #expect(values["CFBundleIdentifier"] as? String == "local.vox.app",
-      "Info.plist の bundle identifier が変わっている")
+    #expect(values["CFBundleIdentifier"] as? String == VoxIdentity.bundleIdentifier,
+      "Info.plist と VoxIdentity の bundle identifier が離れている")
   }
 }
