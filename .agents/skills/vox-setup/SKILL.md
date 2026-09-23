@@ -55,6 +55,7 @@ macOS が再起動を求めたら Vox を終了して開き直す。ソースか
 ~/Library/Application Support/vox/settings.json   ← 設定（0600）
 ~/Library/Application Support/vox/history.jsonl   ← 確定本文の履歴（0600）
 ~/Library/Application Support/vox/folders.json   ← 最近使った検索フォルダ（0600、最大 20 件）
+~/Library/Application Support/vox/attachments/     ← HUD に貼った画像（0600。起動時に7日・合計500MiBで回収）
 ```
 
 ### settings.json フィールド一覧（`Sources/VoxCore/HotkeySettings.swift`）
@@ -87,6 +88,7 @@ macOS が再起動を求めたら Vox を終了して開き直す。ソースか
 | 検索対象の候補を巡る | `⌘]`（パレット表示中。別 worktree → 最近使ったフォルダの順） |
 | 設定を開く | `⌘,`（Vox にフォーカスがあるとき） |
 | パレットを閉じる／本文を破棄 | `Esc`（フォルダ選択モードではファイル検索に戻る） |
+| HUD の本文に貼り付け | `⌘V`（画像は `attachments/` に保存してパスを挿入） |
 
 ### 優先順位
 

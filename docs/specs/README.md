@@ -2,7 +2,7 @@
 
 Vox の現行仕様。「なぜそう決めたか」は [ADR](../adr/README.md)。実測の生データは公開リポジトリに含めていません（端末情報を含むため）。
 
-最終確認日: 2026-09-07
+最終確認日: 2026-09-23
 
 | ファイル | 内容 | 状態 |
 |---|---|---|
@@ -13,6 +13,7 @@ Vox の現行仕様。「なぜそう決めたか」は [ADR](../adr/README.md)�
 | [05-text-postprocessing.md](05-text-postprocessing.md) | 辞書と訂正 | 未実装（将来） |
 | [06-permissions-and-risks.md](06-permissions-and-risks.md) | 3 つの権限、残っているリスク | 実装済み |
 | [07-project-structure.md](07-project-structure.md) | 目標のディレクトリ構成、責務の線、現状との対応 | 目標（移行中） |
+| [08-image-attachments.md](08-image-attachments.md) | 貼った画像の振り分け、保存先、回収、失敗の文言 | 実装済み |
 | [references.md](references.md) | モデル・SDK・参考実装・理論・ベンチの出典 | — |
 
 ## どこを更新するか

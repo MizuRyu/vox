@@ -30,3 +30,4 @@
 | [014](014-auto-enter-readability-decides.md) | 自動 Enter は読み返せるかで自動判定し、読めないときの送信だけを設定にする | 承認 | 2026-09-08 |
 | [015](015-palette-target-from-frontmost-app.md) | 検索対象はアプリ固有 → ターミナル汎用 → 最近使ったフォルダの 3 方式で決める | 承認 | 2026-09-23 |
 | [016](016-microphone-selection-input-only.md) | マイクを Vox 内で選び、通常録音を入力専用 AUHAL で開く | 承認 | 2026-09-23 |
+| [017](017-image-paste-as-file-path.md) | 貼り付けた画像は一時ファイルに書き、本文にはパスを入れる | 提案 | 2026-09-23 |

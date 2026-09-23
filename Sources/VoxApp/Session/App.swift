@@ -456,7 +456,7 @@ extension VoxController {
         recording.metrics?.finalizedMilliseconds = finalizedMilliseconds
 
         // HUD は key window なので、まず key を返してから挿入経路に入る（R14 → R16）。
-        hud.resignKeyForInsertion()
+        await closeInputForInsertion()
         let typed = hud.model.typedCharacters
         recording.metrics?.typedCharacters = typed
 
@@ -489,6 +489,8 @@ extension VoxController {
         onResidentPhaseChange?(.error, "確定できませんでした")
         recording.metrics?.error = "finalize_failed"
         let raw = recording.rawCommitted + recording.rawTentative
+        // ADR-017。何を貼るか決める前に key を返して画像の書き込みを待つ（本文にパスが入り切る）。
+        await closeInputForInsertion()
         // 締めに失敗しても見えている本文は消さない。finalized_ms だけが取れない（nil のまま）。
         guard
           case .insert(let text) = FinalizeFallback.decide(
@@ -510,11 +512,18 @@ extension VoxController {
     }
   }
 
+  /// 貼り付ける本文を読む前に HUD の key を返し、走っている画像の書き込みを待つ。
+  /// **順序が逆だと待っている間に新しいペーストが始まる**（key を返した後は HUD に ⌘V が届かない）。
+  private func closeInputForInsertion() async {
+    hud.resignKeyForInsertion()
+    await hud.model.awaitPendingAttachments()
+  }
+
   /// 締めを通さずに、表示中の本文を挿入経路へ渡す。締めの失敗と入力デバイスの変化で共用。
   private func insertVisibleTranscript(
     _ recording: RecordingSession, text: String, rawText: String, notice: String
   ) async {
-    hud.resignKeyForInsertion()
+    await closeInputForInsertion()
     let typed = hud.model.typedCharacters
     recording.metrics?.typedCharacters = typed
     recording.metrics?.finalTextLength = text.count

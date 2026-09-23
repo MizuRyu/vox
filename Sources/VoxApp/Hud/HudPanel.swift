@@ -101,11 +101,18 @@ private struct HudView: View {
         alignment: .topLeading)
 
       HStack(spacing: 14) {
-        hint(model.toggleShortcutLabel, "確定して貼り付け")
-        if VoxConfig.sigilTriggerEnabled {
-          hint("@", "ファイル")
+        // ADR-017。画像の失敗はこの行に出す（中段の通知は本文と入れ替わってしまう）。
+        if let attachmentNotice = model.attachmentNotice {
+          Text(attachmentNotice)
+            .font(.system(size: 10))
+            .foregroundStyle(.secondary)
+        } else {
+          hint(model.toggleShortcutLabel, "確定して貼り付け")
+          if VoxConfig.sigilTriggerEnabled {
+            hint("@", "ファイル")
+          }
+          hint("esc", "破棄")
         }
-        hint("esc", "破棄")
         Spacer(minLength: 0)
       }
     }
@@ -226,6 +233,7 @@ final class HudPanel {
     // T21。head / tentative / tail をまとめて空にする。前の回を持ち越さない。
     model.clearText()
     model.notice = nil
+    model.resetAttachments()
     model.level = 0
     model.typedCharacters = 0
     // T15。前回の変換が破棄されたまま HUD が閉じた場合に、esc の横取り判定が残らないよう明示的に戻す。

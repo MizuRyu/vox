@@ -95,6 +95,7 @@ swift run Vox
 | 確定テキストの履歴 | `~/Library/Application Support/vox/history.jsonl` |
 | 最近使った検索フォルダ | `~/Library/Application Support/vox/folders.json`（schema 1、上限 20 件、ファイル権限 0600） |
 | 登録フォルダの常駐索引 | メモリだけ（ディスクに残さない。上限 20 件 × 20,000 件。診断ログの `index_resident` / `index_rebuilt` / `index_evicted` は件数と所要時間だけ） |
+| HUD に貼った画像 | `~/Library/Application Support/vox/attachments/<日付>/<時刻>-<連番>.<拡張子>`（0600。起動時に 7 日・合計 500MiB で回収） |
 | アプリの計測 | `benchmarks/m1/metrics.jsonl`（Git 対象外） |
 | M0 の音声・モデル・結果 | `benchmarks/m0/audio/`、`models/`、`results/`（Git 対象外） |
 
