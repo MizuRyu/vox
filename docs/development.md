@@ -140,6 +140,8 @@ swift run Vox
 
 **署名 identity を固定する理由**は、macOS が「以前許可したコード署名要件を更新版が満たすか」でアプリの同一性を判定するためです（[Apple TN3127](https://developer.apple.com/documentation/technotes/tn3127-inside-code-signing-requirements)）。ad-hoc から開発用証明書、開発用から Developer ID へ移るとアクセシビリティ・入力監視の再許可が必要になります。開発用の署名は fingerprint だけを設定ファイルに置き、その証明書が現在の Keychain にない場合は失敗して別の証明書や ad-hoc へ切り替えません。証明書名・秘密鍵・notary profile の値はリポジトリにもコマンド引数にも書かず、環境変数から渡します。
 
+bundle identifier の正本は `Resources/App/Info.plist` です。Swift 側の写しは `VoxCore.VoxIdentity.bundleIdentifier` だけで、`scripts/validate-app` は期待値を plist から読みます。
+
 `scripts/validate-app` は bundle identity、用途文言、最低 OS、arm64 Mach-O、コード署名、アイコン、予期しない symlink、個人ディレクトリの絶対パス混入を検査します。アプリ内の `BUILD-INFO.txt` には version、build number、Git revision、provenance、署名を除いて正規化した binary の SHA-256、対象 platform、作成時点の署名・ticket 状態を記録し、validator はこの digest と実際の payload の一致も確認します。dirty checkout の revision には `+dirty` が付きます。
 
 ## バージョンの目安

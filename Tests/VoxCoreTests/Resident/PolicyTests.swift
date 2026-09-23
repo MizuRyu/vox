@@ -21,7 +21,7 @@ struct ResidentPolicyTests {
   @MainActor
   @Test("Resident target policy")
   func testResidentTargetPolicy() {
-    #expect(!ResidentTargetPolicy.isEligible(bundleIdentifier: "local.vox.app"),
+    #expect(!ResidentTargetPolicy.isEligible(bundleIdentifier: VoxIdentity.bundleIdentifier),
       "Vox is not a recording target")
     #expect(!ResidentTargetPolicy.isEligible(bundleIdentifier: "com.apple.systemuiserver"),
       "SystemUIServer is not a recording target")

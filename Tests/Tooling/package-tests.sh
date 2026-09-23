@@ -36,8 +36,30 @@ fi
 grep -Fq 'LSUIElement must be false' "$temporary_root/accessory-default.out" \
   || fail 'Dock-hidden fixture did not reach the LSUIElement check'
 "$project_root/scripts/validate-app" --allow-accessory "$accessory_app"
-[[ "$(plutil -extract CFBundleIdentifier raw "$app/Contents/Info.plist")" == 'local.vox.app' ]] \
-  || fail 'bundle identifier differs from resident app identity'
+foreign_identity_app="$temporary_root/foreign-identity.app"
+cp -R "$app" "$foreign_identity_app"
+plutil -replace CFBundleIdentifier -string 'local.vox.other' "$foreign_identity_app/Contents/Info.plist"
+codesign --sign - --force --options runtime \
+  --entitlements "$project_root/Resources/App/Vox.entitlements" "$foreign_identity_app" >/dev/null
+if "$project_root/scripts/validate-app" "$foreign_identity_app" >"$temporary_root/identity.out" 2>&1; then
+  fail 'app with a foreign bundle identifier passed validation'
+fi
+grep -Fq 'unexpected bundle identifier' "$temporary_root/identity.out" \
+  || fail 'foreign identity fixture did not reach the bundle identity check'
+# The expected identifier must come from the checkout's Info.plist, not from a literal:
+# a checkout that declares the foreign identifier accepts that app and refuses the real one.
+identity_fixture="$temporary_root/identity-project"
+mkdir -p "$identity_fixture/scripts" "$identity_fixture/Resources/App"
+cp "$project_root/scripts/validate-app" "$identity_fixture/scripts/"
+cp "$project_root/Resources/App/Info.plist" "$identity_fixture/Resources/App/"
+plutil -replace CFBundleIdentifier -string 'local.vox.other' "$identity_fixture/Resources/App/Info.plist"
+"$identity_fixture/scripts/validate-app" "$foreign_identity_app" >/dev/null \
+  || fail 'validation ignored the bundle identifier declared by its own checkout'
+if "$identity_fixture/scripts/validate-app" "$app" >"$temporary_root/identity-source.out" 2>&1; then
+  fail 'validation accepted an identifier its own checkout does not declare'
+fi
+grep -Fq 'unexpected bundle identifier' "$temporary_root/identity-source.out" \
+  || fail 'source identity fixture did not reach the bundle identity check'
 [[ "$(plutil -extract CFBundleShortVersionString raw "$app/Contents/Info.plist")" == "$project_version" ]] \
   || fail 'short version is incorrect'
 [[ "$(plutil -extract CFBundleVersion raw "$app/Contents/Info.plist")" == "$project_version" ]] \
@@ -252,8 +274,9 @@ cp -R "$stable_app" "$literal_app"
 [[ -f "$literal_dmg" && ! -e "$fixture_root/SHOULD-NOT-EXIST" ]] \
   || fail 'custom DMG path with literal metacharacters was not preserved'
 fresh_fixture="$temporary_root/fresh-project"
-mkdir -p "$fresh_fixture/scripts"
+mkdir -p "$fresh_fixture/scripts" "$fresh_fixture/Resources/App"
 cp "$project_root/scripts/make-dmg" "$project_root/scripts/validate-app" "$fresh_fixture/scripts/"
+cp "$project_root/Resources/App/Info.plist" "$fresh_fixture/Resources/App/"
 cp "$project_root/VERSION" "$fresh_fixture/VERSION"
 fresh_custom_dmg="$temporary_root/fresh-custom.dmg"
 "$fresh_fixture/scripts/make-dmg" "$app" "$fresh_custom_dmg"

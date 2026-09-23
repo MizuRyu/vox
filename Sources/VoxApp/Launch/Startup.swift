@@ -61,7 +61,7 @@ private func installApplicationLog(isBundled: Bool) -> (AppLogRouter?, String?) 
   do {
     return (try AppLogRouter.install(), nil)
   } catch {
-    Logger(subsystem: "local.vox.app", category: "startup").error(
+    Logger(subsystem: VoxIdentity.bundleIdentifier, category: "startup").error(
       "Unable to initialize the private Vox log")
     return (nil, "診断ログを準備できませんでした")
   }
