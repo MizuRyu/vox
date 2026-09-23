@@ -135,6 +135,10 @@ HUD 本文は **`head + tentative + tail`** の 3 区画。
 音声確定時は `head` に追記して `tentative` を空にする。新しい未確定音声が始まるときに `tail` を `head` に合流させ、時間順を保つ。
 編集位置は全文の UTF-16 オフセットで管理し、`tentative` 内部は直接編集しない。
 
+音声の確定は Apple `SpeechTranscriber` が `isFinal` を返した時に起きる。Apple の自発的な区切りは 11〜25 秒間隔なので、本体も区切る（[ADR-020](../adr/020-pause-triggered-segment-commit.md)）。
+発話の後に無音が 700 ms 続き、前回の区切りから 1,500 ms 以上経ち、未確定の本文があれば、`SpeechLane.finalizeSegment(reason: .pause)` で給餌済みの位置まで確定する。
+無音はノイズ床 × 4（発話開始と同じしきい値）を下回った状態。判定は VoxCore の `PauseCommitPolicy` が持ち、締めが走っている間は判定しない。
+
 以下の `StreamTextEvent` は初期のイベント契約案。現在の HUD の型・編集モデルを表すものではありません。
 
 `StreamTextEvent { committed, tentative, revision }` の 2 段テキスト契約にします。

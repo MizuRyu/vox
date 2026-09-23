@@ -124,7 +124,7 @@ swift run Vox
 
 `input_target_changed_*` の 3 つは診断ログの `injection_rejected` 行にも出ます。同じ行に確定時の前面アプリの bundle identifier と、開始時・確定時の AX role / subrole が付きます。本文・値・タイトルは読みません。
 
-現在の計測は schema 5。`palette_resume_ms` は廃止し、パレット表示時間の `palette_open_ms` に変更しています。過去の JSONL には以前の schema が含まれるため、同じ意味の指標として混ぜないでください。
+現在の計測は schema 6。schema 6 で、発話の後の無音で本体が区切った回数 `pause_commit_count`（[ADR-020](adr/020-pause-triggered-segment-commit.md)）を足しました。schema 5 で `palette_resume_ms` は廃止し、パレット表示時間の `palette_open_ms` に変更しています。過去の JSONL には以前の schema が含まれるため、同じ意味の指標として混ぜないでください。
 
 ## 配布物と署名
 
