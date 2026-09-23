@@ -64,7 +64,7 @@ func expectRanksHigher(query: String, better: String, worse: String) throws {
 func sampleMetrics(
   firstTokenMilliseconds: Double? = nil, paletteOpenedCount: Int = 0,
   paletteOpenMilliseconds: Double? = nil, paletteTargetSource: String? = nil,
-  pastedCharacters: Int? = nil, readbackCharacters: Int? = nil
+  pastedCharacters: Int? = nil, readbackCharacters: Int? = nil, pauseCommitCount: Int = 0
 ) -> MetricsRecord {
   MetricsRecord(
     toggleOnMilliseconds: 100, analyzerStartMilliseconds: 150, speechOnsetMilliseconds: nil,
@@ -74,7 +74,8 @@ func sampleMetrics(
     targetActivateMilliseconds: nil, fillerRemovedCount: 0, typedCharacters: 0,
     modifierWaitMilliseconds: 0, paletteOpenedCount: paletteOpenedCount,
     paletteOpenMilliseconds: paletteOpenMilliseconds, paletteTargetSource: paletteTargetSource,
-    pastedCharacters: pastedCharacters, readbackCharacters: readbackCharacters)
+    pastedCharacters: pastedCharacters, readbackCharacters: readbackCharacters,
+    pauseCommitCount: pauseCommitCount)
 }
 
 func encodeToObject(_ value: some Encodable) throws -> [String: Any] {

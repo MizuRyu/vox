@@ -1,5 +1,5 @@
 // 軸 A（発話終了 → 挿入完了）の計測。1 入力 = 1 行の収集側。
-// 直列化とスキーマ（schema_version 5 / 23 キー）は VoxCore.MetricsRecord が持つ。
+// 直列化とスキーマ（schema_version 6 / 24 キー）は VoxCore.MetricsRecord が持つ。
 
 import Foundation
 import OSLog
@@ -44,6 +44,8 @@ struct MetricsSession {
   /// M3。検索対象をどう決めたか。列挙は `PaletteTargetSource`（自動解決の orca / terminal /
   /// fallback と、選び直した worktree / recent / manual）。特定できなければ nil。
   var paletteTargetSource: String?
+  /// ADR-020。発話の後の無音で区切った回数。
+  var pauseCommitCount = 0
 
   init(toggleOnMilliseconds: Double) {
     self.toggleOnMilliseconds = toggleOnMilliseconds
@@ -85,7 +87,8 @@ struct MetricsSession {
       paletteOpenMilliseconds: paletteOpenMilliseconds,
       paletteTargetSource: paletteTargetSource,
       pastedCharacters: pastedCharacters,
-      readbackCharacters: readbackCharacters
+      readbackCharacters: readbackCharacters,
+      pauseCommitCount: pauseCommitCount
     )
   }
 }

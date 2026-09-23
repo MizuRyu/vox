@@ -189,6 +189,13 @@ private final class RecognitionRun {
   var segmentFinalize = SegmentFinalizeState()
 }
 
+/// 締めを頼んだ側。診断ログの `reason=` に出す。
+enum SegmentFinalizeReason: String {
+  case palette
+  /// ADR-020。発話の後の無音。
+  case pause
+}
+
 /// トグル ON のたびに `start()`、OFF で `finalizeText()`、破棄で `abort()`。
 /// analyzer は毎回作り直す（M1 は簡潔さを優先。指示書「録音と速報レーン」）。
 @MainActor
@@ -214,6 +221,11 @@ final class SpeechLane {
   private var lifecycle = RecognitionLifecycle()
   private var recognitionGeneration: RecognitionGeneration?
   private var interruption = CaptureInterruption()
+
+  /// ADR-020。無音で区切る前に、締める淡色があるかを見る。
+  var hasTentativeText: Bool { run?.tentative.isEmpty == false }
+  /// 締めが走っている間は重ねて頼まない（同じ analyzer に finalize を 2 つ入れない。ADR-007）。
+  var isSegmentFinalizePending: Bool { run?.segmentFinalize.hasPending == true }
 
   /// 戻り値は `analyzer_start_ms`（`SpeechAnalyzer.start` が返った時刻）。
   func start(
@@ -488,9 +500,9 @@ final class SpeechLane {
     }
   }
 
-  // MARK: M3 パレット
+  // MARK: M3 パレット / ADR-020 無音
 
-  /// パレットを開くときに、そこまでの tentative を final として締める。
+  /// パレットを開くとき（仕様 04）と発話の後の無音（ADR-020）で、そこまでの tentative を final として締める。
   /// T22 で供給を止めるのをやめた（パレット表示中も喋り続けられる）ので、締めるだけになった。
   /// 締める目的は差し込む位置を固定すること。
   ///
@@ -502,14 +514,16 @@ final class SpeechLane {
   /// 保険として 1000ms で待つのをやめる。そのとき tentative は残したままにする
   /// （後から final が来て順序が入れ替わりうるが、ハングよりまし）。
   /// `finalize(through:)` は入力列を閉じないので、この後もそのまま給餌を続けられる。
-  func finalizeSegment() async {
+  func finalizeSegment(reason: SegmentFinalizeReason) async {
     guard let run, run.isRunning, let analyzer = run.analyzer else { return }
     guard
       let throughSeconds = AnalyzerFinalizePoint.throughSeconds(
         fedFrameCount: run.fedFrameCount, sampleRate: run.sampleRate)
     else {
       // 給餌がまだマージンに届いていない。締める区間が無いので呼ばない。
-      voxLog("segment_finalize_skipped fed_frames=\(run.fedFrameCount) rate=\(run.sampleRate)")
+      voxLog(
+        "segment_finalize_skipped reason=\(reason.rawValue) fed_frames=\(run.fedFrameCount) "
+          + "rate=\(run.sampleRate)")
       return
     }
     let through = CMTime(seconds: throughSeconds, preferredTimescale: 1_000)
@@ -520,17 +534,17 @@ final class SpeechLane {
       do {
         try await analyzer.finalize(through: through)
         voxLog(
-          "segment_finalized at_ms=\(voxNowMilliseconds()) through_s=\(throughSeconds) "
-            + "committed_length=\(run.committed.count)")
+          "segment_finalized reason=\(reason.rawValue) at_ms=\(voxNowMilliseconds()) "
+            + "through_s=\(throughSeconds) committed_length=\(run.committed.count)")
       } catch {
-        voxLog("segment_finalize_error \(String(describing: error))")
+        voxLog("segment_finalize_error reason=\(reason.rawValue) \(String(describing: error))")
       }
       run.segmentFinalize.complete()
     }
 
     await awaitSegmentFinalize(run)
     if run.segmentFinalize.hasPending {
-      voxLog("segment_finalize_timeout through_s=\(throughSeconds)")
+      voxLog("segment_finalize_timeout reason=\(reason.rawValue) through_s=\(throughSeconds)")
     }
   }
 

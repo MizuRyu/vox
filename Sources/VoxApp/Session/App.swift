@@ -92,7 +92,8 @@ final class VoxController {
     hotkeys.paletteChord = VoxConfig.paletteChord
     palette.finalizeSegment = { [weak self] in
       guard let self else { return }
-      await lane.finalizeSegment()
+      await lane.finalizeSegment(reason: .palette)
+      recording?.pauseCommit.markCommitted(at: voxNowMilliseconds())
     }
     palette.targetApplication = { [weak self] in
       self?.recording?.target
@@ -427,9 +428,22 @@ final class VoxController {
     levelTask = Task { @MainActor in
       while !Task.isCancelled {
         hud.model.level = lane.levels.level
+        commitAfterPauseIfNeeded()
         try? await Task.sleep(for: .milliseconds(66))
       }
     }
+  }
+
+  /// ADR-020。発話の後に黙ったら、そこまでを確定する。締めが走っている間は判定しない。
+  private func commitAfterPauseIfNeeded() {
+    guard let recording, !lane.isSegmentFinalizePending,
+      recording.pauseCommit.shouldCommit(
+        lastSpeechMilliseconds: lane.levels.lastSpeechMilliseconds, now: voxNowMilliseconds(),
+        hasTentativeText: lane.hasTentativeText)
+    else { return }
+    recording.metrics?.pauseCommitCount += 1
+    // 締めは待たない（待つとこのループが止まり、HUD の波形も止まる）。
+    Task { @MainActor in await lane.finalizeSegment(reason: .pause) }
   }
 
   private func stopLevelUpdates() {

@@ -25,6 +25,8 @@ final class RecordingSession {
   var cancelRequested = false
   /// 準備中に入力デバイスが変わった。開始処理が戻ったところで諦める。
   var captureInterrupted = false
+  /// ADR-020。この録音の無音での区切り。パレットで締めた時刻も入れる。
+  var pauseCommit = PauseCommitPolicy()
   /// この回の非同期処理（開始・確定・破棄）。次の段階に進むたびに置き換わる。
   var task: Task<Void, Never>?
 

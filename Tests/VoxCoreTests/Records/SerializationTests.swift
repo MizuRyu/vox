@@ -6,16 +6,16 @@ import VoxCore
 
 @Suite("Records: JSONL の直列化")
 struct SerializationTests {
-  @Test("Metrics record always writes twenty three keys")
-  func metricsRecordAlwaysWritesTwentyThreeKeys() throws {
+  @Test("Metrics record always writes twenty four keys")
+  func metricsRecordAlwaysWritesTwentyFourKeys() throws {
     let object = try encodeToObject(sampleMetrics())
-    #expect(object.count == 23, "計測 JSONL のキー数が 23 でない: \(object.count)")
+    #expect(object.count == 24, "計測 JSONL のキー数が 24 でない: \(object.count)")
     #expect(MetricsRecord.CodingKeys.allCases.count == MetricsRecord.keyCount, "CodingKeys と keyCount が食い違う")
-    #expect(object["schema_version"] as? Int == 5, "schema_version が 5 でない")
+    #expect(object["schema_version"] as? Int == 6, "schema_version が 6 でない")
     for key in [
       "target_activate_ms", "filler_removed_count", "typed_chars", "modifier_wait_ms",
       "palette_opened_count", "palette_open_ms", "palette_target_source",
-      "pasted_chars", "readback_chars"
+      "pasted_chars", "readback_chars", "pause_commit_count"
     ] {
       #expect(object[key] != nil, "\(key) が無い")
     }
@@ -25,7 +25,7 @@ struct SerializationTests {
   @Test("Metrics record writes null for missing values")
   func metricsRecordWritesNullForMissingValues() throws {
     let object = try encodeToObject(sampleMetrics())
-    #expect(object.count == 23, "欠損時にキーが落ちた")
+    #expect(object.count == 24, "欠損時にキーが落ちた")
     #expect(
       object["axis_a_ms"] is NSNull && object["error"] is NSNull
         && object["palette_open_ms"] is NSNull && object["palette_target_source"] is NSNull
@@ -38,6 +38,13 @@ struct SerializationTests {
   func metricsRecordCarriesPasteLengths() throws {
     let object = try encodeToObject(sampleMetrics(pastedCharacters: 843, readbackCharacters: 460))
     #expect((object["pasted_chars"] as? Int == 843) && (object["readback_chars"] as? Int == 460), "pasted_chars / readback_chars が出ていない")
+  }
+
+  /// ADR-020。1 録音で無音により区切った回数。
+  @Test("Metrics record carries pause commit count")
+  func metricsRecordCarriesPauseCommitCount() throws {
+    let object = try encodeToObject(sampleMetrics(pauseCommitCount: 3))
+    #expect(object["pause_commit_count"] as? Int == 3, "pause_commit_count が出ていない")
   }
 
   /// T22。パレットを開いてから閉じるまでの時間。`palette_resume_ms` を置き換えた。
