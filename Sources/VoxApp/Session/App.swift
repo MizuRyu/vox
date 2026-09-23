@@ -557,7 +557,8 @@ extension VoxController {
     recording.metrics?.pastedCharacters = outcome.pastedCharacters
     recording.metrics?.readbackCharacters = outcome.readbackCharacters
     // 締めに失敗して退避してきた回は、挿入が成功しても finalize_failed を計測に残す。
-    recording.metrics?.error = outcome.error ?? recording.metrics?.error
+    // `a?.b = x ?? a?.b` は変更中の metrics を右辺で読み、排他アクセス違反で落ちる。
+    if let error = outcome.error { recording.metrics?.error = error }
     flushMetrics(recording)
     // クリップボードに載せて Cmd+V まで送った回は inserted_text を残す。
     // 受領証が来なくてもテキストはクリップボードにあり、行方不明にはしない（R17）。
