@@ -81,7 +81,7 @@ images/                  README の画面例（合成データ）と再生成の
 |---|---|
 | Audio/ | AudioTransport, MicrophoneInput（MicrophoneDevice / MicrophoneOutput を含む） |
 | Attachments/ | AttachmentPaste, AttachmentImageKind, AttachmentFileName, AttachmentRetention |
-| Transcript/ | TranscriptBuffer, TranscriptCaret, FillerPass, SigilTrigger, AnalyzerFinalizePoint, SpeechAssetReadiness, PauseCommitPolicy, HudEditCommand |
+| Transcript/ | TranscriptBuffer, TranscriptCaret, FillerPass, DictionaryPass, DictionaryDocument, SigilTrigger, AnalyzerFinalizePoint, SpeechAssetReadiness, PauseCommitPolicy, HudEditCommand |
 | Injection/ | InjectionSafety, AutoEnter, TerminalAutoEnter, ActivationPolicy |
 | Palette/ | PaletteTarget（方式の選択と ps の解釈）, ZedWorkspace, FolderHistory, PaletteSigil, FileIndex, FileTree, FuzzyMatch, FilePathFormat, BoundedFileReader |
 | Settings/ | HotkeySettings, HotkeyBinding, SettingsPresentationState, SetupPermissions |

@@ -31,7 +31,7 @@ public struct DictionaryTable: Sendable {
     self.skippedLines = skippedLines
   }
 
-  /// `置き換える表記<TAB>入れたい表記` の行を読む。`#` で始まる行と空白だけの行は無視し、
+  /// `認識される表記<TAB>入れたい表記` の行を読む。`#` で始まる行と空白だけの行は無視し、
   /// 列数が合わない行・左辺が空の行・左辺が重複する行は落として行番号を残す。
   public init(contents: String) {
     let lines = DictionaryLine.parse(contents)

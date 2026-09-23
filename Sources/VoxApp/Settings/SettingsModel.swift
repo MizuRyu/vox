@@ -155,7 +155,7 @@ public final class SettingsModel: ObservableObject {
     let shown = lines.prefix(5).map(String.init).joined(separator: "・")
     let rest = lines.count > 5 ? "ほか" : ""
     return "\(shown)行目\(rest)を読み込めませんでした。"
-      + "1行に「置き換える表記」とタブ、「入れたい表記」を書いてください。"
+      + "1行に「認識される表記」とタブ、「入れたい表記」を書いてください。"
   }
 
   /// 無ければ書き方を書いたファイルを作ってから、利用者が使っているエディタに渡す。
