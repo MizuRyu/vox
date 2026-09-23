@@ -15,7 +15,7 @@ Sources/
     Injection/           貼り付け前後の安全判定、自動 Enter、アクティベーション方針
     Palette/             検索対象の解釈と最近使ったフォルダ、索引と常駐索引の判定、巡回の輪、ツリー、あいまい一致、パス表記、プレビュー読み取り
     Settings/            設定の形式と検証、ショートカット表記、権限チェックリストの状態
-    Resident/            常駐の状態機械と表示文言、アプリ自身の bundle identifier
+    Resident/            常駐の状態機械と表示文言、アプリ自身の bundle identifier、メニューバー項目の診断行
     Records/             履歴・計測レコードの直列化
     Process/             子プロセス実行、単調時計
   VoxApp/                macOS 層。AppKit / SwiftUI / AVFoundation / Speech / CoreGraphics を使う唯一の場所
@@ -85,7 +85,7 @@ images/                  README の画面例（合成データ）と再生成の
 | Injection/ | InjectionSafety, AutoEnter, TerminalAutoEnter, ActivationPolicy |
 | Palette/ | PaletteTarget（方式の選択と ps の解釈）, ZedWorkspace, FolderHistory, PaletteSigil, FileIndex, FileTree, FuzzyMatch, FilePathFormat, BoundedFileReader |
 | Settings/ | HotkeySettings, HotkeyBinding, SettingsPresentationState, SetupPermissions |
-| Resident/ | ResidentPolicy |
+| Resident/ | ResidentPolicy, StatusItemDiagnostics |
 | Records/ | HistoryRecord, MetricsRecord |
 | Process/ | ProcessRunner, MonotonicClock |
 
