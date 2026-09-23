@@ -1,20 +1,27 @@
-// R15 / ADR-011。パレットの検索対象をトグル ON 時の前面アプリから導く。
-// プロセス実行と AppleScript は Vox 側（PaletteTargetResolver）に置き、
+// R15 / ADR-011 / ADR-015。パレットの検索対象をトグル ON 時の前面アプリから導く。
+// プロセス実行と DB 読み取りは Vox 側（PaletteTargetResolver）に置き、
 // ここには「どのアダプタを使うか」と「出力の解釈」だけを置く。
 
 import Foundation
 
 /// 計測 JSONL の `palette_target_source`。特定できなかった回は null（= nil）。
+/// `worktree`（T38-a）と `recent` / `manual`（T23）は選び直した回。`recent` は ADR-015 方式 C にも使う。
 public enum PaletteTargetSource: String, Sendable, Equatable {
   case orca
+  case zed
   case terminal
   case fallback
-  /// T38-a。候補行から同一リポジトリの他の worktree に切り替えた回。
   case worktree
-  /// T23。候補行から最近使ったフォルダに切り替えた回。
   case recent
-  /// T23。`NSOpenPanel` でフォルダを指定した回。
   case manual
+
+  /// why: ヘッダで色を変えるのは前面アプリから決まらなかった回だけ。選び直した回は警告しない。
+  public var resolvedFromFrontmostApp: Bool {
+    switch self {
+    case .orca, .zed, .terminal: true
+    case .fallback, .worktree, .recent, .manual: false
+    }
+  }
 }
 
 public struct PaletteTarget: Sendable, Equatable {
@@ -28,18 +35,33 @@ public struct PaletteTarget: Sendable, Equatable {
   }
 }
 
+/// ADR-015。トグル ON 時に固定した前面アプリから、検索対象の決め方を選ぶ。
 public enum PaletteTargetAdapter: Sendable, Equatable {
   case orca
-  case terminalApp
+  /// Zed は channel ごとに DB のディレクトリが違う（`db/0-<channel>`）。
+  case zed(channel: String)
+  /// ターミナルはどれも同じ手順（子孫プロセスの tty → cwd → git のルート）。
+  case terminal
   case none
 
-  /// トグル ON 時に固定した bundle identifier からアダプタを選ぶ。
+  private static let table: [String: PaletteTargetAdapter] = [
+    "com.stablyai.orca": .orca,
+    "dev.zed.zed": .zed(channel: "stable"),
+    "dev.zed.zed-preview": .zed(channel: "preview"),
+    "dev.zed.zed-nightly": .zed(channel: "nightly"),
+    "com.apple.terminal": .terminal,
+    "com.mitchellh.ghostty": .terminal,
+    "com.cmuxterm.app": .terminal,
+    "com.googlecode.iterm2": .terminal,
+    "dev.warp.warp-stable": .terminal
+  ]
+
+  /// 対応アプリを足すのは上の表に 1 行。
+  /// why: LaunchServices は同じアプリを `dev.warp.warp-stable` と `dev.warp.Warp-Stable` の
+  /// 両方で持つので、引き当てで大文字小文字を見ない。
   public static func forBundleIdentifier(_ identifier: String?) -> PaletteTargetAdapter {
-    switch identifier {
-    case "com.stablyai.orca": .orca
-    case "com.apple.Terminal": .terminalApp
-    default: .none
-    }
+    guard let identifier else { return .none }
+    return table[identifier.lowercased()] ?? .none
   }
 }
 
@@ -143,7 +165,7 @@ public enum GitWorktreeList {
   }
 }
 
-/// Terminal.app のアダプタ用。`ps -t <tty> -o pid=,comm=` の解釈。
+/// ターミナルのアダプタ用。`ps -t <tty> -o pid=,comm=` の解釈。
 public enum ProcessListParser {
   /// 最後の行（= 最も新しく起動したプロセス）の pid を最前景として扱う。
   public static func foregroundProcessID(fromPsOutput output: String) -> Int32? {
@@ -154,5 +176,68 @@ public enum ProcessListParser {
       let pid = Int32(pidText)
     else { return nil }
     return pid
+  }
+}
+
+/// ADR-015 方式 B。`ps -axo pid,ppid,tty,comm` の解釈。
+/// why: どのターミナルもシェルを自分の子孫として起こすので、子孫の tty を集めれば
+/// 開いているタブが出る。アプリごとの照会（AppleScript・専用 API）が要らない。
+public enum ProcessTree {
+  /// `rootPID` の子孫が使っている tty デバイス名（`ttys000` の形）を ps の順で 1 度ずつ。
+  public static func terminalDevices(fromPsOutput output: String, ofDescendantsOf rootPID: Int32)
+    -> [String] {
+    let rows = rows(in: output)
+    var children: [Int32: [Int32]] = [:]
+    for row in rows where row.parentPID != row.pid {
+      children[row.parentPID, default: []].append(row.pid)
+    }
+    var descendants: Set<Int32> = []
+    var pending = children[rootPID] ?? []
+    while let pid = pending.popLast() {
+      guard descendants.insert(pid).inserted else { continue }
+      pending.append(contentsOf: children[pid] ?? [])
+    }
+    var devices: [String] = []
+    for row in rows where descendants.contains(row.pid) {
+      guard let device = row.device, !devices.contains(device) else { continue }
+      devices.append(device)
+    }
+    return devices
+  }
+
+  private struct Row {
+    let pid: Int32
+    let parentPID: Int32
+    let device: String?
+  }
+
+  /// 見出し行（`PID PPID TTY COMM`）は pid が数値でないので落ちる。
+  private static func rows(in output: String) -> [Row] {
+    output.split(separator: "\n").compactMap { line in
+      let fields = line.split(whereSeparator: \.isWhitespace)
+      guard fields.count >= 3, let pid = Int32(fields[0]), let parentPID = Int32(fields[1])
+      else { return nil }
+      let device = String(fields[2])
+      return Row(pid: pid, parentPID: parentPID, device: device == "??" ? nil : device)
+    }
+  }
+}
+
+/// ADR-015 方式 B。tty とその `/dev/<name>` の mtime。mtime を取るのは Vox 側。
+public struct TerminalDevice: Sendable, Equatable {
+  public let name: String
+  public let modifiedAt: Date
+
+  public init(name: String, modifiedAt: Date) {
+    self.name = name
+    self.modifiedAt = modifiedAt
+  }
+
+  /// 最後に書き込みがあった tty を「利用者が見ているタブ」とみなす。
+  /// 同じ時刻なら名前で決める（同じ入力なら同じ答えにする）。
+  public static func mostRecentlyUsed(_ devices: [TerminalDevice]) -> String? {
+    devices.max {
+      $0.modifiedAt == $1.modifiedAt ? $0.name > $1.name : $0.modifiedAt < $1.modifiedAt
+    }?.name
   }
 }
