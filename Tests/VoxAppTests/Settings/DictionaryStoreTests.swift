@@ -45,6 +45,38 @@ struct DictionaryStoreTests {
       "既存の辞書にテンプレートを書き足した")
   }
 
+  /// 案内どおり行頭の `#` だけを外したら、その行がそのまま効く（`# 松尾` の空白を残さない）。
+  @Test("テンプレートの例は # を外すだけで効く")
+  func uncommentingTheTemplateExampleWorks() throws {
+    let (root, store) = fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    try store.createIfMissing()
+    let uncommented = try #require(try store.contents())
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .map { $0.contains("\t") ? $0.dropFirst() : $0 }
+      .joined(separator: "\n")
+    try Data(uncommented.utf8).write(to: store.url)
+
+    #expect(
+      DictionaryPass.apply(to: "配列の松尾を取る", table: store.load()) == "配列の末尾を取る",
+      "# を外した例が効かない")
+    #expect(store.load().skippedLines.isEmpty, "# を外した例が壊れた行になった")
+  }
+
+  /// 読めないファイルを「作れません」で塞がない。開いて直せる状態のまま残す。
+  @Test("読めない辞書があるときは作り直さず、そのまま残す")
+  func anUnreadableDictionaryIsLeftForRepair() throws {
+    let (root, store) = fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let oversized = Data(repeating: 0x41, count: 64 * 1024 + 1)
+    try oversized.write(to: store.url)
+
+    try store.createIfMissing()
+    #expect(try Data(contentsOf: store.url) == oversized, "読めない辞書を書き換えた")
+  }
+
   @Test("書いた行が録音経路の辞書になる")
   func writtenLinesBecomeTheTable() throws {
     let (root, store) = fixture()

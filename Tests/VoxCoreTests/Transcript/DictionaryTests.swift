@@ -69,7 +69,7 @@ struct DictionaryTests {
     #expect(DictionaryPass.apply(to: "なんか、それは違う", table: table) == "それは違う")
   }
 
-  /// 畳みはしない。読点まで消したいなら左辺に読点を入れる（ADR-019）。
+  /// 辞書自身は畳まない。畳むのは後段のフィラー除去で、順序の検査がそれを固定している。
   @Test("Deleting a word keeps the commas around it")
   func deletingAWordKeepsTheCommasAroundIt() throws {
     let table = DictionaryTable(contents: "なんか\t")
@@ -201,6 +201,18 @@ struct DictionaryTests {
     expect(
       CommittedText.clean("えっと、松尾です", dictionary: table, fillerRemovalEnabled: false),
       "えっと、松尾です".replacingOccurrences(of: "松尾", with: "末尾"), 0)
+  }
+
+  /// 右辺を空にして消した跡の読点は、フィラー除去が入っている回だけ畳まれる。
+  @Test("Filler removal folds the commas the dictionary left behind")
+  func fillerRemovalFoldsTheCommasTheDictionaryLeftBehind() throws {
+    let table = DictionaryTable(contents: "なんか\t")
+    expect(
+      CommittedText.clean("これは、なんか、違う", dictionary: table, fillerRemovalEnabled: true),
+      "これは、違う", 0)
+    expect(
+      CommittedText.clean("これは、なんか、違う", dictionary: table, fillerRemovalEnabled: false),
+      "これは、、違う", 0)
   }
 
   @Test("An empty dictionary leaves filler removal alone")

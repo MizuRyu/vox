@@ -16,7 +16,7 @@ public struct DictionaryStore: Sendable {
   public init(url: URL) { self.url = url }
 
   /// ファイルが無ければ nil。読めない（上限超過、UTF-8 でない、通常ファイルでない）なら投げる。
-  public func contents() throws -> String? {
+  func contents() throws -> String? {
     let data: Data
     do {
       data = try PrivateFileIO.read(url, maximumBytes: Self.maximumBytes)
@@ -30,7 +30,7 @@ public struct DictionaryStore: Sendable {
   }
 
   /// why: 録音経路は辞書を読めなくても止めない。読めないことは設定画面が知らせる。
-  public func load() -> DictionaryTable {
+  func load() -> DictionaryTable {
     do {
       guard let contents = try contents() else { return .empty }
       return DictionaryTable(contents: contents)
@@ -40,18 +40,24 @@ public struct DictionaryStore: Sendable {
   }
 
   /// 無ければ書き方だけを書いたファイルを作る。あるなら触らない。
-  public func createIfMissing() throws {
-    guard try contents() == nil else { return }
+  func createIfMissing() throws {
+    do {
+      guard try contents() == nil else { return }
+    } catch {
+      // why: 読めないファイルが既にある回。上書きせず、そのまま開いて直してもらう。
+      return
+    }
     try PrivateFileIO.append(Data(Self.template.utf8), to: url)
   }
 
+  /// why: 例の行は `#` を外すだけで使える形にする（`# 松尾` の空白を残すと左辺が一致しない）。
   private static let template = """
     # vox の辞書。1 行に「置き換える表記」、タブ、「入れたい表記」を書きます。
     # # で始まる行と空行は無視します。右側を空にすると、その語を削除します。
     # 表計算アプリで開くと形式が変わることがあるので、テキストエディタで編集してください。
-    # 例（先頭の # を外して使います）
-    # 松尾\t末尾
-    # なんか、\t
+    # 例（行頭の # を外して使います）
+    #松尾\t末尾
+    #なんか、\t
 
     """
 }
