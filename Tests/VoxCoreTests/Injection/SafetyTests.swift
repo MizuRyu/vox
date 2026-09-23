@@ -204,6 +204,30 @@ struct InjectionSafetyTests {
     #expect(secureMode?.intValue == 0o600, "new history file is private")
   }
 
+  /// ADR-017。添付は新しいファイルだけを作る。既存を上書きすると、渡したパスの中身が入れ替わる。
+  @Test("添付の書き込みは新規作成だけを許す")
+  func attachmentWriteCreatesOnly() throws {
+    let manager = FileManager.default
+    let root = manager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? manager.removeItem(at: root) }
+    let file = root.appendingPathComponent("20260923/143001-01.png")
+    try PrivateFileIO.write(Data("image".utf8), creating: file)
+    #expect(try PrivateFileIO.read(file) == Data("image".utf8), "書いた内容が読み出せない")
+    let mode = try manager.attributesOfItem(atPath: file.path)[.posixPermissions] as? NSNumber
+    #expect(mode?.intValue == 0o600, "添付ファイルが非公開でない")
+    let directory = file.deletingLastPathComponent().path
+    let directoryMode = try manager.attributesOfItem(atPath: directory)[.posixPermissions]
+      as? NSNumber
+    #expect(directoryMode?.intValue == 0o700, "添付のフォルダが非公開でない")
+    #expect(throws: (any Error).self, "既存ファイルを上書きしようとした") {
+      try PrivateFileIO.write(Data("other".utf8), creating: file)
+    }
+    #expect(try PrivateFileIO.read(file) == Data("image".utf8), "上書きの試みで中身が変わった")
+    try expectRejectsUnsafeTargets(in: root) {
+      try PrivateFileIO.write(Data("bad".utf8), creating: $0)
+    }
+  }
+
   /// 末尾読み出しは上限を超えず、行として完成していない断片を返さない。
   private func privateFileTailChecks(root: URL) throws {
     let large = root.appendingPathComponent("large-history")

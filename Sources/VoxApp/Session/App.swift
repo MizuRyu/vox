@@ -446,6 +446,8 @@ extension VoxController {
       do {
         // パレットを出したまま確定された場合。締めるタスクが走り切ってから finalize する。
         await palette.awaitPendingFinalize()
+        // ADR-017。貼った画像の書き込みを待つ。待たずに貼ると本文にパスが入らない。
+        await hud.model.awaitPendingAttachments()
         let (finalizedMilliseconds, rawText) = try await lane.finalizeText()
         guard proceed(recording) else { close(); return }
         recording.metrics?.finalizedMilliseconds = finalizedMilliseconds

@@ -50,6 +50,24 @@ public enum PrivateFileIO {
     guard fchmod(fd, 0o600) == 0 else {
       throw PrivateFileSafetyError.systemCall("fchmod", errno)
     }
+    try writeAll(data, to: fd)
+  }
+
+  /// 新しいファイルだけを作る（ADR-017 の添付）。既存があれば失敗させ、中身を入れ替えない。
+  /// ディレクトリの 0700 とリンクの拒否は追記と同じ手順を使う。
+  public static func write(_ data: Data, creating file: URL) throws {
+    try PrivateFileSafety.prepareForAppend(file)
+    let (directoryFD, name) = try openParent(of: file)
+    defer { close(directoryFD) }
+    let fd = openat(
+      directoryFD, name, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK, 0o600)
+    guard fd >= 0 else { throw PrivateFileSafetyError.systemCall("openat", errno) }
+    defer { close(fd) }
+    try validate(fd: fd, file: file)
+    try writeAll(data, to: fd)
+  }
+
+  private static func writeAll(_ data: Data, to fd: Int32) throws {
     try data.withUnsafeBytes { bytes in
       var offset = 0
       while offset < bytes.count {

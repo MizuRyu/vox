@@ -26,6 +26,12 @@ public func runVox(arguments: [String]) -> Never {
     exit(HistoryPrinter.print(path: options.historyPath, limit: limit))
   }
 
+  // ADR-017。溜まった添付の回収は起動時に 1 回だけ（録音と確定の経路には載せない）。
+  if !options.settingsOnly {
+    let attachments = AttachmentStore.standard
+    Task.detached { attachments.purge() }
+  }
+
   let settings = makeSettingsController(options: options)
   if !options.settingsOnly && !isBundled { requireInputPermissions() }
 

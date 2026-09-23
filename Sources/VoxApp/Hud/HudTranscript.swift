@@ -14,6 +14,9 @@ public final class HudModel: ObservableObject {
   @Published public var tail = ""
   /// 中段をテキストの代わりに占める通知（挿入確認の失敗など）。
   @Published public var notice: String?
+  /// ADR-017。画像を保存できなかったときの 1 行。キーヒントの行に出す
+  /// （`notice` は本文と入れ替わるので、録音中の失敗には使えない）。
+  @Published var attachmentNotice: String?
   /// 波形用。tap の RMS。
   @Published public var level = 0.0
   /// HUD を出すたびに増える。テキストビューのフォーカス取得をやり直す合図。
@@ -92,6 +95,48 @@ public final class HudModel: ObservableObject {
     head = ""
     tentative = ""
     tail = ""
+  }
+
+  // MARK: ADR-017 画像の添付
+
+  /// 走っている書き込み。前の分に続けて走らせ、差し込みの順を貼った順に保つ。
+  private var attachmentTask: Task<Void, Never>?
+  private var attachmentNoticeTask: Task<Void, Never>?
+
+  func trackAttachment(_ work: @escaping @MainActor @Sendable () async -> Void) {
+    let previous = attachmentTask
+    attachmentTask = Task { @MainActor in
+      await previous?.value
+      await work()
+    }
+  }
+
+  /// 確定はここで書き込みを待つ。待っている間に貼られた分も終わるまで待つ。
+  func awaitPendingAttachments() async {
+    while let task = attachmentTask {
+      await task.value
+      if attachmentTask == task { attachmentTask = nil }
+    }
+  }
+
+  /// 2.5 秒でキーヒントに戻す（他の通知と同じ長さ）。
+  func showAttachmentNotice(_ message: String) {
+    attachmentNotice = message
+    attachmentNoticeTask?.cancel()
+    attachmentNoticeTask = Task { @MainActor [weak self] in
+      try? await Task.sleep(for: .milliseconds(2500))
+      guard !Task.isCancelled else { return }
+      self?.attachmentNotice = nil
+    }
+  }
+
+  /// HUD を出し直すとき。通知を消し、走っている書き込みも捨てる（前の回のパスを次の本文に入れない）。
+  func resetAttachments() {
+    attachmentNoticeTask?.cancel()
+    attachmentNoticeTask = nil
+    attachmentNotice = nil
+    attachmentTask?.cancel()
+    attachmentTask = nil
   }
 
   /// パレットの確定。`plan.location` は全文のオフセット（T17）。
@@ -519,17 +564,93 @@ public final class TranscriptTextView: NSTextView {
   weak var coordinator: TranscriptEditor.Coordinator?
 
   public override func paste(_ sender: Any?) {
-    guard let coordinator,
-      let value = TranscriptFilePaste.pathText(
-        from: NSPasteboard.general, repositoryRoot: coordinator.model.repositoryRoot),
-      let insertion = coordinator.filePathInsertion(for: value, selection: selectedRange())
-    else {
+    guard let coordinator else {
       super.paste(sender)
       return
     }
-    // `insertText` は shouldChangeTextIn / textDidChange を通るので、
-    // buffer と typed_chars は通常の打鍵と同じ経路で更新される。
-    insertText(insertion.text, replacementRange: insertion.range)
+    if let value = TranscriptFilePaste.pathText(
+      from: NSPasteboard.general, repositoryRoot: coordinator.model.repositoryRoot),
+      let insertion = coordinator.filePathInsertion(for: value, selection: selectedRange()) {
+      // `insertText` は shouldChangeTextIn / textDidChange を通るので、
+      // buffer と typed_chars は通常の打鍵と同じ経路で更新される。
+      insertText(insertion.text, replacementRange: insertion.range)
+      return
+    }
+    // ADR-017。クリップボードに画像だけがある回。ファイルに書いてからパスを入れる。
+    switch TranscriptImagePaste.request(from: NSPasteboard.general) {
+    case .image(let data, let kind): save(data, kind: kind, coordinator: coordinator)
+    case .unsupported: coordinator.model.showAttachmentNotice(
+        TranscriptImagePaste.unsupportedNotice)
+    case nil: super.paste(sender)
+    }
+  }
+
+  /// 書き込みが終わってからパスを入れる（本文にパスがあるならファイルがある、を保つ）。
+  /// 確定はこの仕事を `awaitPendingAttachments()` で待つ。
+  private func save(
+    _ data: Data, kind: AttachmentImageKind, coordinator: TranscriptEditor.Coordinator
+  ) {
+    let store = AttachmentStore.standard
+    coordinator.model.trackAttachment { [weak self] in
+      let outcome = await Task.detached { store.save(data, kind: kind) }.value
+      guard !Task.isCancelled, let self, let coordinator = self.coordinator else { return }
+      switch TranscriptImagePaste.result(
+        for: outcome, repositoryRoot: coordinator.model.repositoryRoot,
+        homeDirectory: NSHomeDirectory()) {
+      case .insert(let path):
+        guard let insertion = coordinator.filePathInsertion(
+          for: path, selection: self.selectedRange())
+        else { return }
+        self.insertText(insertion.text, replacementRange: insertion.range)
+      case .notice(let message):
+        coordinator.model.showAttachmentNotice(message)
+      }
+    }
+  }
+}
+
+/// ADR-017。ペーストボードの画像を読み、保存の後始末を決める。形式の表と優先順は VoxCore。
+enum TranscriptImagePaste {
+  static let unsupportedNotice = "この形式の画像には対応していません"
+  static let saveFailedNotice = "画像を保存できませんでした"
+
+  enum Request: Equatable {
+    case image(Data, AttachmentImageKind)
+    /// 画像は載っているが、保存できる形式が無い。
+    case unsupported
+  }
+
+  enum Result: Equatable {
+    /// 本文に入れるパスの表記。保存が終わってからしか返らない。
+    case insert(String)
+    case notice(String)
+  }
+
+  /// テキストかファイルが同時にあるときは何も返さない（通常のペーストを壊さない）。
+  static func request(from pasteboard: NSPasteboard) -> Request? {
+    let types = pasteboard.types?.map(\.rawValue) ?? []
+    guard !AttachmentPaste.carriesTextOrFiles(availableTypes: types) else { return nil }
+    guard let kind = AttachmentPaste.imageKind(availableTypes: types) else {
+      // 対応外でも画像が載っているかは AppKit に聞く（読める形式の一覧を自分で持たない）。
+      return pasteboard.canReadObject(forClasses: [NSImage.self], options: nil)
+        ? .unsupported : nil
+    }
+    // 型はあるのにデータが取れない（promise が撤回された）回は AppKit のペーストに任せる。
+    guard let data = pasteboard.data(forType: NSPasteboard.PasteboardType(kind.pasteboardType))
+    else { return nil }
+    return .image(data, kind)
+  }
+
+  static func result(
+    for outcome: AttachmentStore.SaveOutcome, repositoryRoot: String?, homeDirectory: String
+  ) -> Result {
+    switch outcome {
+    case .saved(let path):
+      .insert(
+        FilePathFormat.display(
+          path: path, repositoryRoot: repositoryRoot, homeDirectory: homeDirectory))
+    case .failed: .notice(saveFailedNotice)
+    }
   }
 }
 
