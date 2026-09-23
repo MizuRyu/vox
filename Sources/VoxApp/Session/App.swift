@@ -21,6 +21,8 @@ final class VoxController {
   private typealias State = SettingsPresentationState.Phase
 
   private let hud = HudPanel()
+  /// T38-b。登録フォルダの常駐索引。起動時に組み、パレットが開いたときに即座に出す。
+  private let indexes = ResidentIndexStore()
   private let palette: PaletteCoordinator
   private let lane = SpeechLane()
   private let injector = Injector()
@@ -49,7 +51,7 @@ final class VoxController {
   init(metrics: MetricsWriter, history: HistoryWriter, settings: SettingsController) {
     self.metrics = metrics
     self.history = history
-    let palette = PaletteCoordinator(hud: hud)
+    let palette = PaletteCoordinator(hud: hud, indexes: indexes)
     self.palette = palette
     self.settings = SettingsCoordinator(
       controller: settings, hud: hud, hotkeys: hotkeys, palette: palette)
@@ -105,6 +107,7 @@ final class VoxController {
     }
     if enableHotkeys { try hotkeys.start() }
     settings.listen()
+    indexes.start()
   }
 
   func enableHotkeys() throws {
@@ -153,6 +156,7 @@ final class VoxController {
     isShuttingDown = true
     recording?.task?.cancel()
     palette.cancelPendingWork()
+    indexes.stop()
     sigilNoticeTask?.cancel()
     hotkeys.stop()
     await lane.abort()

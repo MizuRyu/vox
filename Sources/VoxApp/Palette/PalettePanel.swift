@@ -95,6 +95,15 @@ final class PaletteModel: ObservableObject {
       + folders(matching: "", limit: Self.recentFolderLimit).map(TargetRow.folder)
   }
 
+  /// T38-c。巡回キーで進む候補。並びは既定表示の候補行と同じ。
+  /// why: 検索中と Tree 表示でも同じ輪を使う（表示でキーの意味を変えない）。
+  var cycleTargets: [PaletteTarget] {
+    worktrees.map { PaletteTarget(root: $0.path, source: .worktree) }
+      + folders(matching: "", limit: Self.recentFolderLimit).map {
+        PaletteTarget(root: $0.path, source: .recent)
+      }
+  }
+
   /// 選択中の候補行。ファイル行を選んでいるときは nil。
   var selectedTargetRow: TargetRow? {
     let candidates = targetRows
@@ -337,15 +346,38 @@ final class PaletteModel: ObservableObject {
   }
 }
 
+/// T38-c。検索対象を巡回するキー（`⌘]`）。
+/// why: メニュー項目にも field editor の key binding にも無い組み合わせなので、
+/// ↑↓・Enter と違って `doCommandBy` には来ない。パネルの key equivalent で受ける。
+enum PaletteKeys {
+  static func isCycleTarget(_ event: NSEvent) -> Bool {
+    event.charactersIgnoringModifiers == "]"
+      && event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command
+  }
+}
+
 /// HUD と同じ理由で canBecomeKey を上書きする（borderless は既定で key になれない）。
 private final class VoxPalettePanel: NSPanel {
+  var onCycleTarget: (() -> Void)?
+
   override var canBecomeKey: Bool { true }
   override var canBecomeMain: Bool { false }
+
+  override func performKeyEquivalent(with event: NSEvent) -> Bool {
+    guard PaletteKeys.isCycleTarget(event) else { return super.performKeyEquivalent(with: event) }
+    onCycleTarget?()
+    return true
+  }
 }
 
 @MainActor
 final class PalettePanel {
   let model = PaletteModel()
+  /// T38-c。`⌘]` の打鍵。巡回する輪は PaletteCoordinator が持つ。
+  var onCycleTarget: (() -> Void)? {
+    get { panel.onCycleTarget }
+    set { panel.onCycleTarget = newValue }
+  }
   private let panel: VoxPalettePanel
 
   init() {

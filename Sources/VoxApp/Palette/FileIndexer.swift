@@ -9,12 +9,25 @@ import VoxCore
 
 struct RepositoryIndex: Sendable {
   let root: String
+  // why: 追跡ファイルと変更状態を別々に持つと、status だけ読み直した更新で並びを組み直せる（T38-b）。
+  let snapshot: IndexSnapshot
   let files: [IndexedFile]
   /// ヘッダの「Changes  n / total」用。
-  let changedCount: Int
-  let totalCount: Int
+  var changedCount: Int { snapshot.changes.count }
+  var totalCount: Int { files.count }
 
-  static let empty = RepositoryIndex(root: "", files: [], changedCount: 0, totalCount: 0)
+  static let empty = RepositoryIndex(root: "", snapshot: .empty)
+
+  init(root: String, snapshot: IndexSnapshot) {
+    self.root = root
+    self.snapshot = snapshot
+    files = snapshot.files
+  }
+
+  // why: 追跡ファイルの一覧は `git status` の読み直しでは変わらない（T38-b）。
+  func replacingChanges(_ changes: [String: FileChangeStatus]) -> RepositoryIndex {
+    RepositoryIndex(root: root, snapshot: snapshot.replacingChanges(changes))
+  }
 }
 
 struct FilePreview: Sendable {
@@ -32,22 +45,35 @@ enum FileIndexer {
 
   /// プロセスを起動するので detached で走らせる。
   nonisolated static func load(root: String) -> RepositoryIndex {
-    if let index = gitIndex(root: root) { return index }
-    return fallbackIndex(root: root)
+    guard let snapshot = snapshot(root: root) else { return fallbackIndex(root: root) }
+    return RepositoryIndex(root: root, snapshot: snapshot)
   }
 
-  private nonisolated static func gitIndex(root: String) -> RepositoryIndex? {
+  /// git 管理下の追跡ファイルと変更状態。管理外なら nil。
+  nonisolated static func snapshot(root: String) -> IndexSnapshot? {
     guard let tracked = Shell.run("git", ["-C", root, "ls-files", "-z"]), tracked.succeeded else {
       return nil
     }
-    let paths = GitOutputParser.trackedPaths(fromNulSeparated: tracked.standardOutput)
-    var changes: [String: FileChangeStatus] = [:]
-    if let status = Shell.run("git", ["-C", root, "status", "--porcelain", "-z"]), status.succeeded {
-      changes = GitOutputParser.changes(fromNulSeparated: status.standardOutput)
-    }
-    let files = FileIndex.build(trackedPaths: paths, changes: changes)
-    return RepositoryIndex(
-      root: root, files: files, changedCount: changes.count, totalCount: files.count)
+    return IndexSnapshot(
+      trackedPaths: GitOutputParser.trackedPaths(fromNulSeparated: tracked.standardOutput),
+      changes: changes(root: root) ?? [:])
+  }
+
+  /// T38-b。変更状態だけ読み直す。
+  nonisolated static func changes(root: String) -> [String: FileChangeStatus]? {
+    guard let status = Shell.run("git", ["-C", root, "status", "--porcelain", "-z"]),
+      status.succeeded
+    else { return nil }
+    return GitOutputParser.changes(fromNulSeparated: status.standardOutput)
+  }
+
+  /// T38-b。監視するリポジトリの実体。linked worktree では作業ツリーの外を指す。
+  nonisolated static func gitDirectory(root: String) -> String? {
+    guard let output = Shell.run("git", ["-C", root, "rev-parse", "--absolute-git-dir"]),
+      output.succeeded
+    else { return nil }
+    let path = output.standardOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+    return path.isEmpty ? nil : path
   }
 
   /// `.gitignore` を見てくれる点で fd が望ましいが、無ければ FileManager で拾う。
@@ -59,8 +85,9 @@ enum FileIndexer {
     } else {
       paths = enumeratePaths(root: root)
     }
-    let files = FileIndex.build(trackedPaths: Array(paths.prefix(fallbackFileLimit)), changes: [:])
-    return RepositoryIndex(root: root, files: files, changedCount: 0, totalCount: files.count)
+    return RepositoryIndex(
+      root: root,
+      snapshot: IndexSnapshot(trackedPaths: Array(paths.prefix(fallbackFileLimit)), changes: [:]))
   }
 
   private nonisolated static func enumeratePaths(root: String) -> [String] {

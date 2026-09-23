@@ -40,7 +40,7 @@ struct CoordinatorTargetTests {
     defer { try? FileManager.default.removeItem(at: directory) }
 
     let log = Box()
-    let coordinator = PaletteCoordinator(hud: HudPanel())
+    let coordinator = PaletteCoordinator(hud: HudPanel(), indexes: ResidentIndexStore())
     sources(of: coordinator, into: log)
 
     coordinator.open(atMilliseconds: 0, typedAt: nil)
@@ -73,7 +73,7 @@ struct CoordinatorTargetTests {
     VoxConfig.allowCurrentDirectoryFallback = false
     defer { VoxConfig.allowCurrentDirectoryFallback = allowCurrentDirectory }
 
-    let coordinator = PaletteCoordinator(hud: HudPanel())
+    let coordinator = PaletteCoordinator(hud: HudPanel(), indexes: ResidentIndexStore())
     coordinator.open(atMilliseconds: 0, typedAt: nil)
     coordinator.paletteModel.setPickingFolder(true)
 
