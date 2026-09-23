@@ -462,6 +462,10 @@ struct PaletteView: View {
       } else {
         hint("Enter", "パスを入れる") { model.commit(fileNameOnly: false) }
         hint("⌥Enter", "ファイル名のみ")
+        // T38-c。巡回できる候補があるときだけ出す（押しても何も起きないキーは案内しない）。
+        if !model.cycleTargets.isEmpty {
+          hint("⌘]", "検索対象を巡る")
+        }
         hint("Esc", "閉じる") { model.cancel() }
       }
       Spacer(minLength: 0)

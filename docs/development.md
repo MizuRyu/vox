@@ -94,6 +94,7 @@ swift run Vox
 | ホットキー設定 | `~/Library/Application Support/vox/settings.json`（schema 1、ファイル権限 0600） |
 | 確定テキストの履歴 | `~/Library/Application Support/vox/history.jsonl` |
 | 最近使った検索フォルダ | `~/Library/Application Support/vox/folders.json`（schema 1、上限 20 件、ファイル権限 0600） |
+| 登録フォルダの常駐索引 | メモリだけ（ディスクに残さない。上限 20 件 × 20,000 件。診断ログの `index_resident` / `index_rebuilt` / `index_evicted` は件数と所要時間だけ） |
 | アプリの計測 | `benchmarks/m1/metrics.jsonl`（Git 対象外） |
 | M0 の音声・モデル・結果 | `benchmarks/m0/audio/`、`models/`、`results/`（Git 対象外） |
 
