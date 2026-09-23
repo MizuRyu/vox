@@ -93,6 +93,7 @@ swift run Vox
 |---|---|
 | ホットキー設定 | `~/Library/Application Support/vox/settings.json`（schema 1、ファイル権限 0600） |
 | 確定テキストの履歴 | `~/Library/Application Support/vox/history.jsonl` |
+| 辞書（表記の置換） | `~/Library/Application Support/vox/dictionary.tsv`（TSV、上限 64KiB、ファイル権限 0600） |
 | アプリの計測 | `benchmarks/m1/metrics.jsonl`（Git 対象外） |
 | M0 の音声・モデル・結果 | `benchmarks/m0/audio/`、`models/`、`results/`（Git 対象外） |
 

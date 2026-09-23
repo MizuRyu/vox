@@ -54,6 +54,7 @@ macOS が再起動を求めたら Vox を終了して開き直す。ソースか
 ```
 ~/Library/Application Support/vox/settings.json   ← 設定（0600）
 ~/Library/Application Support/vox/history.jsonl   ← 確定本文の履歴（0600）
+~/Library/Application Support/vox/dictionary.tsv  ← 辞書（0600、任意。無ければ置換しない）
 ```
 
 ### settings.json フィールド一覧（`Sources/VoxCore/HotkeySettings.swift`）
@@ -71,6 +72,19 @@ macOS が再起動を求めたら Vox を終了して開き直す。ソースか
 | `microphone_input` | object | `{"mode":"automatic"}` | Vox の入力選択。`automatic` は既定の入出力が Bluetooth 系・出力稼働中なら内蔵入力を優先し、なければ既定入力。`system_default` は常に準備時の既定入力。`device` は `uid` で機器を固定し、未接続なら開始エラー |
 
 マイクの指定は設定画面「使用するマイク」で保存する。個別指定の形式は `{"mode":"device","uid":"機器のUID"}`。UID は機器の再接続で変わりうる AudioDeviceID と区別し、診断ログには出さない。古い設定に `microphone_input` がなければ「自動」になる。macOS 全体の既定入力・既定出力は変更しない。録音中の設定変更は次の録音から反映する。
+
+### dictionary.tsv（`Sources/VoxCore/Transcript/DictionaryPass.swift`、ADR-019）
+
+設定画面の「辞書」→「辞書ファイルを開く」で作って開く。設定画面では編集せず、テキストエディタで直す。
+
+| 項目 | 内容 |
+|---|---|
+| 書式 | 1 行 = `置き換える表記<TAB>入れたい表記`。`#` で始まる行と空行は無視。右辺が空なら削除 |
+| 照合 | 表記の完全一致・最長一致。正規化（大小・全半角・読み）はしない。置換した結果は再走査しない |
+| 適用 | 音声由来の確定本文だけ。フィラー除去より前。手入力と履歴の `raw_text` には掛からない |
+| 上限 | 64KiB。超えると読み込まず、設定画面にエラーを出す |
+| 反映 | 録音開始時に読む。保存した変更は次の録音から |
+| 壊れた行 | その行だけ落として続行。設定画面が 1 始まりの行番号を出す |
 
 ### ショートカットの表記（`Sources/VoxCore/HotkeyBinding.swift`）
 
@@ -115,6 +129,7 @@ macOS が再起動を求めたら Vox を終了して開き直す。ソースか
 |---|---|
 | 設定 | Vox を終了して `rm ~/Library/Application\ Support/vox/settings.json` |
 | 履歴 | 同じく `history.jsonl` を削除 |
+| 辞書 | 同じく `dictionary.tsv` を削除（または別名に移す）。次の録音から置換しなくなる |
 | 権限 | システム設定 → プライバシーとセキュリティ → アクセシビリティ / 入力監視 で Vox を削除して追加し直す |
 
 ## よくあるトラブル
@@ -123,6 +138,7 @@ macOS が再起動を求めたら Vox を終了して開き直す。ソースか
 - **音楽が途切れる**: 「使用するマイク」を内蔵・USBなどへ指定して保存する。「自動」の切替は既定の入出力が Bluetooth 系かつ出力稼働中の場合だけ。「通話向けの音声処理」はオフにする。診断ログの `audio_input` が選択した機器、`audio_input_verified device_id= route=input_only` が開始後の機器確認を示す。録音直後に `audio_configuration_changed` が出る場合は録音が打ち切られている
 - **貼り付けが起きない**: メニューバー「診断ログを開く…」で `error` を見る。意味は `docs/development.md` の表。`input_target_changed_*` は確定時に前面アプリが変わっている
 - **Enter が省略される**: 修飾キーが押されたまま、入力先の変更、クリップボード競合で省略する。入力欄を読み返せないアプリ（ターミナル系）では `auto_enter_unverified` をオンにしないと送らない
+- **辞書が効かない**: 設定の「辞書」で「更新」を押し、件数と行番号を見る。0 件ならタブではなく空白で書いている。件数が合っていて効かないときは、置き換える表記が認識結果と 1 文字でも違う（履歴の `raw_text` と突き合わせる）か、認識が語の途中で区切られている。表計算アプリで保存し直すと形式が変わる
 - **更新したら権限が消えた**: 署名 identity の変更。上の「署名と権限の関係」
 - **Orca でファイル検索の対象が違う**: Orca の画面でアクティブなローカル worktree を対象にする。一意に決まらなければ `--repo` の設定フォルダ
 - **メニューが見つからない**: `Vox.app` をもう一度開くとセットアップ画面が出る。ウィンドウを閉じても常駐は続く
