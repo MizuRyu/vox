@@ -14,7 +14,7 @@ DEFAULT_DIR = os.path.expanduser("~/Library/Application Support/vox")
 MAXIMUM_BYTES = 64 * 1024
 # why: `DictionaryStore.swift` の template と同文。変えるときは両方（dictionary-script-tests.sh が一致を検査する）。
 TEMPLATE = (
-    "# vox の辞書。1 行に「置き換える表記」、タブ、「入れたい表記」を書きます。\n"
+    "# vox の辞書。1 行に「認識される表記」、タブ、「入れたい表記」を書きます。\n"
     "# # で始まる行と空行は無視します。右側を空にすると、その語を削除します。\n"
     "# 表計算アプリで開くと形式が変わることがあるので、テキストエディタで編集してください。\n"
     "# 例（行頭の # を外して使います）\n"
