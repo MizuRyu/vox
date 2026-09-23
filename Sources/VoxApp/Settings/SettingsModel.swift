@@ -65,8 +65,7 @@ public final class SettingsModel: ObservableObject {
       let table = DictionaryTable(contents: contents)
       dictionaryMessage = "\(table.entries.count)件を読み込みました。"
         + skippedNotice(table.skippedLines)
-        + (dictionaryRows?.hasUnsavedEdits == true
-          ? "保存していない行があります。Enterを押すと保存し直します。" : "")
+        + (dictionaryRows?.hasUnsavedEdits == true ? Self.unsavedNotice : "")
     } catch {
       dictionaryRows = nil
       dictionaryMessage = "辞書ファイルを読み込めません。ファイルを確認してから「更新」を押してください。"
@@ -88,18 +87,28 @@ public final class SettingsModel: ObservableObject {
     do {
       save = try dictionaryRows?.edit(id, to: DictionaryEntry(from: from, to: to))
     } catch {
-      if let message = Self.message(for: error) { dictionaryMessage = message }
+      if let message = Self.message(for: error) {
+        dictionaryMessage = message
+      } else if dictionaryRows?.hasUnsavedEdits == true {
+        dictionaryMessage = Self.unsavedNotice
+      }
       return
     }
     if let save { write(save) }
   }
 
   public func removeDictionaryEntry(id: Int) {
-    guard let save = dictionaryRows?.remove(id) else { return }
+    guard let save = dictionaryRows?.remove(id) else {
+      // 打ち込み途中の行を消しただけの回も、未保存の知らせを出し直す。
+      refreshDictionary()
+      return
+    }
     write(save)
   }
 
-  /// why: 左の列が空の行は打ち込み途中として黙って残す（ADR-021）。
+  private static let unsavedNotice = "保存していない行があります。Enterを押すと保存し直します。"
+
+  /// why: 左の列が空の追加行は打ち込み途中として黙って残す（ADR-021）。
   private static func message(for failure: DictionaryDocument.EditFailure) -> String? {
     switch failure {
     case .emptySource: nil

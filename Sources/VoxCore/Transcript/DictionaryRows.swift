@@ -31,7 +31,7 @@ public struct DictionaryRows: Equatable, Sendable {
     show(document, ids: [:], keepingPending: false)
   }
 
-  /// 保存できなかった値がある。空の打ち込み途中の行は数えない。
+  /// 保存できなかった値がある。左の列が空の追加行は打ち込み途中なので数えない（ADR-021）。
   public var hasUnsavedEdits: Bool {
     rows.contains { $0.isPending && ($0.saved != nil || !$0.entry.from.isEmpty) }
   }

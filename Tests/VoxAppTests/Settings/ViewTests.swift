@@ -182,6 +182,8 @@ struct SettingsViewTests {
     let id = rowID(model, 0)
 
     model.updateDictionaryEntry(id: id, from: "", to: "末尾")
+    #expect(model.dictionaryMessage == "保存していない行があります。Enterを押すと保存し直します。",
+      "既にある行を空にしたことを知らせない")
     let shown = model.dictionaryEntries[0]
     #expect(shown == DictionaryEntry(from: "", to: "末尾"), "打ち込みが画面から消えた")
     model.updateDictionaryEntry(id: id, from: shown.from, to: "別")
@@ -193,6 +195,19 @@ struct SettingsViewTests {
     #expect(
       model.dictionaryMessage.hasSuffix("保存していない行があります。Enterを押すと保存し直します。"),
       "\(model.dictionaryMessage)")
+  }
+
+  @Test("保存していない行を消すと、その知らせも消える")
+  func removingTheUnsavedRowClearsTheNotice() throws {
+    let (root, _, model) = try dictionaryFixture(sample)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let draft = try #require(model.addDictionaryEntry())
+    model.updateDictionaryEntry(id: draft, from: "松尾", to: "別")
+    model.updateDictionaryEntry(id: rowID(model, 1), from: "おるか", to: "Orca")
+    #expect(model.dictionaryMessage.contains("保存していない行があります。"), "\(model.dictionaryMessage)")
+    model.removeDictionaryEntry(id: draft)
+    #expect(!model.dictionaryMessage.contains("保存していない行があります。"), "\(model.dictionaryMessage)")
   }
 
   /// エディタで書き換えた内容を、表の古い内容で上書きしない。
