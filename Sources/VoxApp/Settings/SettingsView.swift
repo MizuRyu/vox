@@ -253,20 +253,16 @@ private struct DictionaryEditor: View {
         .fixedSize(horizontal: false, vertical: true)
       Table(rows, selection: $selection) {
         TableColumn("認識される表記") { row in
-          DictionaryCell(
-            title: "認識される表記", text: row.entry.from, autofocus: row.id == focusRequest
-          ) {
+          DictionaryCell(title: "認識される表記", text: row.entry.from, autofocus: autofocus(row)) {
             model.updateDictionaryEntry(
               at: row.id, replacing: row.entry, from: $0, to: row.entry.to)
           }
-          .id("\(row.entry.from)\t\(row.entry.to)")
         }
         TableColumn("入れたい表記") { row in
-          DictionaryCell(title: "入れたい表記", text: row.entry.to, autofocus: false) {
+          DictionaryCell(title: "入れたい表記", text: row.entry.to, autofocus: .constant(false)) {
             model.updateDictionaryEntry(
               at: row.id, replacing: row.entry, from: row.entry.from, to: $0)
           }
-          .id("\(row.entry.from)\t\(row.entry.to)")
         }
       }
       .frame(height: tableHeight)
@@ -293,6 +289,11 @@ private struct DictionaryEditor: View {
     }
   }
 
+  /// 「追加」で足した行の左のセルだけが、表示されたときに 1 度フォーカスを取る。
+  private func autofocus(_ row: Row) -> Binding<Bool> {
+    Binding(get: { focusRequest == row.id }, set: { if !$0 { focusRequest = nil } })
+  }
+
   private var rows: [Row] {
     model.dictionaryEntries.enumerated().map { Row(id: $0.offset, entry: $0.element) }
   }
@@ -308,15 +309,15 @@ private struct DictionaryEditor: View {
 private struct DictionaryCell: View {
   let title: String
   let text: String
-  let autofocus: Bool
+  @Binding var autofocus: Bool
   let commit: (String) -> Void
   @State private var draft: String
   @FocusState private var focused: Bool
 
-  init(title: String, text: String, autofocus: Bool, commit: @escaping (String) -> Void) {
+  init(title: String, text: String, autofocus: Binding<Bool>, commit: @escaping (String) -> Void) {
     self.title = title
     self.text = text
-    self.autofocus = autofocus
+    _autofocus = autofocus
     self.commit = commit
     _draft = State(initialValue: text)
   }
@@ -329,8 +330,12 @@ private struct DictionaryCell: View {
       .onChange(of: focused) { _, focused in
         if !focused { save() }
       }
+      // why: 保存や「更新」・削除で行の中身が変わったら、打ち込み中の文字を表示中の値に揃える。
+      .onChange(of: text) { _, text in draft = text }
       .onAppear {
-        if autofocus { focused = true }
+        guard autofocus else { return }
+        autofocus = false
+        focused = true
       }
   }
 
