@@ -74,12 +74,17 @@ Zed の DB は WAL なので、書き込み中の読み取りが起こる。`sql
 （`git rev-parse` でリポジトリのルートまで広げない）。Zed が見せているのはその workspace であって、
 それを含むリポジトリではない。
 
+リモート接続の workspace（`workspaces.remote_connection_id` が非 NULL）は対象にしない。`paths` は接続先の
+パスなので、同じ絶対パスが手元にあると無関係なフォルダを検索してしまう。
+
 対応する channel は `dev.zed.Zed`（stable）/ `dev.zed.Zed-Preview` / `dev.zed.Zed-Nightly`。
 `dev.zed.Zed-Dev`（手元ビルド）は入れない。
 
 ### 共通の約束
 
 - 待ち上限は既存の 500ms（`PaletteTargetResolver.timeoutMilliseconds`）。A / B が期限内に返らなければ C に落ちる。
+  Zed の DB 読み取りは問い合わせごとに期限を見る（`sqlite3_busy_timeout` はロック待ちの上限でしかなく、
+  処理全体の期限にはならない）。
 - DB が無い・ロックされている・スキーマが違う・`ps` が読めない — どの失敗も**黙って C に落ちる**。
   「Zed の DB が読めません」のような案内は出さない（利用者に打てる手が無く、ヘッダのパスが答えになっている）。
 - 診断ログに出すのは方式の名前と失敗の種類だけ。ウィンドウ名・プロジェクト名・パスは既存方針どおり

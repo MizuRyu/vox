@@ -9,16 +9,18 @@ import VoxCore
 
 @Suite("Palette: Zed の workspace DB")
 struct ZedWorkspaceReaderTests {
-  /// 実物と同じ 3 つの表。workspace 13 のほうが timestamp は新しい。
+  /// 実物と同じ 3 つの表。workspace 13 のほうが timestamp は新しく、23 はリモート接続。
   private static let schema = """
     CREATE TABLE workspaces (
-      workspace_id INTEGER PRIMARY KEY, paths TEXT, timestamp TEXT NOT NULL) STRICT;
-    INSERT INTO workspaces (workspace_id, paths, timestamp) VALUES
-      (7,  '/Users/me/projects/front',  '2026-09-20 10:00:00'),
-      (13, '/Users/me/projects/newest', '2026-09-23 12:00:00'),
+      workspace_id INTEGER PRIMARY KEY, paths TEXT, remote_connection_id INTEGER,
+      timestamp TEXT NOT NULL) STRICT;
+    INSERT INTO workspaces (workspace_id, paths, remote_connection_id, timestamp) VALUES
+      (7,  '/Users/me/projects/front',  NULL, '2026-09-20 10:00:00'),
+      (13, '/Users/me/projects/newest', NULL, '2026-09-23 12:00:00'),
       (21, '/Users/me/projects/multi' || char(10) || '/Users/me/projects/second',
-           '2026-09-21 10:00:00'),
-      (22, '', '2026-09-22 10:00:00');
+           NULL, '2026-09-21 10:00:00'),
+      (22, '', NULL, '2026-09-22 10:00:00'),
+      (23, '/Users/me/projects/front', 4, '2026-09-23 13:00:00');
     CREATE TABLE kv_store (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;
     CREATE TABLE scoped_kv_store (
       namespace TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL,
@@ -27,7 +29,8 @@ struct ZedWorkspaceReaderTests {
       ('multi_workspace_state', '4294967297', '{"active_workspace_id":7}'),
       ('multi_workspace_state', '4294967298', '{"active_workspace_id":13}'),
       ('multi_workspace_state', '4294967299', '{"active_workspace_id":21}'),
-      ('multi_workspace_state', '4294967300', '{"active_workspace_id":22}');
+      ('multi_workspace_state', '4294967300', '{"active_workspace_id":22}'),
+      ('multi_workspace_state', '4294967301', '{"active_workspace_id":23}');
     """
 
   /// `sql` を流した DB を一時ディレクトリに作り、書き込み側の接続を開いたまま body に渡す。
@@ -102,6 +105,26 @@ struct ZedWorkspaceReaderTests {
     #expect(frontmostRoot(in: "/nonexistent/zed/db.sqlite") == nil, "無い DB から対象を作った")
     try withDatabase("CREATE TABLE other (id INTEGER PRIMARY KEY) STRICT;") { path in
       #expect(frontmostRoot(in: path) == nil, "スキーマが違う DB から対象を作った")
+    }
+  }
+
+  /// why: リモートの workspace の paths は接続先のパス。同じ絶対パスが手元にもあると
+  /// 別のフォルダを検索対象にしてしまう。
+  @Test("A remote workspace is not a local target")
+  func aRemoteWorkspaceIsNotALocalTarget() throws {
+    try withDatabase(Self.schema + Self.stack("[4294967301]")) { path in
+      #expect(frontmostRoot(in: path) == nil, "リモート接続の workspace を手元のフォルダとして返した")
+    }
+  }
+
+  /// 500ms の期限を過ぎていたら読まない（呼び出し側が方式 C に落ちる）。
+  @Test("An expired deadline reads nothing")
+  func anExpiredDeadlineReadsNothing() throws {
+    try withDatabase(Self.schema + Self.stack("[4294967297]")) { path in
+      let expired = ContinuousClock.now.advanced(by: .milliseconds(-1))
+      #expect(
+        ZedWorkspaceReader.frontmostRoot(databasePath: path, deadline: expired) == nil,
+        "期限を過ぎても DB を読んだ")
     }
   }
 

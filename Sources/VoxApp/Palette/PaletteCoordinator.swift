@@ -87,19 +87,21 @@ final class PaletteCoordinator {
 
     setupTask = Task { @MainActor in
       // T23。最近使ったフォルダはファイル読み込みなので detached。候補行は索引より先に出る。
-      // ADR-015 方式 C は最新のフォルダを使うので、解決より先に読み終える。
-      let folders = await Task.detached { FolderHistoryStore.load() }.value
+      let folders = Task.detached { FolderHistoryStore.load() }
+      // why: 固定した挿入先は中断点の前に読む（再開した後は次の録音のアプリになっている）。
       let application = targetApplication()
+      let repositories = VoxConfig.fallbackRepositories
       // T23。この録音で選び直したフォルダがあれば、自動解決に戻さない。
       let target: PaletteTarget?
       if let chosenTarget {
         target = chosenTarget
       } else {
+        // ADR-015 方式 C は最近使ったフォルダの最新を使うので、解決の前に読み終える。
         target = await PaletteTargetResolver.resolve(
           bundleIdentifier: application?.bundleIdentifier,
           processID: application?.processIdentifier,
-          fallbackRepositories: VoxConfig.fallbackRepositories,
-          recentFolder: folders.entries.first?.path)
+          fallbackRepositories: repositories,
+          recentFolder: await folders.value.entries.first?.path)
       }
       // 計測は取り消し判定より先に入れる（早く閉じた回も何で解決したかは残す）。
       onMetric(.targetResolved(target?.source.rawValue))
@@ -111,7 +113,7 @@ final class PaletteCoordinator {
       // T20。HUD にファイルをペーストしたときの相対パスの基準（未解決なら nil のまま）。
       hud.model.repositoryRoot = target?.root
       // 対象を置いた後に履歴を入れる（今の対象を候補から外すため）。
-      panel.model.setFolderHistory(folders)
+      panel.model.setFolderHistory(await folders.value)
       guard !Task.isCancelled else { return }
 
       guard let root = target?.root else { return }

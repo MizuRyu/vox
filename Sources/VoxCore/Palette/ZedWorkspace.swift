@@ -29,11 +29,11 @@ public enum ZedWorkspace {
   }
 
   /// `workspaces.paths`。複数ルートは改行区切りで、索引は 1 ルートなので先頭を採る。
+  /// why: フォルダ名は末尾に空白を持てるので、空行を飛ばすだけで行そのものは削らない。
   public static func firstRoot(paths: String) -> String? {
     for line in paths.split(separator: "\n") {
-      let path = line.trimmingCharacters(in: .whitespaces)
-      guard !path.isEmpty else { continue }
-      return path.hasPrefix("/") ? path : nil
+      guard !line.trimmingCharacters(in: .whitespaces).isEmpty else { continue }
+      return line.hasPrefix("/") ? String(line) : nil
     }
     return nil
   }

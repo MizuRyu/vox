@@ -57,7 +57,8 @@ sigil の割り当てを設定画面で変更する機能は未実装です。
 方式 A の Zed は `~/Library/Application Support/Zed/db/0-<channel>/db.sqlite` を**読み取り専用**で開き、
 `kv_store.session_window_stack` の先頭ウィンドウ → `scoped_kv_store`（namespace `multi_workspace_state`）の
 `active_workspace_id` → `workspaces.paths` の先頭をたどります。Zed が見せているのは workspace そのものなので、
-git のルートまでは広げません。DB が無い・ロックされている・スキーマが違う回は方式 C に落ちます（案内は出しません）。
+git のルートまでは広げません。リモート接続の workspace は対象にしません（`paths` が接続先のパスなので）。
+DB が無い・ロックされている・スキーマが違う回は方式 C に落ちます（案内は出しません）。
 
 待ち上限は 500ms で、A / B が期限内に返らなければ C に落ちます。
 方式 C で決まった回のヘッダは、`--repo`・最近使ったフォルダ・カレントディレクトリのいずれでも

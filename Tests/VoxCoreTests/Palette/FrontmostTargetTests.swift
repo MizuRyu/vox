@@ -111,6 +111,14 @@ struct FrontmostTargetTests {
       ZedWorkspace.firstRoot(paths: "\n  \n/Users/me/projects/vox\n") == "/Users/me/projects/vox")
   }
 
+  /// why: フォルダ名は末尾に空白を持てる。空行を飛ばすために行を削ると別のフォルダになる。
+  @Test("Whitespace inside a workspace path is kept")
+  func whitespaceInsideAWorkspacePathIsKept() throws {
+    #expect(ZedWorkspace.firstRoot(paths: "/Users/me/projects/vox ") == "/Users/me/projects/vox ")
+    #expect(
+      ZedWorkspace.firstRoot(paths: "\n/Users/me/my project/\t") == "/Users/me/my project/\t")
+  }
+
   @Test("An empty or relative workspace path is not a target")
   func anEmptyOrRelativeWorkspacePathIsNotATarget() throws {
     for paths in ["", "\n\n", "projects/vox", "~/projects/vox"] {
@@ -180,6 +188,34 @@ struct FrontmostTargetTests {
       "自分を親に持つ行で自分自身を子孫に数えた")
   }
 
+  /// 互いを親に指す 2 行（pid が使い回された直後の snapshot）でも止まり、tty は 1 度ずつ。
+  @Test("A cycle between two processes terminates")
+  func aCycleBetweenTwoProcessesTerminates() throws {
+    let output = """
+        PID  PPID TTY      COMM
+        801   802 ttys801  -/bin/zsh
+        802   801 ttys802  -/bin/zsh
+      """
+    #expect(
+      ProcessTree.terminalDevices(fromPsOutput: output, ofDescendantsOf: 801)
+        == ["ttys801", "ttys802"],
+      "循環した親子で tty を取りこぼすか重ねた")
+  }
+
+  /// 親の行が snapshot に無いプロセスは、どの子孫にも数えない。
+  @Test("A process whose parent is absent belongs to nobody")
+  func aProcessWhoseParentIsAbsentBelongsToNobody() throws {
+    let output = """
+        PID  PPID TTY      COMM
+        700     1 ??       /Applications/Terminal.app/Contents/MacOS/Terminal
+        701   700 ttys006  -/bin/zsh
+        704   999 ttys010  -/bin/zsh
+      """
+    #expect(
+      ProcessTree.terminalDevices(fromPsOutput: output, ofDescendantsOf: 700) == ["ttys006"],
+      "親の行が無いプロセスの tty を混ぜた")
+  }
+
   // MARK: tty の mtime
 
   @Test("The most recently written device wins")
@@ -199,6 +235,9 @@ struct FrontmostTargetTests {
       TerminalDevice(name: "ttys001", modifiedAt: Date(timeIntervalSince1970: 100))
     ]
     #expect(TerminalDevice.mostRecentlyUsed(devices) == "ttys001", "同じ時刻の tty の選び方が一定でない")
+    #expect(
+      TerminalDevice.mostRecentlyUsed(devices.reversed()) == "ttys001",
+      "同じ時刻の選び方が並び順で変わる")
     #expect(TerminalDevice.mostRecentlyUsed([]) == nil, "tty が無いのに選んだ")
   }
 }
