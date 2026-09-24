@@ -8,11 +8,12 @@ struct SilenceFinishPolicyTests {
   private let policy = SilenceFinishPolicy(milliseconds: 1_500)
 
   private func finishes(
-    speech: Double?, now: Double, started: Double = 1_000, text: Bool = true, palette: Bool = false
+    speech: Double?, now: Double, started: Double = 1_000, text: Bool = true, palette: Bool = false,
+    pendingSince: Double? = nil
   ) -> Bool {
     policy.shouldFinish(
       lastSpeechMilliseconds: speech, startedMilliseconds: started, now: now, hasText: text,
-      paletteOpen: palette)
+      paletteOpen: palette, finalizePendingSince: pendingSince)
   }
 
   @Test("発話が無ければ確定しない")
@@ -39,5 +40,12 @@ struct SilenceFinishPolicyTests {
   @Test("パレットを開いている間は確定しない")
   func paletteOpenHolds() {
     #expect(!finishes(speech: 2_000, now: 5_000, palette: true), "パレット表示中に確定した")
+  }
+
+  @Test("区切りの締めが走っている間は待つが、1,000 ms を過ぎたら確定に進む")
+  func holdsForAPendingFinalizeOnlyUpToTheLimit() {
+    #expect(!finishes(speech: 2_000, now: 5_000, pendingSince: 4_500), "締めの途中で確定した")
+    #expect(!finishes(speech: 2_000, now: 5_499, pendingSince: 4_500), "999 ms で待つのをやめた")
+    #expect(finishes(speech: 2_000, now: 5_500, pendingSince: 4_500), "返らない締めを待ち続けた")
   }
 }

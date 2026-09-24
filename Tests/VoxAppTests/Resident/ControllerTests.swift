@@ -107,6 +107,14 @@ func recordingSessionSnapshot() throws {
   #expect(recording.metrics?.toggleOnMilliseconds == 1_000, "the toggle time was not recorded")
   #expect(recording.injectionTarget == nil, "a session without a target app captured one")
   #expect(recording.silenceFinish == nil, "a hotkey session would finish on silence")
+  let external = RecordingSession(
+    toggleOnMilliseconds: 2_000, settings: coordinator, dictionary: .empty, target: nil,
+    silenceFinish: SilenceFinishPolicy(milliseconds: 1_500))
+  #expect(
+    external.silenceFinish == SilenceFinishPolicy(milliseconds: 1_500),
+    "an external session lost its silence finish")
+  #expect(external.startedMilliseconds == 2_000, "the silence window does not start at the toggle")
+  #expect(external.finalizePendingSince == nil, "a new session started with a pending finalize")
 
   // 録音中に設定を変えても、この回の挿入には効かない。
   try store.save(HotkeySettings())

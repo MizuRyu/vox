@@ -27,11 +27,12 @@ vox は録音キー（CGEventTap）とメニューバーからしか録音を始
   2. 最後の発話から指定の時間以上、発話レベルを超えていない
   3. 本文（確定・未確定・手入力のどれか）が空でない
   4. パレットが開いていない
-  5. 無音での区切り（ADR-020）の締めが走っていない（同じ analyzer に finalize を重ねない）
+  5. 無音での区切り（ADR-020）の締めが走っていない（同じ analyzer に finalize を重ねない）。締めが 1,000 ms を過ぎても返らない時は待つのをやめ、録音キーで確定した時と同じ経路（締めの待ちと本文の救済）に任せる
 
 確定の後の貼り付け・自動 Enter・安全確認は、録音キーで確定した時と同じ経路を通る。
 
 - 判定は VoxCore の純粋な型に置く: URL の解釈（`ExternalCommand`）、設定と録音の状態による受け付けの判定（`ExternalCommand.decision`。判定の直前に設定を読み直す）と無音での確定（`SilenceFinishPolicy`）
+- 外からの開始は、判定の直前に読んだ設定でそのまま録音を始める（開始時にもう一度読み直さない）
 - 設定は `settings.json` の `external_control_enabled`（bool、既定 `false`）
 - 診断ログは `external_command kind=start|finish|toggle accepted=true|false reason=…`。`target` の bundle identifier は出してよい（既存の `target_app` と同じ扱い）
 - URL で本文を渡す口・本文を受け取る口は作らない

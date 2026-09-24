@@ -30,6 +30,8 @@ final class RecordingSession {
   /// ADR-022。ほかのアプリから `finish_after_silence_ms` 付きで始めた回だけ持つ。
   let silenceFinish: SilenceFinishPolicy?
   let startedMilliseconds: Double
+  /// 区切りの締めが走り始めた時刻。無音での確定がそれを待つ上限の起点。
+  var finalizePendingSince: Double?
   /// この回の非同期処理（開始・確定・破棄）。次の段階に進むたびに置き換わる。
   var task: Task<Void, Never>?
 

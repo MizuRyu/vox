@@ -179,7 +179,8 @@ final class VoxController {
     }
     begin(
       toggleOnMilliseconds: voxNowMilliseconds(), targetOverride: target,
-      silenceFinish: options.finishAfterSilenceMilliseconds.map(SilenceFinishPolicy.init(milliseconds:)))
+      silenceFinish: options.finishAfterSilenceMilliseconds.map(SilenceFinishPolicy.init(milliseconds:)),
+      reloadSettings: false)
     return nil
   }
 
@@ -316,12 +317,13 @@ final class VoxController {
 
   // MARK: トグル ON
 
+  /// `reloadSettings` は、呼び出し側が直前に読んだ設定で判定した時だけ false（同じ読み込みで始める）。
   private func begin(
     toggleOnMilliseconds: Double, targetOverride: NSRunningApplication?,
-    silenceFinish: SilenceFinishPolicy? = nil
+    silenceFinish: SilenceFinishPolicy? = nil, reloadSettings: Bool = true
   ) {
     guard !isShuttingDown else { return }
-    settings.reload()
+    if reloadSettings { settings.reload() }
     settings.beginSession()
     settings.hide()
     state = .starting
@@ -480,18 +482,22 @@ final class VoxController {
 
   /// ADR-022。ほかのアプリが無音での確定を指定した回だけ、発話の後に黙ったら確定する。
   private func finishAfterSilenceIfNeeded() -> Bool {
-    // 区切りの締めが走っている間は確定しない（同じ analyzer に finalize を重ねない。ADR-007）。
-    guard state == .recording, !lane.isSegmentFinalizePending, let recording,
-      let policy = recording.silenceFinish,
+    guard state == .recording, let recording, let policy = recording.silenceFinish else {
+      return false
+    }
+    let now = voxNowMilliseconds()
+    recording.finalizePendingSince =
+      lane.isSegmentFinalizePending ? (recording.finalizePendingSince ?? now) : nil
+    guard
       policy.shouldFinish(
         lastSpeechMilliseconds: lane.levels.lastSpeechMilliseconds,
-        startedMilliseconds: recording.startedMilliseconds, now: voxNowMilliseconds(),
+        startedMilliseconds: recording.startedMilliseconds, now: now,
         hasText: !(hud.model.head + hud.model.tentative + hud.model.tail)
           .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-        paletteOpen: palette.isOpen)
+        paletteOpen: palette.isOpen, finalizePendingSince: recording.finalizePendingSince)
     else { return false }
     voxLog("silence_finish after_ms=\(Int(policy.silenceMilliseconds))")
-    finish(toggleOffMilliseconds: voxNowMilliseconds())
+    finish(toggleOffMilliseconds: now)
     return true
   }
 
