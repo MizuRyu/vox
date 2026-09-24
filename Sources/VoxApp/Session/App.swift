@@ -488,11 +488,10 @@ final class VoxController {
       lane.isSegmentFinalizePending ? (recording.finalizePendingSince ?? now) : nil
     let hasText = !(hud.model.head + hud.model.tentative + hud.model.tail)
       .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    recording.hadInput = recording.hadInput || hasText || hud.model.isComposing
     switch policy.action(
       lastSpeechMilliseconds: lane.levels.lastSpeechMilliseconds,
       listeningSince: recording.listeningSince ?? now, now: now, hasText: hasText,
-      hadInput: recording.hadInput, paletteBusy: palette.isBusy,
+      hadInput: hud.model.typedCharacters > 0 || hud.model.hasComposed, paletteBusy: palette.isBusy,
       finalizePendingSince: recording.finalizePendingSince) {
     case .keep: return false
     case .finish:

@@ -27,9 +27,9 @@ final class PaletteCoordinator {
   var onMetric: @MainActor (Metric) -> Void = { _ in }
 
   private(set) var isOpen = false
-  /// 閉じた後、選んだパスをまだ差し込み終えていない間。
-  private(set) var isInserting = false
-  var isBusy: Bool { isOpen || isInserting }
+  /// 閉じた後、選んだパスをまだ差し込み終えていない件数。開き直して Esc で閉じても減らない。
+  private var pendingInsertions = 0
+  var isBusy: Bool { isOpen || pendingInsertions > 0 }
   /// 検査がパネルの状態を直に置く（本体はコールバックと下のメソッド越しに触る）。
   var paletteModel: PaletteModel { panel.model }
   /// 開いた直後に走らせる「tentative を締める」タスク。Enter を処理する前にこれを待つ
@@ -154,9 +154,9 @@ final class PaletteCoordinator {
     panel.hide()
     hud.makeKeyAgain()
 
-    isInserting = insert != nil
+    if insert != nil { pendingInsertions += 1 }
     Task { @MainActor in
-      defer { isInserting = false }
+      defer { if insert != nil { pendingInsertions -= 1 } }
       // 締めた final が committed に入り切るのを待ってから差し込む。
       await awaitPendingFinalize()
       if let insert {

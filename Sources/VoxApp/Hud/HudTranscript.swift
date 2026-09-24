@@ -34,6 +34,8 @@ public final class HudModel: ObservableObject {
   /// T15。テキストビューが IME の変換中（marked text がある）。
   /// 変換中は esc / ⌃P を tap で飲まない（IME のキャンセルと変換操作を優先する）。
   public var isComposing = false
+  /// この録音で一度でも日本語の変換を始めたか。変換をやめた後も残す（ADR-023 の「入力があった」）。
+  public var hasComposed = false
   /// T13。`--no-sigil-trigger` で false。打鍵トリガーを止めて `⌃P` だけにする。
   public var sigilTriggerEnabled = true
   /// T13。sigil が打たれた。第 2 引数は打った caret 位置（UTF-16）。
@@ -518,6 +520,7 @@ public struct TranscriptEditor: NSViewRepresentable {
     private func setComposing(_ value: Bool) {
       isComposing = value
       model.isComposing = value
+      if value { model.hasComposed = true }
     }
 
     private func setSelection(_ textView: NSTextView, to range: NSRange) {
