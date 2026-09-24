@@ -29,7 +29,10 @@ final class RecordingSession {
   var pauseCommit = PauseCommitPolicy()
   /// ADR-022 / ADR-023。ほかのアプリから声だけで使う指定付きで始めた回だけ持つ。
   let handsFree: HandsFreePolicy?
-  let startedMilliseconds: Double
+  /// マイクが実際に聞き始めた時刻。声だけで使う録音の「話さない時間」の起点。
+  var listeningSince: Double?
+  /// この録音で一度でも本文が入った、または変換中だったか。消した後も声だけの規則でやめない。
+  var hadInput = false
   /// 区切りの締めが走り始めた時刻。無音での確定がそれを待つ上限の起点。
   var finalizePendingSince: Double?
   /// この回の非同期処理（開始・確定・破棄）。次の段階に進むたびに置き換わる。
@@ -40,7 +43,6 @@ final class RecordingSession {
     target: NSRunningApplication?, handsFree: HandsFreePolicy? = nil
   ) {
     self.handsFree = handsFree
-    startedMilliseconds = toggleOnMilliseconds
     autoEnterEnabled = settings.autoEnterEnabled
     autoEnterUnverified = settings.autoEnterUnverified
     voiceProcessingEnabled = settings.voiceProcessingEnabled

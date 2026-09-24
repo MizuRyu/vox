@@ -10,11 +10,11 @@ struct HandsFreePolicyTests {
 
   private func action(
     _ policy: HandsFreePolicy? = nil, speech: Double?, now: Double, started: Double = 1_000,
-    text: Bool = true, palette: Bool = false, pendingSince: Double? = nil
+    text: Bool = true, hadInput: Bool = false, palette: Bool = false, pendingSince: Double? = nil
   ) -> HandsFreePolicy.Action {
     (policy ?? self.policy).action(
-      lastSpeechMilliseconds: speech, startedMilliseconds: started, now: now, hasText: text,
-      paletteOpen: palette, finalizePendingSince: pendingSince)
+      lastSpeechMilliseconds: speech, listeningSince: started, now: now, hasText: text,
+      hadInput: hadInput, paletteBusy: palette, finalizePendingSince: pendingSince)
   }
 
   @Test("話し終えて指定の時間黙ったら確定する")
@@ -57,6 +57,17 @@ struct HandsFreePolicyTests {
   func speechOrTypingKeepsTheRecording() {
     #expect(action(speech: 5_000, now: 60_000, text: false) == .keep, "話した後の沈黙でやめた")
     #expect(action(speech: nil, now: 60_000, text: true) == .keep, "打った本文を捨てた")
+  }
+
+  @Test("打ってから全部消しても、変換中でも、やめない")
+  func inputOnceKeepsTheRecording() {
+    #expect(action(speech: nil, now: 60_000, text: false, hadInput: true) == .keep, "消した後にやめた")
+  }
+
+  @Test("聞き始めた時刻から数える（準備の時間は数えない）")
+  func countsFromWhenListeningStarted() {
+    #expect(action(speech: nil, now: 30_000, started: 25_000, text: false) == .keep, "準備の時間を数えた")
+    #expect(action(speech: nil, now: 45_000, started: 25_000, text: false) == .cancel, "聞き始めから数えていない")
   }
 
   @Test("指定の無い側は働かない")

@@ -366,6 +366,7 @@ final class VoxController {
           return
         }
         state = .recording
+        recording.listeningSince = voxNowMilliseconds()
         hud.model.status = "録音中"
         hud.model.isRecording = true
         startLevelUpdates()
@@ -485,12 +486,14 @@ final class VoxController {
     let now = voxNowMilliseconds()
     recording.finalizePendingSince =
       lane.isSegmentFinalizePending ? (recording.finalizePendingSince ?? now) : nil
+    let hasText = !(hud.model.head + hud.model.tentative + hud.model.tail)
+      .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    recording.hadInput = recording.hadInput || hasText || hud.model.isComposing
     switch policy.action(
       lastSpeechMilliseconds: lane.levels.lastSpeechMilliseconds,
-      startedMilliseconds: recording.startedMilliseconds, now: now,
-      hasText: !(hud.model.head + hud.model.tentative + hud.model.tail)
-        .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-      paletteOpen: palette.isOpen, finalizePendingSince: recording.finalizePendingSince) {
+      listeningSince: recording.listeningSince ?? now, now: now, hasText: hasText,
+      hadInput: recording.hadInput, paletteBusy: palette.isBusy,
+      finalizePendingSince: recording.finalizePendingSince) {
     case .keep: return false
     case .finish:
       voxLog("silence_finish")

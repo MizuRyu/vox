@@ -114,7 +114,8 @@ func recordingSessionSnapshot() throws {
     external.handsFree
       == HandsFreePolicy(finishAfterSilenceMilliseconds: 1_500, cancelIfNoSpeechMilliseconds: 20_000),
     "an external session lost its hands-free rules")
-  #expect(external.startedMilliseconds == 2_000, "the silence window does not start at the toggle")
+  #expect(external.listeningSince == nil, "listening started before the microphone opened")
+  #expect(!external.hadInput, "a new session started with input")
   #expect(external.finalizePendingSince == nil, "a new session started with a pending finalize")
 
   // 録音中に設定を変えても、この回の挿入には効かない。

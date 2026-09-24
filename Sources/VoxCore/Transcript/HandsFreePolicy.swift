@@ -21,15 +21,18 @@ public struct HandsFreePolicy: Equatable, Sendable {
     self.cancelIfNoSpeechMilliseconds = cancelIfNoSpeechMilliseconds.map(Double.init)
   }
 
+  /// `listeningSince` はマイクが実際に聞き始めた時刻（準備やマイクの許可待ちを数えない）。
+  /// `hadInput` はこの録音で一度でも本文が入った・変換中だったか（消した後もやめないため）。
+  /// `paletteBusy` はパレットが開いているか、選んだパスをまだ差し込み終えていないか。
   public func action(
-    lastSpeechMilliseconds: Double?, startedMilliseconds: Double, now: Double, hasText: Bool,
-    paletteOpen: Bool, finalizePendingSince: Double? = nil
+    lastSpeechMilliseconds: Double?, listeningSince: Double, now: Double, hasText: Bool,
+    hadInput: Bool, paletteBusy: Bool, finalizePendingSince: Double? = nil
   ) -> Action {
-    guard !paletteOpen else { return .keep }
-    let spoke = lastSpeechMilliseconds.map { $0 >= startedMilliseconds } ?? false
+    guard !paletteBusy else { return .keep }
+    let spoke = lastSpeechMilliseconds.map { $0 >= listeningSince } ?? false
     if !spoke {
-      guard let limit = cancelIfNoSpeechMilliseconds, !hasText,
-        now - startedMilliseconds >= limit
+      guard let limit = cancelIfNoSpeechMilliseconds, !hasText, !hadInput,
+        now - listeningSince >= limit
       else { return .keep }
       return .cancel
     }
