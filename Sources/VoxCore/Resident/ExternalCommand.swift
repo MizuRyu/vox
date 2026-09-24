@@ -41,11 +41,36 @@ public enum ExternalCommand: Equatable, Sendable {
     }
   }
 
+  public enum Decision: Equatable, Sendable {
+    case begin(StartOptions)
+    case finish
+    /// ログに出す理由。
+    case reject(String)
+  }
+
+  /// 設定と録音の状態から、この操作をどう扱うか。開始は待機中だけ、確定は録音中だけ。
+  public func decision(phase: ResidentPhase, enabled: Bool) -> Decision {
+    guard enabled else { return .reject("disabled") }
+    switch (self, phase) {
+    case (.start(let options), .idle), (.toggle(let options), .idle): return .begin(options)
+    case (.finish, .recording), (.toggle, .recording): return .finish
+    case (_, .idle): return .reject("state_idle")
+    case (_, .starting): return .reject("state_starting")
+    case (_, .recording): return .reject("state_recording")
+    case (_, .finishing): return .reject("state_finishing")
+    case (_, .permissionRequired): return .reject("state_permission_required")
+    case (_, .error): return .reject("state_error")
+    }
+  }
+
   public static func parse(_ url: URL) -> Result<Self, ParseError> {
     guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
       return .failure(.malformed)
     }
     guard components.scheme?.lowercased() == scheme else { return .failure(.unsupportedScheme) }
+    guard components.user == nil, components.password == nil, components.port == nil,
+      components.fragment == nil
+    else { return .failure(.malformed) }
     guard components.host == "record" else { return .failure(.unknownCommand) }
     let items = components.queryItems ?? []
     switch components.path {

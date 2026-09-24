@@ -106,6 +106,7 @@ func recordingSessionSnapshot() throws {
   #expect(recording.microphoneInput == .device("synthetic-session-mic"))
   #expect(recording.metrics?.toggleOnMilliseconds == 1_000, "the toggle time was not recorded")
   #expect(recording.injectionTarget == nil, "a session without a target app captured one")
+  #expect(recording.silenceFinish == nil, "a hotkey session would finish on silence")
 
   // 録音中に設定を変えても、この回の挿入には効かない。
   try store.save(HotkeySettings())
@@ -143,5 +144,11 @@ func externalCommandsRespectTheSettingAndState() async throws {
       == "target_not_running", "a start aimed at an app that is not running was accepted")
   #expect(controller.residentPhase == .idle, "a rejected start changed the phase")
   #expect(controller.recording == nil, "a rejected start left a recording session")
+
+  // 画面を通さずにファイルだけオフにしても、次の操作から拒む（読み直してから判定する）。
+  try store.save(HotkeySettings())
+  #expect(
+    controller.performExternal(.start(.init())) == "disabled",
+    "a setting turned off on disk still accepted start")
   await controller.shutdown()
 }

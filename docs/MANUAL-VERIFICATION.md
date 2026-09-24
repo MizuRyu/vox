@@ -529,7 +529,7 @@
 | **前提** | 設定「ほかのアプリからの操作を許可」がオフ。待機中 |
 | **手順** | ターミナルで `open "vox://record/start"` |
 | **期待結果** | 録音は始まらず HUD も出ない。診断ログに `external_command kind=start accepted=false reason=disabled` |
-| **自動化済み** | `swift test --filter "externalCommandsRespectTheSettingAndState"` |
+| **自動化済み（一部）** | 設定オフ・状態・貼り先の拒否の判定だけ: `swift test --filter "ExternalCommandTests\|externalCommandsRespectTheSettingAndState"`。URL の配送、HUD が出ないこと、ログの行は手動で確認する |
 
 ### EXT-02 URL で始めて、黙ると確定して貼り付ける
 

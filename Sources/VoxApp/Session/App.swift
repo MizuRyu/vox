@@ -157,15 +157,14 @@ final class VoxController {
 
   /// ADR-022。ほかのアプリからの録音操作。受け付けなかった理由を返す（nil は受け付けた）。
   func performExternal(_ command: ExternalCommand) -> String? {
-    guard settings.externalControlEnabled else { return "disabled" }
-    switch (command, state) {
-    case (.start(let options), .idle), (.toggle(let options), .idle):
-      return beginExternally(options)
-    case (.finish, .recording), (.toggle, .recording):
+    // 画面の外で設定ファイルがオフにされた直後でも通さないよう、判定の前に読み直す。
+    settings.reload()
+    switch command.decision(phase: residentPhase, enabled: settings.externalControlEnabled) {
+    case .begin(let options): return beginExternally(options)
+    case .finish:
       handle(.toggle(atMilliseconds: voxNowMilliseconds()))
       return nil
-    default:
-      return "state_\(residentPhase)"
+    case .reject(let reason): return reason
     }
   }
 
@@ -481,7 +480,9 @@ final class VoxController {
 
   /// ADR-022。ほかのアプリが無音での確定を指定した回だけ、発話の後に黙ったら確定する。
   private func finishAfterSilenceIfNeeded() -> Bool {
-    guard state == .recording, let recording, let policy = recording.silenceFinish,
+    // 区切りの締めが走っている間は確定しない（同じ analyzer に finalize を重ねない。ADR-007）。
+    guard state == .recording, !lane.isSegmentFinalizePending, let recording,
+      let policy = recording.silenceFinish,
       policy.shouldFinish(
         lastSpeechMilliseconds: lane.levels.lastSpeechMilliseconds,
         startedMilliseconds: recording.startedMilliseconds, now: voxNowMilliseconds(),

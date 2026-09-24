@@ -64,6 +64,42 @@ struct ExternalCommandTests {
       "同じ指定が 2 つある URL を受け付けた")
   }
 
+  @Test("URL の利用者・パスワード・ポート・フラグメントは拒む")
+  func rejectsExtraComponents() {
+    for string in [
+      "vox://user:pass@record/finish", "vox://record:123/finish", "vox://record/finish#text=hello",
+      "vox://user@record/start"
+    ] {
+      #expect(parse(string) == .failure(.malformed), "\(string) を受け付けた")
+    }
+  }
+
+  @Test("設定と録音の状態で、受け付ける操作が決まる")
+  func decisionTable() {
+    let options = ExternalCommand.StartOptions(finishAfterSilenceMilliseconds: 1_500)
+    typealias Row = (ExternalCommand, ResidentPhase, Bool, ExternalCommand.Decision)
+    let rows: [Row] = [
+      (.start(options), .idle, false, .reject("disabled")),
+      (.finish, .recording, false, .reject("disabled")),
+      (.start(options), .idle, true, .begin(options)),
+      (.toggle(options), .idle, true, .begin(options)),
+      (.finish, .recording, true, .finish),
+      (.toggle(options), .recording, true, .finish),
+      (.start(options), .recording, true, .reject("state_recording")),
+      (.finish, .idle, true, .reject("state_idle")),
+      (.start(options), .starting, true, .reject("state_starting")),
+      (.finish, .starting, true, .reject("state_starting")),
+      (.toggle(options), .finishing, true, .reject("state_finishing")),
+      (.start(options), .permissionRequired, true, .reject("state_permission_required")),
+      (.toggle(options), .error, true, .reject("state_error"))
+    ]
+    for (command, phase, enabled, expected) in rows {
+      #expect(
+        command.decision(phase: phase, enabled: enabled) == expected,
+        "\(command.kind) \(phase) enabled=\(enabled)")
+    }
+  }
+
   @Test("ログに出す操作の名前")
   func kindNames() {
     #expect(ExternalCommand.start(.init()).kind == "start")

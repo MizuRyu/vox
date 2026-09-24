@@ -19,7 +19,7 @@ vox は録音キー（CGEventTap）とメニューバーからしか録音を始
 | `vox://record/finish` | 録音中なら確定して貼り付ける。それ以外の状態では何もしない |
 | `vox://record/toggle` | 録音キーを 1 回押したのと同じ（待機中なら開始、録音中なら確定） |
 
-`start` と `toggle` の開始側は、クエリで 2 つを指定できる。
+`start` と `toggle` の開始側は、クエリで 2 つを指定できる。利用者・パスワード・ポート・フラグメントを含む URL は拒む。
 
 - `target=<bundle identifier>`: 貼り先のアプリ。起動していればそのアプリを貼り先に固定する。指定が無ければ、URL を受け取った時点の前面アプリ（メニューバーから始める時と同じ判定。vox 自身は除く）
 - `finish_after_silence_ms=<ミリ秒>`: 発話のあと、この時間だけ無音が続いたら確定する。範囲は 800〜10,000。範囲外や数字でない値は URL ごと拒否する。無音の判定は ADR-020 と同じ `AudioLevelTracker`（ノイズ床 × 4）で、条件は次のすべて
@@ -27,10 +27,11 @@ vox は録音キー（CGEventTap）とメニューバーからしか録音を始
   2. 最後の発話から指定の時間以上、発話レベルを超えていない
   3. 本文（確定・未確定・手入力のどれか）が空でない
   4. パレットが開いていない
+  5. 無音での区切り（ADR-020）の締めが走っていない（同じ analyzer に finalize を重ねない）
 
 確定の後の貼り付け・自動 Enter・安全確認は、録音キーで確定した時と同じ経路を通る。
 
-- 判定は VoxCore の純粋な型に置く: URL の解釈（`ExternalCommand`）と無音での確定（`SilenceFinishPolicy`）
+- 判定は VoxCore の純粋な型に置く: URL の解釈（`ExternalCommand`）、設定と録音の状態による受け付けの判定（`ExternalCommand.decision`。判定の直前に設定を読み直す）と無音での確定（`SilenceFinishPolicy`）
 - 設定は `settings.json` の `external_control_enabled`（bool、既定 `false`）
 - 診断ログは `external_command kind=start|finish|toggle accepted=true|false reason=…`。`target` の bundle identifier は出してよい（既存の `target_app` と同じ扱い）
 - URL で本文を渡す口・本文を受け取る口は作らない
