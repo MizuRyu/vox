@@ -272,7 +272,7 @@ final class HudPanel {
     model.typedCharacters = 0
     // T15。前回の変換が破棄されたまま HUD が閉じた場合に、esc の横取り判定が残らないよう明示的に戻す。
     model.isComposing = false
-    model.hasComposed = false
+    model.hadInput = false
     model.isRecording = false
     model.resetToken += 1
   }

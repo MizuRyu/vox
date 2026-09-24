@@ -491,7 +491,7 @@ final class VoxController {
     switch policy.action(
       lastSpeechMilliseconds: lane.levels.lastSpeechMilliseconds,
       listeningSince: recording.listeningSince ?? now, now: now, hasText: hasText,
-      hadInput: hud.model.typedCharacters > 0 || hud.model.hasComposed, paletteBusy: palette.isBusy,
+      hadInput: hud.model.hadInput, paletteBusy: palette.isBusy,
       finalizePendingSince: recording.finalizePendingSince) {
     case .keep: return false
     case .finish:
