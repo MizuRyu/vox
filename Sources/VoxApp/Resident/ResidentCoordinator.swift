@@ -163,6 +163,27 @@ final class ResidentCoordinator: NSObject, NSApplicationDelegate {
     return true
   }
 
+  /// ADR-022。`vox://record/…`。受け付けるかは設定と録音の状態で VoxController が決める。
+  func application(_ application: NSApplication, open urls: [URL]) {
+    for url in urls {
+      let outcome: (kind: String, reason: String?)
+      switch ExternalCommand.parse(url) {
+      case .failure(let error):
+        outcome = ("-", error.rawValue)
+      case .success(let command):
+        // 受け付けた時の nil と、まだ録音を扱えない時を分ける。
+        if let controller {
+          outcome = (command.kind, controller.performExternal(command))
+        } else {
+          outcome = (command.kind, "not_ready")
+        }
+      }
+      voxLog(
+        "external_command kind=\(outcome.kind) accepted=\(outcome.reason == nil) "
+          + "reason=\(outcome.reason ?? "-")")
+    }
+  }
+
   func applicationDidBecomeActive(_ notification: Notification) {
     refreshSetupPermissions(retryHotkeys: true)
   }

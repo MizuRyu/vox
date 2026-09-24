@@ -35,3 +35,4 @@
 | [019](019-dictionary-surface-replacement.md) | 辞書は表記の完全一致で置換し、読みの正規化と形態素解析は入れない | 承認 | 2026-09-23 |
 | [020](020-pause-triggered-segment-commit.md) | 発話の後に 700 ms 黙ったら、そこまでを本体から確定する | 承認 | 2026-09-23 |
 | [021](021-dictionary-edited-in-settings.md) | 辞書は設定画面の表で編集し、ファイルは正のまま残す | 承認 | 2026-09-24 |
+| [022](022-external-record-control-url.md) | ほかのアプリから録音を開始・確定する入口を URL スキームで開ける（既定はオフ） | 提案 | 2026-09-24 |

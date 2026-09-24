@@ -100,6 +100,13 @@ AUHAL からは機器のサンプルレートとチャンネル数の float32 �
 パレット内では `↑` `↓` で選択、`Enter` でパスを挿入して閉じ、`esc` で挿入せず閉じる。録音は継続する。
 `Enter` はパレットの中でしか使いません。
 
+### ほかのアプリからの操作（[ADR-022](../adr/022-external-record-control-url.md)）
+
+設定「ほかのアプリからの操作を許可」（`external_control_enabled`、既定オフ）がオンの時だけ、`vox://record/start` / `finish` / `toggle` の URL で録音を操作できる。
+`start` / `toggle` の開始側は `target=<bundle identifier>`（貼り先）と `finish_after_silence_ms=<800〜10000>`（発話の後に黙ったら確定）を受ける。
+URL の解釈は `ExternalCommand`、無音での確定は `SilenceFinishPolicy`（どちらも VoxCore）。確定の後は録音キーで確定した時と同じ経路を通る。
+本文を URL で渡す口・受け取る口は無い。
+
 HUD の歯車と `--settings` から設定画面を開けます。録音・ファイル検索キーを保存でき、優先順位は
 **起動引数 → 保存設定 → 既定値**。録音中の変更は終了後に反映します。キーの照合値を既存の event tap 上で更新するため、保存のたびの再登録は行いません。
 

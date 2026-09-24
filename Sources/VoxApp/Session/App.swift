@@ -155,6 +155,35 @@ final class VoxController {
     }
   }
 
+  /// ADR-022。ほかのアプリからの録音操作。受け付けなかった理由を返す（nil は受け付けた）。
+  func performExternal(_ command: ExternalCommand) -> String? {
+    guard settings.externalControlEnabled else { return "disabled" }
+    switch (command, state) {
+    case (.start(let options), .idle), (.toggle(let options), .idle):
+      return beginExternally(options)
+    case (.finish, .recording), (.toggle, .recording):
+      handle(.toggle(atMilliseconds: voxNowMilliseconds()))
+      return nil
+    default:
+      return "state_\(residentPhase)"
+    }
+  }
+
+  /// 貼り先の指定があれば、起動していて貼り先にできるアプリの時だけ始める（別のアプリに貼らない）。
+  private func beginExternally(_ options: ExternalCommand.StartOptions) -> String? {
+    var target: NSRunningApplication?
+    if let identifier = options.targetBundleIdentifier {
+      guard ResidentTargetPolicy.isEligible(bundleIdentifier: identifier),
+        let running = NSRunningApplication.runningApplications(withBundleIdentifier: identifier).first
+      else { return "target_not_running" }
+      target = running
+    }
+    begin(
+      toggleOnMilliseconds: voxNowMilliseconds(), targetOverride: target,
+      silenceFinish: options.finishAfterSilenceMilliseconds.map(SilenceFinishPolicy.init(milliseconds:)))
+    return nil
+  }
+
   func shutdown() async {
     guard !isShuttingDown else { return }
     isShuttingDown = true
@@ -289,7 +318,8 @@ final class VoxController {
   // MARK: トグル ON
 
   private func begin(
-    toggleOnMilliseconds: Double, targetOverride: NSRunningApplication?
+    toggleOnMilliseconds: Double, targetOverride: NSRunningApplication?,
+    silenceFinish: SilenceFinishPolicy? = nil
   ) {
     guard !isShuttingDown else { return }
     settings.reload()
@@ -302,7 +332,7 @@ final class VoxController {
       bundleIdentifier: frontmost?.bundleIdentifier) ? frontmost : nil)
     let recording = RecordingSession(
       toggleOnMilliseconds: toggleOnMilliseconds, settings: settings,
-      dictionary: dictionary.load(), target: target)
+      dictionary: dictionary.load(), target: target, silenceFinish: silenceFinish)
     self.recording = recording
     hud.reset(status: "準備中")
     hud.show()
@@ -430,6 +460,7 @@ final class VoxController {
     levelTask = Task { @MainActor in
       while !Task.isCancelled {
         hud.model.level = lane.levels.level
+        if finishAfterSilenceIfNeeded() { break }
         commitAfterPauseIfNeeded()
         try? await Task.sleep(for: .milliseconds(66))
       }
@@ -446,6 +477,21 @@ final class VoxController {
     recording.metrics?.pauseCommitCount += 1
     // 締めは待たない（待つとこのループが止まり、HUD の波形も止まる）。
     Task { @MainActor in await lane.finalizeSegment(reason: .pause) }
+  }
+
+  /// ADR-022。ほかのアプリが無音での確定を指定した回だけ、発話の後に黙ったら確定する。
+  private func finishAfterSilenceIfNeeded() -> Bool {
+    guard state == .recording, let recording, let policy = recording.silenceFinish,
+      policy.shouldFinish(
+        lastSpeechMilliseconds: lane.levels.lastSpeechMilliseconds,
+        startedMilliseconds: recording.startedMilliseconds, now: voxNowMilliseconds(),
+        hasText: !(hud.model.head + hud.model.tentative + hud.model.tail)
+          .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+        paletteOpen: palette.isOpen)
+    else { return false }
+    voxLog("silence_finish after_ms=\(Int(policy.silenceMilliseconds))")
+    finish(toggleOffMilliseconds: voxNowMilliseconds())
+    return true
   }
 
   private func stopLevelUpdates() {

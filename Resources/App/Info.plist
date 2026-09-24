@@ -20,6 +20,17 @@
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
     <string>0.0.0</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>local.vox.app.record</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>vox</string>
+            </array>
+        </dict>
+    </array>
     <key>CFBundleVersion</key>
     <string>0</string>
     <key>LSArchitecturePriority</key>

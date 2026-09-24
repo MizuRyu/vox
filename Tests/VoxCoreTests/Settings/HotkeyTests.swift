@@ -120,6 +120,25 @@ struct HotkeyTests {
     }
   }
 
+  @Test("external control defaults to off, round trips, and rejects non-bool values")
+  func externalControlRoundTrips() throws {
+    #expect(!HotkeySettings().externalControlEnabled, "external control default changed")
+    let old = try JSONDecoder().decode(HotkeySettings.self, from: Data("{\"schema_version\":1}".utf8))
+    #expect(!old.externalControlEnabled, "a file without the key enabled external control")
+    for enabled in [false, true] {
+      var settings = HotkeySettings()
+      settings.externalControlEnabled = enabled
+      let decoded = try JSONDecoder().decode(
+        HotkeySettings.self, from: try JSONEncoder().encode(settings))
+      #expect(decoded.externalControlEnabled == enabled, "external control \(enabled) was lost")
+    }
+    #expect(throws: DecodingError.self) {
+      _ = try JSONDecoder().decode(
+        HotkeySettings.self,
+        from: Data("{\"schema_version\":1,\"external_control_enabled\":\"true\"}".utf8))
+    }
+  }
+
   @Test("schema version remains required")
   func schemaVersionRemainsRequired() {
     for json in ["{}", "{\"schema_version\":null}"] {

@@ -72,6 +72,7 @@ macOS が再起動を求めたら Vox を終了して開き直す。ソースか
 | `auto_enter_unverified` | bool | `false` | ターミナルなど、入力欄を読み返せないアプリでも Enter を送る。貼り付け 0.5 秒後、同じアプリ・ウィンドウなら送る。以前の「Enter の送り方」で「貼り付け後に送る」を選んでいた設定は、これをオンとして引き継ぐ |
 | `voice_processing_enabled` | bool | `false` | Apple のエコー除去・ノイズ抑制（実験的。再生中の音楽が小さくなる場合がある） |
 | `microphone_input` | object | `{"mode":"automatic"}` | Vox の入力選択。`automatic` は既定の入出力が Bluetooth 系・出力稼働中なら内蔵入力を優先し、なければ既定入力。`system_default` は常に準備時の既定入力。`device` は `uid` で機器を固定し、未接続なら開始エラー |
+| `external_control_enabled` | bool | `false` | `vox://record/start` などの URL で、ほかのアプリから録音を操作できるようにする（ADR-022）。設定画面「連携」 |
 
 マイクの指定は設定画面「使用するマイク」で保存する。個別指定の形式は `{"mode":"device","uid":"機器のUID"}`。UID は機器の再接続で変わりうる AudioDeviceID と区別し、診断ログには出さない。古い設定に `microphone_input` がなければ「自動」になる。macOS 全体の既定入力・既定出力は変更しない。録音中の設定変更は次の録音から反映する。
 
@@ -155,6 +156,7 @@ macOS が再起動を求めたら Vox を終了して開き直す。ソースか
 - **パレットの候補が古い／出るのが遅い**: 起動時に `folders.json` の Git 管理下フォルダ（新しい順に最大 20 件）の索引を常駐させ、FSEvents の通知（latency 0.5 秒でまとめて届く）で更新する。診断ログの `index_resident` が常駐した件数、`index_rebuilt` が読み直し（`scope=changes` は `git status` だけ、`scope=tracked` は `git ls-files` も）、`index_evicted` は上限（20 件 × 20,000 件）を超えて捨てたフォルダ、`index_watch_failed` は監視を始められず常駐させなかったフォルダ。捨てられたフォルダは開くたびの読み込みに戻る。Git 管理外のフォルダは常駐しない
 - **メニューが見つからない**: `Vox.app` をもう一度開くとセットアップ画面が出る。ウィンドウを閉じても常駐は続く
 - **HUD で `⌘V` を押すと前面アプリに貼られる**: HUD が key を失っている（別のアプリをクリックした後など）。HUD をクリックすると戻る。診断ログの `hud_key state=resigned since_key_ms=` が key を失った時刻と、key になってからの時間。`hud_key_equivalent` が出ていれば ⌘ キーは HUD に届いている
+- **URL で録音が始まらない**: 診断ログの `external_command kind=… accepted=false reason=…`。`disabled` は設定「ほかのアプリからの操作を許可」がオフ、`state_recording` などは録音の状態が合わない、`target_not_running` は `target=` のアプリが起動していない、`invalid_silence` / `invalid_target` / `unexpected_query` / `unknown_command` は URL の形が違う、`not_ready` は Vox の起動処理中。無音で確定した回は `silence_finish after_ms=` が出る
 
 ## 開発コマンド早見表
 

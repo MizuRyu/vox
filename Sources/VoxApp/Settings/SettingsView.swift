@@ -93,6 +93,20 @@ public struct SettingsView: View {
         }
 
         GroupBox {
+          VStack(alignment: .leading, spacing: 6) {
+            Toggle("ほかのアプリからの操作を許可", isOn: $model.externalControlEnabled)
+              .disabled(model.loadFailed)
+            Text("ショートカットなどから「vox://record/start」で録音を始め、「vox://record/finish」で確定できます。Webページのリンクからも呼べるため、使うときだけオンにしてください。")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .fixedSize(horizontal: false, vertical: true)
+          }
+          .padding(10)
+        } label: {
+          Text("連携").font(.headline)
+        }
+
+        GroupBox {
           DictionaryEditor(model: model).padding(10)
         } label: {
           Text("辞書").font(.headline)

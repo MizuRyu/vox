@@ -116,3 +116,32 @@ func recordingSessionSnapshot() throws {
     "a settings change during the recording reached the running session")
   #expect(recording.microphoneInput == .device("synthetic-session-mic"))
 }
+
+@MainActor
+@Test("ほかのアプリからの操作は、設定がオフなら拒み、録音を始めない（ADR-022）")
+func externalCommandsRespectTheSettingAndState() async throws {
+  NSApplication.shared.setActivationPolicy(.prohibited)
+  let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+    "vox-external-checks-\(UUID().uuidString)")
+  defer { try? FileManager.default.removeItem(at: root) }
+  let store = SettingsStore(url: root.appendingPathComponent("settings.json"))
+  try store.save(HotkeySettings())
+  let settings = SettingsController(store: store, defaults: .standard, configuration: .standard)
+  let controller = VoxController(
+    metrics: MetricsWriter(path: root.appendingPathComponent("metrics.jsonl").path),
+    history: HistoryWriter(path: root.appendingPathComponent("history.jsonl").path),
+    settings: settings)
+
+  #expect(controller.performExternal(.start(.init())) == "disabled", "an off setting accepted start")
+  #expect(controller.residentPhase == .idle, "a rejected start changed the phase")
+
+  try store.save(HotkeySettings(externalControlEnabled: true))
+  settings.reload()
+  #expect(controller.performExternal(.finish) == "state_idle", "finish while idle was accepted")
+  #expect(
+    controller.performExternal(.start(.init(targetBundleIdentifier: "com.example.not-running")))
+      == "target_not_running", "a start aimed at an app that is not running was accepted")
+  #expect(controller.residentPhase == .idle, "a rejected start changed the phase")
+  #expect(controller.recording == nil, "a rejected start left a recording session")
+  await controller.shutdown()
+}

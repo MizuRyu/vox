@@ -520,6 +520,33 @@
 | **手順** | ディスプレイを1枚外す（または配置を変える）。`~/Library/Application Support/vox/logs/vox.log` を開く |
 | **期待結果** | `status_item_frames reason=screen_change` の行が1行増え、項目の矩形（`button=`）、可視性（`visible=`）、各画面の範囲（`screens=`）が残る。`on_screen` は矩形がどの画面とも重ならなければ `false`、矩形を取得できなければ `unknown` |
 
+## EXT — ほかのアプリからの操作（ADR-022）
+
+### EXT-01 設定がオフなら URL で録音が始まらない
+
+| 項目 | 内容 |
+|---|---|
+| **前提** | 設定「ほかのアプリからの操作を許可」がオフ。待機中 |
+| **手順** | ターミナルで `open "vox://record/start"` |
+| **期待結果** | 録音は始まらず HUD も出ない。診断ログに `external_command kind=start accepted=false reason=disabled` |
+| **自動化済み** | `swift test --filter "externalCommandsRespectTheSettingAndState"` |
+
+### EXT-02 URL で始めて、黙ると確定して貼り付ける
+
+| 項目 | 内容 |
+|---|---|
+| **前提** | 設定「ほかのアプリからの操作を許可」がオンで保存済み。テキストエディタを前面にしてある |
+| **手順** | 別のターミナルから `sleep 3; open "vox://record/start?finish_after_silence_ms=1500"` を実行し、3 秒以内にエディタを前面に戻す。録音が始まったら一文話して黙る |
+| **期待結果** | 黙って約 1.5 秒で確定し、エディタに貼られる。診断ログに `external_command kind=start accepted=true` と `silence_finish after_ms=1500`。録音キーで始めた録音は黙っても確定しない |
+
+### EXT-03 target で貼り先を固定する
+
+| 項目 | 内容 |
+|---|---|
+| **前提** | EXT-02 の設定。ターミナル（例: Ghostty）を起動してある |
+| **手順** | ショートカット.app の「URL を開く」に `vox://record/start?finish_after_silence_ms=1500&target=<ターミナルの bundle identifier>` を置き、Siri から呼ぶ。話して黙る |
+| **期待結果** | Siri やショートカットが前面に出ても、ターミナルに貼られる。診断ログの `target_app fixed=` がターミナルの bundle identifier。起動していないアプリを指定すると `reason=target_not_running` で始まらない |
+
 ## DIST — バンドル配布
 
 ### DIST-01 dmgからインストールできる

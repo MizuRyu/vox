@@ -15,6 +15,7 @@ public final class SettingsController: NSObject, NSWindowDelegate {
   public private(set) var autoEnterUnverified: Bool
   public private(set) var voiceProcessingEnabled: Bool
   public private(set) var microphoneInput: MicrophoneInput
+  public private(set) var externalControlEnabled: Bool
   public var isKeyWindow: Bool { panel?.isKeyWindow == true }
   private let store: SettingsStore
   private let defaults: HotkeyConfiguration
@@ -37,6 +38,7 @@ public final class SettingsController: NSObject, NSWindowDelegate {
     autoEnterUnverified = saved?.autoEnterUnverified ?? false
     voiceProcessingEnabled = saved?.voiceProcessingEnabled ?? false
     microphoneInput = saved?.microphoneInput ?? .automatic
+    externalControlEnabled = saved?.externalControlEnabled ?? false
     super.init()
   }
 
@@ -67,6 +69,7 @@ public final class SettingsController: NSObject, NSWindowDelegate {
       autoEnterUnverified = saved.autoEnterUnverified
       voiceProcessingEnabled = saved.voiceProcessingEnabled
       microphoneInput = saved.microphoneInput
+      externalControlEnabled = saved.externalControlEnabled
       onConfigurationChange?(runtime.active)
     } catch {
       // Keep a working finish key if a preferences file is malformed or temporarily unavailable.
