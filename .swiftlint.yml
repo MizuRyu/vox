@@ -1,4 +1,4 @@
-# SwiftLint 設定。~/nix-darwin/standards/swift/swiftlint.yml の自己完結コピー。
+# SwiftLint 設定。~/nix-darwin/templates/swift/swiftlint.yml の自己完結コピー。
 # 公開リポジトリのため parent_config で $HOME を参照しない。標準との差分は下の「この repo の調整」だけ。
 #
 # - pre-commit（lefthook.yml → scripts/lint --staged）は --strict で実行する。warning も不合格。
