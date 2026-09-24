@@ -166,6 +166,7 @@ macOS の既定入力と接続中の入力デバイスも表示します。設�
 
 - `target=<bundle identifier>`: 貼り先のアプリ。起動していないと録音を始めません。付けなければ、URL を受け取った時点の前面アプリ
 - `finish_after_silence_ms=<ミリ秒>`: 話した後にこの時間黙ると確定します（800〜10000）。付けなければ、録音キーか `finish` で確定するまで続きます
+- `cancel_if_no_speech_ms=<ミリ秒>`: 始めてからこの時間、話しも打ちもしなければ、何も貼らずにやめて効果音（Bottle）を鳴らします（3000〜120000）
 
 例: `open "vox://record/start?finish_after_silence_ms=1500&target=com.mitchellh.ghostty"`。受け付けたかどうかは診断ログの `external_command` の行でわかります。
 

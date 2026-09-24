@@ -31,7 +31,7 @@ vox は録音キー（CGEventTap）とメニューバーからしか録音を始
 
 確定の後の貼り付け・自動 Enter・安全確認は、録音キーで確定した時と同じ経路を通る。
 
-- 判定は VoxCore の純粋な型に置く: URL の解釈（`ExternalCommand`）、設定と録音の状態による受け付けの判定（`ExternalCommand.decision`。判定の直前に設定を読み直す）と無音での確定（`SilenceFinishPolicy`）
+- 判定は VoxCore の純粋な型に置く: URL の解釈（`ExternalCommand`）、設定と録音の状態による受け付けの判定（`ExternalCommand.decision`。判定の直前に設定を読み直す）と無音での確定（`HandsFreePolicy`。ADR-023 で話さない時の中止も入った）
 - 外からの開始は、判定の直前に読んだ設定でそのまま録音を始める（開始時にもう一度読み直さない）
 - 設定は `settings.json` の `external_control_enabled`（bool、既定 `false`）
 - 診断ログは `external_command kind=start|finish|toggle accepted=true|false reason=…`。`target` の bundle identifier は出してよい（既存の `target_app` と同じ扱い）

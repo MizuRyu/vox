@@ -106,13 +106,14 @@ func recordingSessionSnapshot() throws {
   #expect(recording.microphoneInput == .device("synthetic-session-mic"))
   #expect(recording.metrics?.toggleOnMilliseconds == 1_000, "the toggle time was not recorded")
   #expect(recording.injectionTarget == nil, "a session without a target app captured one")
-  #expect(recording.silenceFinish == nil, "a hotkey session would finish on silence")
+  #expect(recording.handsFree == nil, "a hotkey session would finish or cancel on silence")
   let external = RecordingSession(
     toggleOnMilliseconds: 2_000, settings: coordinator, dictionary: .empty, target: nil,
-    silenceFinish: SilenceFinishPolicy(milliseconds: 1_500))
+    handsFree: HandsFreePolicy(finishAfterSilenceMilliseconds: 1_500, cancelIfNoSpeechMilliseconds: 20_000))
   #expect(
-    external.silenceFinish == SilenceFinishPolicy(milliseconds: 1_500),
-    "an external session lost its silence finish")
+    external.handsFree
+      == HandsFreePolicy(finishAfterSilenceMilliseconds: 1_500, cancelIfNoSpeechMilliseconds: 20_000),
+    "an external session lost its hands-free rules")
   #expect(external.startedMilliseconds == 2_000, "the silence window does not start at the toggle")
   #expect(external.finalizePendingSince == nil, "a new session started with a pending finalize")
 

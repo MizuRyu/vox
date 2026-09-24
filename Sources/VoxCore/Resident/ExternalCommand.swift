@@ -14,10 +14,26 @@ public enum ExternalCommand: Equatable, Sendable {
     public var targetBundleIdentifier: String?
     /// nil は、無音では確定しない（録音キーで始めた時と同じ）。
     public var finishAfterSilenceMilliseconds: Int?
+    /// ADR-023。nil は、話さなくてもやめない（録音キーで始めた時と同じ）。
+    public var cancelIfNoSpeechMilliseconds: Int?
 
-    public init(targetBundleIdentifier: String? = nil, finishAfterSilenceMilliseconds: Int? = nil) {
+    public init(
+      targetBundleIdentifier: String? = nil, finishAfterSilenceMilliseconds: Int? = nil,
+      cancelIfNoSpeechMilliseconds: Int? = nil
+    ) {
       self.targetBundleIdentifier = targetBundleIdentifier
       self.finishAfterSilenceMilliseconds = finishAfterSilenceMilliseconds
+      self.cancelIfNoSpeechMilliseconds = cancelIfNoSpeechMilliseconds
+    }
+
+    /// 声だけで使う指定が 1 つも無ければ nil（録音キーで始めた時と同じ録音になる）。
+    public var handsFree: HandsFreePolicy? {
+      guard finishAfterSilenceMilliseconds != nil || cancelIfNoSpeechMilliseconds != nil else {
+        return nil
+      }
+      return HandsFreePolicy(
+        finishAfterSilenceMilliseconds: finishAfterSilenceMilliseconds,
+        cancelIfNoSpeechMilliseconds: cancelIfNoSpeechMilliseconds)
     }
   }
 
@@ -28,10 +44,12 @@ public enum ExternalCommand: Equatable, Sendable {
     case unexpectedQuery = "unexpected_query"
     case invalidSilence = "invalid_silence"
     case invalidTarget = "invalid_target"
+    case invalidNoSpeech = "invalid_no_speech"
   }
 
   public static let scheme = "vox"
   public static let silenceRange = 800...10_000
+  public static let noSpeechRange = 3_000...120_000
 
   public var kind: String {
     switch self {
@@ -84,7 +102,7 @@ public enum ExternalCommand: Equatable, Sendable {
   private static func options(from items: [URLQueryItem]) -> Result<StartOptions, ParseError> {
     let names = items.map(\.name)
     guard Set(names).count == names.count,
-      Set(names).isSubset(of: ["target", "finish_after_silence_ms"])
+      Set(names).isSubset(of: ["target", "finish_after_silence_ms", "cancel_if_no_speech_ms"])
     else { return .failure(.unexpectedQuery) }
     var options = StartOptions()
     for item in items {
@@ -92,8 +110,13 @@ public enum ExternalCommand: Equatable, Sendable {
       case "target":
         guard let value = item.value, isBundleIdentifier(value) else { return .failure(.invalidTarget) }
         options.targetBundleIdentifier = value
+      case "cancel_if_no_speech_ms":
+        guard let value = item.value, let milliseconds = number(value, in: noSpeechRange) else {
+          return .failure(.invalidNoSpeech)
+        }
+        options.cancelIfNoSpeechMilliseconds = milliseconds
       default:
-        guard let value = item.value, let milliseconds = silence(value) else {
+        guard let value = item.value, let milliseconds = number(value, in: silenceRange) else {
           return .failure(.invalidSilence)
         }
         options.finishAfterSilenceMilliseconds = milliseconds
@@ -102,9 +125,9 @@ public enum ExternalCommand: Equatable, Sendable {
     return .success(options)
   }
 
-  private static func silence(_ value: String) -> Int? {
+  private static func number(_ value: String, in range: ClosedRange<Int>) -> Int? {
     guard !value.isEmpty, value.allSatisfy({ ("0"..."9").contains($0) }),
-      let number = Int(value), silenceRange.contains(number)
+      let number = Int(value), range.contains(number)
     else { return nil }
     return number
   }

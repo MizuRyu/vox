@@ -156,7 +156,7 @@ macOS が再起動を求めたら Vox を終了して開き直す。ソースか
 - **パレットの候補が古い／出るのが遅い**: 起動時に `folders.json` の Git 管理下フォルダ（新しい順に最大 20 件）の索引を常駐させ、FSEvents の通知（latency 0.5 秒でまとめて届く）で更新する。診断ログの `index_resident` が常駐した件数、`index_rebuilt` が読み直し（`scope=changes` は `git status` だけ、`scope=tracked` は `git ls-files` も）、`index_evicted` は上限（20 件 × 20,000 件）を超えて捨てたフォルダ、`index_watch_failed` は監視を始められず常駐させなかったフォルダ。捨てられたフォルダは開くたびの読み込みに戻る。Git 管理外のフォルダは常駐しない
 - **メニューが見つからない**: `Vox.app` をもう一度開くとセットアップ画面が出る。ウィンドウを閉じても常駐は続く
 - **HUD で `⌘V` を押すと前面アプリに貼られる**: HUD が key を失っている（別のアプリをクリックした後など）。HUD をクリックすると戻る。診断ログの `hud_key state=resigned since_key_ms=` が key を失った時刻と、key になってからの時間。`hud_key_equivalent` が出ていれば ⌘ キーは HUD に届いている
-- **URL で録音が始まらない**: 診断ログの `external_command kind=… accepted=false reason=…`。`disabled` は設定「ほかのアプリからの操作を許可」がオフ、`state_recording` などは録音の状態が合わない、`target_not_running` は `target=` のアプリが起動していない、`invalid_silence` / `invalid_target` / `unexpected_query` / `unknown_command` は URL の形が違う、`not_ready` は Vox の起動処理中。無音で確定した回は `silence_finish after_ms=` が出る
+- **URL で録音が始まらない**: 診断ログの `external_command kind=… accepted=false reason=…`。`disabled` は設定「ほかのアプリからの操作を許可」がオフ、`state_recording` などは録音の状態が合わない、`target_not_running` は `target=` のアプリが起動していない、`invalid_silence` / `invalid_target` / `unexpected_query` / `unknown_command` は URL の形が違う、`not_ready` は Vox の起動処理中。無音で確定した回は `silence_finish`、誰も話さずにやめた回は `no_speech_cancel` が出る（`cancel_if_no_speech_ms`、効果音 Bottle）。`invalid_no_speech` はその値が 3000〜120000 の外
 
 ## 開発コマンド早見表
 

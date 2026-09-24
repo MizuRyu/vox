@@ -179,8 +179,7 @@ final class VoxController {
     }
     begin(
       toggleOnMilliseconds: voxNowMilliseconds(), targetOverride: target,
-      silenceFinish: options.finishAfterSilenceMilliseconds.map(SilenceFinishPolicy.init(milliseconds:)),
-      reloadSettings: false)
+      handsFree: options.handsFree, reloadSettings: false)
     return nil
   }
 
@@ -320,7 +319,7 @@ final class VoxController {
   /// `reloadSettings` は、呼び出し側が直前に読んだ設定で判定した時だけ false（同じ読み込みで始める）。
   private func begin(
     toggleOnMilliseconds: Double, targetOverride: NSRunningApplication?,
-    silenceFinish: SilenceFinishPolicy? = nil, reloadSettings: Bool = true
+    handsFree: HandsFreePolicy? = nil, reloadSettings: Bool = true
   ) {
     guard !isShuttingDown else { return }
     if reloadSettings { settings.reload() }
@@ -333,7 +332,7 @@ final class VoxController {
       bundleIdentifier: frontmost?.bundleIdentifier) ? frontmost : nil)
     let recording = RecordingSession(
       toggleOnMilliseconds: toggleOnMilliseconds, settings: settings,
-      dictionary: dictionary.load(), target: target, silenceFinish: silenceFinish)
+      dictionary: dictionary.load(), target: target, handsFree: handsFree)
     self.recording = recording
     hud.reset(status: "準備中")
     hud.show()
@@ -461,7 +460,7 @@ final class VoxController {
     levelTask = Task { @MainActor in
       while !Task.isCancelled {
         hud.model.level = lane.levels.level
-        if finishAfterSilenceIfNeeded() { break }
+        if applyHandsFreeIfNeeded() { break }
         commitAfterPauseIfNeeded()
         try? await Task.sleep(for: .milliseconds(66))
       }
@@ -480,24 +479,28 @@ final class VoxController {
     Task { @MainActor in await lane.finalizeSegment(reason: .pause) }
   }
 
-  /// ADR-022。ほかのアプリが無音での確定を指定した回だけ、発話の後に黙ったら確定する。
-  private func finishAfterSilenceIfNeeded() -> Bool {
-    guard state == .recording, let recording, let policy = recording.silenceFinish else {
-      return false
-    }
+  /// ADR-022 / ADR-023。声だけで使う指定の回だけ、黙ったら確定し、話さなければ音を鳴らしてやめる。
+  private func applyHandsFreeIfNeeded() -> Bool {
+    guard state == .recording, let recording, let policy = recording.handsFree else { return false }
     let now = voxNowMilliseconds()
     recording.finalizePendingSince =
       lane.isSegmentFinalizePending ? (recording.finalizePendingSince ?? now) : nil
-    guard
-      policy.shouldFinish(
-        lastSpeechMilliseconds: lane.levels.lastSpeechMilliseconds,
-        startedMilliseconds: recording.startedMilliseconds, now: now,
-        hasText: !(hud.model.head + hud.model.tentative + hud.model.tail)
-          .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-        paletteOpen: palette.isOpen, finalizePendingSince: recording.finalizePendingSince)
-    else { return false }
-    voxLog("silence_finish after_ms=\(Int(policy.silenceMilliseconds))")
-    finish(toggleOffMilliseconds: now)
+    switch policy.action(
+      lastSpeechMilliseconds: lane.levels.lastSpeechMilliseconds,
+      startedMilliseconds: recording.startedMilliseconds, now: now,
+      hasText: !(hud.model.head + hud.model.tentative + hud.model.tail)
+        .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+      paletteOpen: palette.isOpen, finalizePendingSince: recording.finalizePendingSince) {
+    case .keep: return false
+    case .finish:
+      voxLog("silence_finish")
+      finish(toggleOffMilliseconds: now)
+    case .cancel:
+      // 画面を見ていない利用者にも、聞き取りが終わったことを音で知らせる。
+      voxLog("no_speech_cancel")
+      NSSound(named: "Bottle")?.play()
+      discard()
+    }
     return true
   }
 

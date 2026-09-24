@@ -42,6 +42,28 @@ struct ExternalCommandTests {
         == .success(.start(.init(finishAfterSilenceMilliseconds: 10_000))), "上限を拒んだ")
   }
 
+  @Test("話さなければやめるまでの時間は 3,000〜120,000 の整数だけ")
+  func noSpeechMustBeInRange() {
+    #expect(
+      parse("vox://record/start?finish_after_silence_ms=1500&cancel_if_no_speech_ms=20000")
+        == .success(.start(.init(finishAfterSilenceMilliseconds: 1_500, cancelIfNoSpeechMilliseconds: 20_000))),
+      "指定を落とした")
+    for value in ["2999", "120001", "abc", ""] {
+      #expect(
+        parse("vox://record/start?cancel_if_no_speech_ms=\(value)") == .failure(.invalidNoSpeech),
+        "\(value) を受け付けた")
+    }
+  }
+
+  @Test("声だけで使う指定が無ければ、録音キーと同じ録音になる")
+  func handsFreeOnlyWhenAsked() {
+    #expect(ExternalCommand.StartOptions().handsFree == nil, "指定が無いのに声で確定する録音になった")
+    #expect(
+      ExternalCommand.StartOptions(cancelIfNoSpeechMilliseconds: 3_000).handsFree
+        == HandsFreePolicy(finishAfterSilenceMilliseconds: nil, cancelIfNoSpeechMilliseconds: 3_000),
+      "片方だけの指定が伝わらない")
+  }
+
   @Test("貼り先は bundle identifier の文字だけ")
   func targetMustLookLikeABundleIdentifier() {
     for value in ["", "com.example/..", "com example", "a%0Ab"] {

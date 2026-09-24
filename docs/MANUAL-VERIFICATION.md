@@ -537,7 +537,7 @@
 |---|---|
 | **前提** | 設定「ほかのアプリからの操作を許可」がオンで保存済み。テキストエディタを前面にしてある |
 | **手順** | 別のターミナルから `sleep 3; open "vox://record/start?finish_after_silence_ms=1500"` を実行し、3 秒以内にエディタを前面に戻す。録音が始まったら一文話して黙る |
-| **期待結果** | 黙って約 1.5 秒で確定し、エディタに貼られる。診断ログに `external_command kind=start accepted=true` と `silence_finish after_ms=1500`。録音キーで始めた録音は黙っても確定しない |
+| **期待結果** | 黙って約 1.5 秒で確定し、エディタに貼られる。診断ログに `external_command kind=start accepted=true` と `silence_finish`。録音キーで始めた録音は黙っても確定しない |
 
 ### EXT-03 target で貼り先を固定する
 
@@ -546,6 +546,15 @@
 | **前提** | EXT-02 の設定。ターミナル（例: Ghostty）を起動してある |
 | **手順** | ショートカット.app の「URL を開く」に `vox://record/start?finish_after_silence_ms=1500&target=<ターミナルの bundle identifier>` を置き、Siri から呼ぶ。話して黙る |
 | **期待結果** | Siri やショートカットが前面に出ても、ターミナルに貼られる。診断ログの `target_app fixed=` がターミナルの bundle identifier。起動していないアプリを指定すると `reason=target_not_running` で始まらない |
+
+### EXT-04 話さなければ効果音が鳴って録音がやめる
+
+| 項目 | 内容 |
+|---|---|
+| **前提** | EXT-02 の設定 |
+| **手順** | `open "vox://record/start?cancel_if_no_speech_ms=3000"` を実行し、何も話さず何も打たない |
+| **期待結果** | 約 3 秒で HUD が閉じ、効果音（Bottle）が 1 回鳴り、何も貼られない。診断ログに `no_speech_cancel`。途中で一言話すと、やめずに続く |
+| **自動化済み（一部）** | 判定だけ: `swift test --filter "HandsFreePolicyTests"` |
 
 ## DIST — バンドル配布
 

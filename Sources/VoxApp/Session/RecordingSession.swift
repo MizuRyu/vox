@@ -27,8 +27,8 @@ final class RecordingSession {
   var captureInterrupted = false
   /// ADR-020。この録音の無音での区切り。パレットで締めた時刻も入れる。
   var pauseCommit = PauseCommitPolicy()
-  /// ADR-022。ほかのアプリから `finish_after_silence_ms` 付きで始めた回だけ持つ。
-  let silenceFinish: SilenceFinishPolicy?
+  /// ADR-022 / ADR-023。ほかのアプリから声だけで使う指定付きで始めた回だけ持つ。
+  let handsFree: HandsFreePolicy?
   let startedMilliseconds: Double
   /// 区切りの締めが走り始めた時刻。無音での確定がそれを待つ上限の起点。
   var finalizePendingSince: Double?
@@ -37,9 +37,9 @@ final class RecordingSession {
 
   init(
     toggleOnMilliseconds: Double, settings: SettingsCoordinator, dictionary: DictionaryTable,
-    target: NSRunningApplication?, silenceFinish: SilenceFinishPolicy? = nil
+    target: NSRunningApplication?, handsFree: HandsFreePolicy? = nil
   ) {
-    self.silenceFinish = silenceFinish
+    self.handsFree = handsFree
     startedMilliseconds = toggleOnMilliseconds
     autoEnterEnabled = settings.autoEnterEnabled
     autoEnterUnverified = settings.autoEnterUnverified
