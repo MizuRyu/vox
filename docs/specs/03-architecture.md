@@ -179,6 +179,13 @@ VoiceInk は「単語を正規化して 3 回一致したら確定」する `Wor
 - `org.nspasteboard.ConcealedType` / `TransientType` を併記してクリップボード履歴ツールに拾わせない
 - **Chromium / Electron 相手には `AXManualAccessibility` を明示 ON** (TypeWhisper が実装)
 
+### 確定の後の表示と自動 Enter
+
+- 確定の段階（締め・貼り付け・自動 Enter）では、結果にかかわらず HUD を文言なしで閉じる（[ADR-024](../adr/024-no-notice-after-commit.md)）。理由は診断ログ（`error`、`auto_enter result=`）と履歴・計測に残し、貼り付けられなかった本文はクリップボードに残す
+- 文言を出すのは確定の前に録音が終わった時だけ（マイクの権限、開始の失敗、録音中の入力デバイス変化で本文が空だった時）
+- 自動 Enter は、入力欄を読み返して「元の内容 + 貼った本文」と一致した時だけ送る（ADR-014）。読み返せないアプリは設定「ターミナルでもEnterを押す」（`auto_enter_unverified`）がオンの時だけ、貼り付けから 0.5 秒待って同じアプリ・ウィンドウなら送る
+- パレットの表でターミナルとしているアプリ（Terminal.app、Ghostty、cmux、iTerm2、Warp）は、画面を読めても読み返しに使わず、読み返せないアプリとして扱う（[ADR-025](../adr/025-terminals-never-read-back.md)。判定は `AutoEnterGate.readsBack`）
+
 ## RingBuffer
 
 状態: 未実装（将来）。
