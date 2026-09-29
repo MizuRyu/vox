@@ -66,23 +66,6 @@ public enum AutoEnterResult: String, Sendable {
     modifiersHeld, cancelled, clipboardChanged, eventUnavailable
 
   public var isVerifiedInsertion: Bool { self == .posted }
-
-  public var notice: String? {
-    switch self {
-    case .disabled, .posted, .postedUnverified: nil
-    case .unverifiable: "貼り付けた内容を確認できないアプリのため、Enterは押していません"
-    case .inputUnavailable: "貼り付けた内容を確認できなかったため、Enterは押していません"
-    case .readbackMismatch: "貼り付け後に入力欄が変わったため、Enterは押していません"
-    case .timedOut: "貼り付けを時間内に確認できなかったため、Enterは押していません"
-    case .invalidClock: "待ち時間を測れなかったため、Enterは押していません"
-    case .windowUnverified: "元のウィンドウを確認できなかったため、Enterは押していません"
-    case .targetChanged: "貼り付け先が変わったため、Enterは押していません"
-    case .modifiersHeld: "修飾キーが押されたままだったため、Enterは押していません"
-    case .cancelled: "Enterを取り消しました"
-    case .clipboardChanged: "クリップボードが変わったため、Enterは押していません"
-    case .eventUnavailable: "Enterを押せませんでした"
-    }
-  }
 }
 
 /// 自動 Enter の判断に使う、外から差し込む観測と作用。読み返せる入力欄かどうかで読むものが違う
@@ -125,14 +108,20 @@ public enum AutoEnterGate {
   /// 読み返せる入力欄では読み返しの一致だけが Return を許可する。読み返せない入力欄では
   /// `sendWhenUnverified` が送るかを決め、猶予が過ぎた時点で他の拒否理由（取り消し・
   /// ウィンドウ変化など）がなければ打つ。
+  /// ADR-025。ターミナルは画面全体を読めるが、貼った本文との一致は取れない。読み返せないアプリとして扱う。
+  /// 表はパレットの対象判定（`PaletteTargetAdapter`）と共有する。
+  public static func readsBack(bundleIdentifier: String?) -> Bool {
+    PaletteTargetAdapter.forBundleIdentifier(bundleIdentifier) != .terminal
+  }
+
   @MainActor
   public static func run(
-    enabled: Bool, sendWhenUnverified: Bool, plan: AutoEnterPlan?, original: InjectionTarget,
-    pastePostedAt: Double, probes: AutoEnterProbes
+    enabled: Bool, sendWhenUnverified: Bool, readsBack: Bool = true, plan: AutoEnterPlan?,
+    original: InjectionTarget, pastePostedAt: Double, probes: AutoEnterProbes
   ) async -> AutoEnterResult {
     guard enabled else { return .disabled }
     // 計画があるなら貼り付け前に読めている。無いときだけ入力欄に聞く。
-    let verifying = plan != nil || probes.readback() != nil
+    let verifying = readsBack && (plan != nil || probes.readback() != nil)
     guard verifying || sendWhenUnverified else { return .unverifiable }
     let startedAt: Double
     let deadlineSeconds: Double

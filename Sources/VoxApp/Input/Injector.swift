@@ -172,6 +172,7 @@ final class Injector: NSObject, NSPasteboardTypeOwner, @unchecked Sendable {
 
     let autoEnter = await Self.decideAutoEnter(
       enabled: autoEnterEnabled, sendWhenUnverified: autoEnterUnverified,
+      readsBack: AutoEnterGate.readsBack(bundleIdentifier: targetApplication?.bundleIdentifier),
       plan: preparation.autoEnterPlan,
       target: target, postedMilliseconds: postedMilliseconds,
       probes: AutoEnterProbes(
@@ -288,11 +289,11 @@ final class Injector: NSObject, NSPasteboardTypeOwner, @unchecked Sendable {
 
   @MainActor
   private static func decideAutoEnter(
-    enabled: Bool, sendWhenUnverified: Bool, plan: AutoEnterPlan?, target: CapturedInjectionTarget,
-    postedMilliseconds: Double, probes: AutoEnterProbes
+    enabled: Bool, sendWhenUnverified: Bool, readsBack: Bool, plan: AutoEnterPlan?,
+    target: CapturedInjectionTarget, postedMilliseconds: Double, probes: AutoEnterProbes
   ) async -> AutoEnterResult {
     let autoEnter = await AutoEnterGate.run(
-      enabled: enabled, sendWhenUnverified: sendWhenUnverified, plan: plan,
+      enabled: enabled, sendWhenUnverified: sendWhenUnverified, readsBack: readsBack, plan: plan,
       original: target.safetyIdentity,
       pastePostedAt: postedMilliseconds / 1000, probes: probes)
     if autoEnter == .modifiersHeld { Self.logReturnModifierState() }

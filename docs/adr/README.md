@@ -37,3 +37,5 @@
 | [021](021-dictionary-edited-in-settings.md) | 辞書は設定画面の表で編集し、ファイルは正のまま残す | 承認 | 2026-09-24 |
 | [022](022-external-record-control-url.md) | ほかのアプリから録音を開始・確定する入口を URL スキームで開ける（既定はオフ） | 提案 | 2026-09-24 |
 | [023](023-hands-free-no-speech-cancel.md) | 声だけで始めた録音は、誰も話さなければ音を鳴らしてやめる | 提案 | 2026-09-25 |
+| [024](024-no-notice-after-commit.md) | 確定の後は文言を出さずに HUD を閉じる | 提案 | 2026-09-29 |
+| [025](025-terminals-never-read-back.md) | ターミナルは画面を読めても、自動 Enter の読み返しに使わない | 提案 | 2026-09-29 |

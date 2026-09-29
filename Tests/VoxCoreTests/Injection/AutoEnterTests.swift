@@ -278,4 +278,37 @@ struct AutoEnterTests {
     }
     if let postedAt { #expect(postedAt >= 0.5, "unverified Enter waits after paste: \(scenario)") }
   }
+
+  @MainActor
+  @Test("ターミナルは画面を読めても読み返しで確かめず、読み返せないアプリと同じ扱いにする")
+  func terminalsTakeTheUnverifiedPath() async {
+    let (_, plan, _) = autoEnterFixture()
+    // ターミナルの画面全体が返る。貼った本文との一致は取れない。
+    let screen = TextInsertionSnapshot(value: "$ ls\nfile\n$ 音声", selection: NSRange(location: 0, length: 0))
+    let original = InjectionTarget(processID: 1, focusedElement: .known(1))
+    func run(sendWhenUnverified: Bool) async -> (AutoEnterResult, Int) {
+      var posts = 0
+      var time = 0.0
+      let result = await AutoEnterGate.run(
+        enabled: true, sendWhenUnverified: sendWhenUnverified, readsBack: false, plan: plan,
+        original: original, pastePostedAt: 0,
+        probes: .init(
+          currentTarget: { original }, modifiersHeld: { false }, isCancelled: { false },
+          clipboardOwned: { true }, readback: { screen }, sameWindow: { true },
+          postReturn: { posts += 1; return true }, now: { time }, wait: { time += 0.1 }))
+      return (result, posts)
+    }
+    let (off, offPosts) = await run(sendWhenUnverified: false)
+    #expect(off == .unverifiable && offPosts == 0, "設定オフのターミナルで Enter を送った: \(off)")
+    let (on, onPosts) = await run(sendWhenUnverified: true)
+    #expect(on == .postedUnverified && onPosts == 1, "設定オンのターミナルで Enter が送られない: \(on)")
+  }
+
+  @Test("読み返しで確かめないアプリは、パレットのターミナルの表と同じ")
+  func readsBackFollowsTheTerminalTable() {
+    #expect(!AutoEnterGate.readsBack(bundleIdentifier: "com.mitchellh.ghostty"))
+    #expect(!AutoEnterGate.readsBack(bundleIdentifier: "com.apple.Terminal"))
+    #expect(AutoEnterGate.readsBack(bundleIdentifier: "com.example.editor"))
+    #expect(AutoEnterGate.readsBack(bundleIdentifier: nil))
+  }
 }

@@ -579,13 +579,12 @@ extension VoxController {
             recording,
             rawText: raw, insertedText: nil, inserted: false,
             error: "finalize_failed", edited: hud.model.typedCharacters > 0)
-          hud.model.notice = "確定できませんでした。\(message)"
-          closeAfter(milliseconds: 2500, residentPhaseAfterClose: .error)
+          // ADR-024。確定の段階では文言を出さずに閉じる。理由は診断ログと履歴にある。
+          close()
+          onResidentPhaseChange?(.error, nil)
           return
         }
-        await insertVisibleTranscript(
-          recording, text: text, rawText: raw,
-          notice: "認識を締められなかったため、表示中の本文をそのまま貼り付けます")
+        await insertVisibleTranscript(recording, text: text, rawText: raw)
       }
     }
   }
@@ -599,13 +598,12 @@ extension VoxController {
 
   /// 締めを通さずに、表示中の本文を挿入経路へ渡す。締めの失敗と入力デバイスの変化で共用。
   private func insertVisibleTranscript(
-    _ recording: RecordingSession, text: String, rawText: String, notice: String
+    _ recording: RecordingSession, text: String, rawText: String
   ) async {
     await closeInputForInsertion()
     let typed = hud.model.typedCharacters
     recording.metrics?.typedCharacters = typed
     recording.metrics?.finalTextLength = text.count
-    hud.model.notice = notice
     await insertFinalText(text, recording: recording, rawText: rawText, typed: typed)
   }
 
@@ -623,8 +621,7 @@ extension VoxController {
         recording,
         rawText: rawText, insertedText: nil, inserted: false, error: activationError,
         edited: typed > 0)
-      hud.model.notice = "貼り付け先を前面に戻せませんでした。本文はクリップボードにあります"
-      closeAfter(milliseconds: 2500)
+      close()
       return
     }
 
@@ -635,8 +632,7 @@ extension VoxController {
         recording,
         rawText: rawText, insertedText: nil, inserted: false,
         error: "input_target_unknown", edited: typed > 0)
-      hud.model.notice = "貼り付け先を確認できませんでした"
-      closeAfter(milliseconds: 2500)
+      close()
       return
     }
     let outcome = await injector.insert(text: text, target: injectionTarget,
@@ -661,17 +657,8 @@ extension VoxController {
       inserted: outcome.pasteVerified, error: outcome.error,
       edited: typed > 0)
 
-    if outcome.pasteReceivedMilliseconds == nil {
-      let head = outcome.pastePosted ? "貼り付けを確認できませんでした" : "貼り付けませんでした"
-      hud.model.notice = outcome.clipboardContainsText
-        ? "\(head)。本文はクリップボードにあります" : head
-      closeAfter(milliseconds: 2500)
-    } else if let notice = outcome.autoEnterResult.notice {
-      hud.model.notice = notice
-      closeAfter(milliseconds: 2500)
-    } else {
-      close()
-    }
+    // ADR-024。貼り付けや Enter が途中で止まっても HUD を残さない。本文は必要ならクリップボードに残っている。
+    close()
   }
 
   /// R16。前面が `targetApp` でなければ activate し、実際に前面になるまで最大 500ms 待つ。
@@ -775,9 +762,7 @@ extension VoxController {
         closeAfter(milliseconds: 2500)
         return
       }
-      await insertVisibleTranscript(
-        recording, text: text, rawText: raw,
-        notice: "入力デバイスが変わったため、ここまでの本文を貼り付けます")
+      await insertVisibleTranscript(recording, text: text, rawText: raw)
     }
   }
 }
