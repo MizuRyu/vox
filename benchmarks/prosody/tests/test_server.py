@@ -39,6 +39,7 @@ class ServerTest(unittest.TestCase):
             patch.object(voxdata, "DATA", self.data),
             patch.object(voxdata, "CONTRAST", self.data / "contrast"),
             patch.object(voxdata, "LABELS", self.data / "labels.jsonl"),
+            patch.object(voxdata, "AGENT_LABELS", self.data / "agent_labels.jsonl"),
             patch.object(voxdata, "VOX_ROOT", self.vox),
         ]
         for p in self.patches:

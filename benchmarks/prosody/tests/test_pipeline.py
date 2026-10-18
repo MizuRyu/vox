@@ -52,6 +52,7 @@ class PipelineTest(unittest.TestCase):
                 patch.object(voxdata, "DATA", data),
                 patch.object(voxdata, "CONTRAST", contrast),
                 patch.object(voxdata, "LABELS", data / "labels.jsonl"),
+                patch.object(voxdata, "AGENT_LABELS", data / "agent_labels.jsonl"),
                 patch.object(voxdata, "VOX_ROOT", data / "none"),
             ):
                 rows = dataset.rows()

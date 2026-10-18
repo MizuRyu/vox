@@ -61,7 +61,7 @@ def rule_scores(table: list[dict]) -> np.ndarray:
 def out_of_fold(make, x: np.ndarray, y: np.ndarray, groups: list[str]) -> tuple[np.ndarray, str]:
     distinct = sorted(set(groups))
     if len(distinct) >= 3:
-        splitter, how = GroupKFold(n_splits=min(5, len(distinct))), f"グループ（読み分けは文、自然な発話は録った日）で分けた {min(5, len(distinct))} 分割"
+        splitter, how = GroupKFold(n_splits=min(5, len(distinct))), f"グループ（読み分けは文、自然な発話は録音）で分けた {min(5, len(distinct))} 分割"
         splits = splitter.split(x, y, groups)
     else:
         folds = max(2, min(5, int(min(y.sum(), (~y).sum()))))
@@ -108,12 +108,14 @@ def evaluate(table: list[dict], target: str, lines: list[str]) -> None:
         return
     groups = [r["group"] for r in kept]
     lines.append(f"行 {len(kept)}（陽性 {int(y.sum())} / 陰性 {int((~y).sum())}）。出典: " + ", ".join(
-        f"{s} {sum(r['source'] == s for r in kept)}" for s in ("contrast", "natural")) + "\n")
+        f"{s} {sum(r['source'] == s for r in kept)}" for s in ("contrast", "natural", "natural-agent")) + "\n")
     lines.append("| モデル | 特徴 | 閾値 | 変更 | 適合率 | 下限95% | 再現率 | 誤挿入 | 誤挿入率 |")
     lines.append("|---|---|---|---|---|---|---|---|---|")
     how = ""
     kana = np.array([r["ending_kana"] == 1.0 for r in kept])
     kana_lines = []
+    natural = np.array([r["source"] != "contrast" for r in kept])
+    natural_lines = []
     if target == "want_question":
         m = metrics(y, rule_scores(kept), 0.5)
         lines.append(_row("規則（上昇 2 半音）", "音声のみ", "—", m))
@@ -124,9 +126,14 @@ def evaluate(table: list[dict], target: str, lines: list[str]) -> None:
             scores, how = out_of_fold(make, x, y, groups)
             for threshold in THRESHOLDS:
                 lines.append(_row(model_name, name, f"{threshold:.3f}", metrics(y, scores, threshold)))
+            if natural.sum() >= MIN_ROWS and model_name == "ロジスティック回帰":
+                for threshold in THRESHOLDS:
+                    natural_lines.append(_row(model_name, name, f"{threshold:.3f}", metrics(y[natural], scores[natural], threshold)))
             if kana.sum() >= 5 and name == "音声＋文字の語尾" and model_name == "ロジスティック回帰":
                 kana_lines.append(_row(model_name, "「かな」だけ", "0.500", metrics(y[kana], scores[kana], 0.5)))
     lines.append(f"\n評価の分け方: {how}\n")
+    if natural_lines:
+        lines += ["自然な発話だけ（読み分けと同じ交差検証の予測から）:\n", "| モデル | 特徴 | 閾値 | 変更 | 適合率 | 下限95% | 再現率 | 誤挿入 | 誤挿入率 |", "|---|---|---|---|---|---|---|---|---|", *natural_lines, ""]
     if kana_lines:
         lines += ["「かな」で終わる文だけ:\n", "| モデル | 対象 | 閾値 | 変更 | 適合率 | 下限95% | 再現率 | 誤挿入 | 誤挿入率 |", "|---|---|---|---|---|---|---|---|---|", *kana_lines, ""]
     if target == "want_question":
@@ -165,12 +172,29 @@ def export(x: np.ndarray, y: np.ndarray) -> None:
         pickle.dump({"features": features.ACOUSTIC + features.TEXT, "model": suggester}, f)
 
 
+def agreement(lines: list[str]) -> None:
+    """エージェントのラベルを、本人が付けた同じ文と比べる。本人が保留にした文は数えない。"""
+    agent = voxdata.agent_labels()
+    pairs = [
+        (agent[key]["want_question"], row["want_question"])
+        for row in voxdata.load_labels()
+        if row["labeled_by"] == "user" and (key := (row["recording"], row["sentence_index"])) in agent
+        and row.get("want_question") is not None
+    ]
+    if not pairs:
+        return
+    same = sum(a == u for a, u in pairs)
+    held = sum(a is None for a, _ in pairs)
+    lines.append(f"\nエージェントのラベルと本人のラベル: {len(pairs)} 文中 一致 {same}、エージェントだけ保留 {held}、食い違い {len(pairs) - same - held}。\n")
+
+
 def main() -> None:
     voxdata.DATA.mkdir(parents=True, exist_ok=True, mode=0o700)
     table = dataset.rows()
     lines = [f"# vox-prosody 評価（{date.today().isoformat()}）\n", f"文末の行 {len(table)} 件（ラベル無しを含む）。"]
     for target in ("want_question", "want_ellipsis"):
         evaluate(table, target, lines)
+    agreement(lines)
     report = "\n".join(lines) + "\n"
     (voxdata.DATA / "report.md").write_text(report, encoding="utf-8")
     for name in ("report.md", "model.json", "suggester.pkl"):

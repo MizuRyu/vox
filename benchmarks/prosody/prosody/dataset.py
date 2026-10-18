@@ -74,8 +74,9 @@ def _natural_rows() -> list[dict]:
         limit = voxdata.next_sentence_start(recording, label["sentence_index"])
         result.append(
             {
-                "source": "natural",
-                "group": "natural-" + recording[:8],
+                "source": "natural" if label["labeled_by"] == "user" else "natural-agent",
+                # 同じ発話の文どうしは話し方が似る。録音ごとにまとめる
+                "group": "natural-" + recording,
                 "id": f"{recording}#{label['sentence_index']}",
                 "text": label["text"],
                 "want_question": label.get("want_question"),

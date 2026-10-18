@@ -17,6 +17,8 @@ VOX_ROOT = Path.home() / "Library/Application Support/vox/recordings"
 DATA = Path(os.environ.get("VOX_PROSODY_DATA") or Path.home() / "Library/Application Support/vox/prosody")
 CONTRAST = DATA / "contrast"
 LABELS = DATA / "labels.jsonl"
+# エージェントが本文と前後の文脈だけから付けた want_question。音声を見ないので、音声の特徴の正解に使える。
+AGENT_LABELS = DATA / "agent_labels.jsonl"
 
 RECORDING_ID = re.compile(r"^\d{8}/\d{6}-\d{2}$")
 SENTENCE_END = re.compile(r"[。？！?!]")
@@ -103,11 +105,21 @@ def load_sidecar(recording: str) -> dict:
 
 
 def load_labels() -> list[dict]:
-    if not LABELS.exists():
-        return []
+    """本人のラベルと、エージェントが文の意味から付けたラベル。同じ文は本人が勝つ。"""
     latest: dict[tuple[str, int], dict] = {}
-    for line in LABELS.read_text(encoding="utf-8").splitlines():
-        if line.strip():
-            row = json.loads(line)
-            latest[(row["recording"], row["sentence_index"])] = row  # 付け直しは後の行が勝つ
+    for path, by in ((AGENT_LABELS, "agent-meaning"), (LABELS, "user")):
+        if not path.exists():
+            continue
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                row = json.loads(line)
+                latest[(row["recording"], row["sentence_index"])] = {"labeled_by": by, **row}  # 付け直しは後の行が勝つ
     return list(latest.values())
+
+
+def agent_labels() -> dict[tuple[str, int], dict]:
+    """本人のラベルと突き合わせて、エージェントのラベルの当たり具合を測るため。"""
+    if not AGENT_LABELS.exists():
+        return {}
+    rows = (json.loads(line) for line in AGENT_LABELS.read_text(encoding="utf-8").splitlines() if line.strip())
+    return {(r["recording"], r["sentence_index"]): r for r in rows}

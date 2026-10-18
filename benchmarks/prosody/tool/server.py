@@ -130,7 +130,7 @@ def _candidates_for(recording: str, labels: dict) -> list[dict]:
 
 
 def natural_candidates() -> list[dict]:
-    labels = {(r["recording"], r["sentence_index"]): r for r in voxdata.load_labels()}
+    labels = {(r["recording"], r["sentence_index"]): r for r in voxdata.load_labels() if r["labeled_by"] == "user"}
     result = [c for recording in voxdata.recording_ids() for c in _candidates_for(recording, labels)]
     # 未ラベル → 迷いやすい語尾 → 新しい録音
     result.sort(key=lambda c: (c["labeled"], -c["priority"], [-ord(ch) for ch in c["recording"]], c["sentence_index"]))
