@@ -11,8 +11,10 @@ import numpy as np
 
 from prosody import dataset, features, voxdata
 
-# vox 本体の QuestionMarkPass と同じ形（丁寧語の疑問と「っけ」）
-TEXT_QUESTION = re.compile(r"(?:(?:です|ます|でした|ました|ません|でしょう)か(?:ね)?|っけ)[。？?\s　]*$")
+# vox 本体の QuestionMarkPass と同じ形（ADR-028）
+TEXT_QUESTION = re.compile(
+    r"(?:(?:です|ます|でした|ました|ません|でしょう|[っい]す)か(?:ね)?|っけ|(?:よく|良く|なく)ね|てくれん|方が(?:よく|良く)ない)[。？?\s　]*$"
+)
 # 読み分けは「？」と「。」がほぼ半々で、学習した確率は自然な発話より「？」寄りに出る。
 # 自然な発話のラベルで決め直すまでの仮の値。
 MODEL_THRESHOLD = 0.7
