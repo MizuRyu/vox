@@ -320,7 +320,7 @@ $("skip").onclick = () => !recording && pickNext(true);
 $("undo").onclick = undoLast;
 
 // ---- 自然な発話 ----
-let candidates = [], view = [], position = 0, player = null;
+let candidates = [], view = [], position = 0, player = null, prefilled = "";
 
 async function loadNatural() {
   const res = await fetch("/api/natural").then((r) => r.json());
@@ -349,8 +349,10 @@ function renderNatural() {
   const mark = c.want_question === true ? "？" : c.want_question === false ? "。" : "？／。";
   $("natural-mark").textContent = mark + (c.want_ellipsis ? "（…）" : "");
   $("natural-mark").className = "mark" + (c.want_question === true ? " q" : c.want_question === false ? " s" : "");
-  $("reference").value = c.reference_text || c.text;
-  $("reference-state").textContent = c.reference_text ? "保存済みの正しい文があります" : "";
+  prefilled = c.reference_text || c.reference_suggestion || c.text;
+  $("reference").value = prefilled;
+  $("reference-state").textContent = c.reference_text ? "保存済みの正しい文があります"
+    : c.reference_suggestion ? "辞書を当てた案を入れています。文末の記号は選んだ記号に合わせます" : "選んだ記号に文末を合わせて保存します";
   $("preview-q").textContent = tail + "？";
   $("preview-s").textContent = tail + "。";
   $("natural-meta").textContent = `${c.recording} の ${c.sentence_index + 1} 文目` + (c.end_s == null ? "（時刻なし。再生できません）" : "");
@@ -399,16 +401,23 @@ function play(whole = false) {
   player = new Audio(`/api/clip?recording=${encodeURIComponent(c.recording)}&start=${start.toFixed(3)}&end=${(c.end_s + 0.4).toFixed(3)}`);
   player.play();
 }
+// 欄を触っていなければ、文末の記号だけを選んだ記号に合わせる。書き換えた文はそのまま使う。
+function referenceFor(wantQuestion) {
+  const value = $("reference").value;
+  if (value !== prefilled || wantQuestion == null) return value;
+  return value.replace(/[。？?！!\s]*$/, "") + (wantQuestion ? "？" : "。");
+}
 async function label(wantQuestion, wantEllipsis, accepted = false) {
   const c = view[position];
-  const reference = $("reference").value;
+  const edited = $("reference").value !== prefilled;
+  const reference = referenceFor(wantQuestion);
   const res = await fetch("/api/label", { method: "POST", body: JSON.stringify({
     recording: c.recording, sentence_index: c.sentence_index, want_question: wantQuestion, want_ellipsis: wantEllipsis,
-    reference_text: reference, suggestion: c.suggestion || null, accepted_suggestion: accepted }) });
+    reference_text: reference, reference_edited: edited, suggestion: c.suggestion || null, accepted_suggestion: accepted }) });
   if (!res.ok) { $("natural-notice").textContent = "保存できませんでした: " + (await res.json()).error; return false; }
   $("natural-notice").textContent = "";
-  const edited = reference.trim() && reference.trim() !== c.text ? reference.trim() : null;
-  Object.assign(c, { want_question: wantQuestion, want_ellipsis: wantEllipsis, reference_text: edited, labeled: true });
+  const saved = reference.trim() && reference.trim() !== c.text ? reference.trim() : null;
+  Object.assign(c, { want_question: wantQuestion, want_ellipsis: wantEllipsis, reference_text: saved, labeled: true });
   return true;
 }
 async function saveReference() {

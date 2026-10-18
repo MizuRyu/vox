@@ -20,7 +20,7 @@ from urllib.parse import parse_qs, urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from prosody import features, suggest, voxdata, yin  # noqa: E402
+from prosody import features, reference, suggest, voxdata, yin  # noqa: E402
 
 PAGE = Path(__file__).with_name("index.html")
 PROMPT_ID = re.compile(r"^[a-z0-9-]{1,40}$")
@@ -122,6 +122,7 @@ def _candidates_for(recording: str, labels: dict) -> list[dict]:
             "want_question": label.get("want_question"),
             "want_ellipsis": label.get("want_ellipsis"),
             "reference_text": label.get("reference_text"),
+            "reference_suggestion": reference.suggest(s.text),
             "suggestion": label.get("suggestion"),
             "labeled": bool(label),
         })
@@ -295,6 +296,8 @@ class Handler(BaseHTTPRequestHandler):
             # 推奨に引っ張られたかを後で調べるため、出した推奨と、それをそのまま受けたかを残す
             "suggestion": row.get("suggestion") if isinstance(row.get("suggestion"), dict) else None,
             "accepted_suggestion": row.get("accepted_suggestion") is True,
+            # 正しい文を利用者が書き換えたか（False なら修正案と文末の記号の自動合わせだけ）
+            "reference_edited": row.get("reference_edited") is True,
             "labeled_at": datetime.now().isoformat(timespec="seconds"),
         }
         voxdata.DATA.mkdir(parents=True, exist_ok=True, mode=0o700)
