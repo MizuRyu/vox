@@ -98,6 +98,7 @@ swift run Vox
 | 登録フォルダの常駐索引 | メモリだけ（ディスクに残さない。上限 20 件 × 20,000 件。診断ログの `index_resident` / `index_rebuilt` / `index_evicted` は件数と所要時間だけ） |
 | HUD に貼った画像 | `~/Library/Application Support/vox/attachments/<日付>/<時刻>-<連番>.<拡張子>`（0600。起動時に 7 日・合計 500MiB で回収） |
 | 保存した録音（設定「録音を保存する」がオンの回だけ） | `~/Library/Application Support/vox/recordings/<日付>/<時刻>-<連番>.wav` と同名の `.json`（0600。起動時に 7 日・合計 500MiB を組で回収） |
+| 韻律の試作のデータ（読み分けの録音・ラベル・学習した重み・評価） | `~/Library/Application Support/vox/prosody/`（0700。`VOX_PROSODY_DATA` で替えられる。ADR-029） |
 | 辞書（表記の置換） | `~/Library/Application Support/vox/dictionary.tsv`（TSV、上限 64KiB、ファイル権限 0600） |
 | アプリの計測 | `benchmarks/m1/metrics.jsonl`（Git 対象外） |
 | M0 の音声・モデル・結果 | `benchmarks/m0/audio/`、`models/`、`results/`（Git 対象外） |

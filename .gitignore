@@ -31,6 +31,10 @@ benchmarks/m0/audio/
 benchmarks/m0/models/
 benchmarks/m0/results/
 benchmarks/m1/
+# 韻律の試作（ADR-029）。本人の声・ラベル・学習した重みはリポジトリの外（~/Library/Application Support/vox/prosody）に置く。
+# 置き場を環境変数で替えたときに中へ書いても入らないように、data/ も除外する。
+benchmarks/prosody/data/
+benchmarks/prosody/.venv/
 
 # グローバル ~/.config/git/ignore が flake.nix を除外しているが、
 # このプロジェクトでは flake を追跡する（ADR-006 で nix を開発環境として使うため）。

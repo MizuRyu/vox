@@ -13,3 +13,14 @@ just bench-report                             # results/*.jsonl を m0-results.m
 ```
 
 検査は `just bench-test`（`m0-core-tests` と `Tests/BenchmarkReport`）。`just verify` には含まれない。
+
+## prosody
+
+文末の韻律で「？」「…」を判定する試作（[ADR-029](../docs/adr/029-prosody-tuning-tool-outside-data.md)）。Python（uv）で、Swift のハーネスとは独立している。
+使い方は [prosody/README.md](prosody/README.md)。声・ラベル・学習した重みはリポジトリの外に置く。
+
+```sh
+just prosody-tool     # 録音とラベル付けの画面（http://127.0.0.1:8765）
+just prosody-train    # 学習と評価
+just prosody-test     # 合成音での検査
+```

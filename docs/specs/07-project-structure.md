@@ -41,6 +41,7 @@ benchmarks/
   Tests/                 M0HarnessCoreTests, BenchmarkReport（python）
   scripts/               prepare_jsut.py, prepare_m0_audio.sh, render_m0_results.py
   m0/                    manifest.example.tsv（音声・モデル・結果は Git 対象外）
+  prosody/               韻律の試作ツール（Python・uv）。声・ラベル・重みはリポジトリの外（ADR-029）
 scripts/                 配布と検査だけ: bundle-app, sign-app, make-dmg, notarize-dmg, validate-app, make-app-icon,
                          install.sh, lint, security, setup, render-palette-example.py
 Resources/               Info.plist, entitlements, アイコン
