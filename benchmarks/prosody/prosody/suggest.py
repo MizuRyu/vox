@@ -33,7 +33,9 @@ def _loaded():
 def _probability(recording: str, end_s: float, text: str, final_piece_s: float | None, modified: float) -> float | None:
     loaded = _model(modified)
     samples = dataset._vox_samples(recording)
-    row = features.sentence_end(dataset._track_around(samples, end_s), end_s, text, final_piece_s)
+    index = next((s.index for s in voxdata.sentences(voxdata.load_sidecar(recording)) if s.text == text), None)
+    limit = voxdata.next_sentence_start(recording, index) if index is not None else None
+    row = features.sentence_end(dataset._track_around(samples, end_s), end_s, text, final_piece_s, limit)
     x = np.array([[row[name] for name in loaded["features"]]], dtype=float)
     return float(loaded["model"].predict_proba(x)[0, 1])
 

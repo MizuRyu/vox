@@ -12,7 +12,7 @@ from prosody import features, voxdata, yin
 
 # 文末の特徴に要るのは te の 1.5 秒前から 0.3 秒後まで。長い録音の全体で F0 を求めない。
 BEFORE_S = 1.5
-AFTER_S = 0.3
+AFTER_S = 0.7  # features.VOICED_END_AFTER_S（0.5）＋ 末尾の窓
 
 
 @lru_cache(maxsize=64)
@@ -44,7 +44,8 @@ def _contrast_rows() -> list[dict]:
         result.append(
             {
                 "source": "contrast",
-                "group": "contrast-" + meta["recorded_at"][:10],
+                # 同じ文の上げ・下げが学習と評価に分かれると、文そのものを覚えて当てられる。文ごとにまとめる
+                "group": "contrast-" + meta.get("prompt_id", meta_path.stem),
                 "id": meta_path.stem,
                 "text": meta["text"],
                 # ためらいの読みは、問いかけかどうかを決めていない（「大丈夫…」は両方ありうる）
@@ -70,6 +71,7 @@ def _natural_rows() -> list[dict]:
         if te is None:
             continue
         track = _track_around(samples, te)
+        limit = voxdata.next_sentence_start(recording, label["sentence_index"])
         result.append(
             {
                 "source": "natural",
@@ -78,7 +80,7 @@ def _natural_rows() -> list[dict]:
                 "text": label["text"],
                 "want_question": label.get("want_question"),
                 "want_ellipsis": label.get("want_ellipsis"),
-                **features.sentence_end(track, te, label["text"], label.get("final_piece_s")),
+                **features.sentence_end(track, te, label["text"], label.get("final_piece_s"), limit),
             }
         )
     return result

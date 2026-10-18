@@ -61,12 +61,12 @@ def rule_scores(table: list[dict]) -> np.ndarray:
 def out_of_fold(make, x: np.ndarray, y: np.ndarray, groups: list[str]) -> tuple[np.ndarray, str]:
     distinct = sorted(set(groups))
     if len(distinct) >= 3:
-        splitter, how = GroupKFold(n_splits=min(5, len(distinct))), f"日付で分けた {min(5, len(distinct))} 分割"
+        splitter, how = GroupKFold(n_splits=min(5, len(distinct))), f"グループ（読み分けは文、自然な発話は録った日）で分けた {min(5, len(distinct))} 分割"
         splits = splitter.split(x, y, groups)
     else:
         folds = max(2, min(5, int(min(y.sum(), (~y).sum()))))
         splitter = StratifiedKFold(n_splits=folds, shuffle=True, random_state=0)
-        how = f"日付が {len(distinct)} 日分しかないため層化 {folds} 分割（同じ日の発話が学習と評価に分かれる。楽観的）"
+        how = f"グループが {len(distinct)} 個しかないため層化 {folds} 分割（同じ日の発話が学習と評価に分かれる。楽観的）"
         splits = splitter.split(x, y)
     scores = np.full(len(y), np.nan)
     for train, test in splits:
@@ -158,8 +158,9 @@ def export(x: np.ndarray, y: np.ndarray) -> None:
         "note": "入力 = [補完した特徴..., 欠損フラグ...] を標準化 → 内積 + bias → sigmoid。yin.py と同じ設定で特徴を作ること",
     }
     (voxdata.DATA / "model.json").write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
-    # ラベル付け画面の推奨に使う。Swift へは移さない（推奨はこの Python のツールの中だけ）。
-    suggester = boosting().fit(x, y)
+    # ラベル付け画面の推奨に使う。本体へ移せる形と同じロジスティック回帰にする（2026-10-18 の比較で
+    # 勾配ブースティングより良く、差は件数の少なさによる揺れの範囲だった）。
+    suggester = model
     with (voxdata.DATA / "suggester.pkl").open("wb") as f:
         pickle.dump({"features": features.ACOUSTIC + features.TEXT, "model": suggester}, f)
 

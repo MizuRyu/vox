@@ -88,6 +88,15 @@ def sentences(sidecar: dict) -> list[Sentence]:
     return result
 
 
+def next_sentence_start(recording: str, index: int) -> float | None:
+    """同じ録音の次の文の頭（秒）。文末の声を探すとき、これより後ろは見ない。"""
+    try:
+        following = sentences(load_sidecar(recording))[index + 1 :]
+    except (OSError, ValueError):
+        return None
+    return next((s.start_s for s in following if s.start_s is not None), None)
+
+
 def load_sidecar(recording: str) -> dict:
     _, json_path = recording_paths(recording)
     return json.loads(json_path.read_text(encoding="utf-8"))
