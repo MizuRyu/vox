@@ -56,10 +56,25 @@ struct RecordingTests {
     let object = try #require(
       JSONSerialization.jsonObject(with: JSONEncoder().encode(sidecar)) as? [String: Any])
     #expect(
-      Set(object.keys) == ["schema_version", "audio", "capture_start_ms", "history", "metrics"])
+      Set(object.keys)
+        == ["schema_version", "audio", "capture_start_ms", "segments", "history", "metrics"])
+    #expect((object["segments"] as? [Any])?.isEmpty == true)
     #expect(object["audio"] is NSNull)
     #expect(object["metrics"] is NSNull)
     #expect((object["history"] as? [String: Any])?["raw_text"] as? String == "合成の本文")
+  }
+
+  @Test("A timed piece writes null for a missing range")
+  func timedTextWritesNullRange() throws {
+    let pieces = [
+      TimedText(text: "合成", startSeconds: 0.5, endSeconds: 0.9),
+      TimedText(text: "。", startSeconds: nil, endSeconds: nil)
+    ]
+    let array = try #require(
+      JSONSerialization.jsonObject(with: JSONEncoder().encode(pieces)) as? [[String: Any]])
+    #expect(array[0]["end_s"] as? Double == 0.9)
+    #expect(array[1]["start_s"] is NSNull)
+    #expect(Set(array[1].keys) == ["text", "start_s", "end_s"])
   }
 
   @Test("The audio summary uses snake case keys")

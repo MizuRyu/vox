@@ -437,9 +437,11 @@ final class VoxController {
     // ADR-026。履歴を書く回だけ録音を残す。計測の行は直前の flushMetrics で決まっている。
     let metrics = recording.flushedMetrics
     let captureStart = lane.levels.firstBufferMilliseconds
+    let segments = lane.finalTimings
     recording.recordingWriter?.finish { audio in
       RecordingSidecar(
-        audio: audio, captureStartMilliseconds: captureStart, history: record, metrics: metrics)
+        audio: audio, captureStartMilliseconds: captureStart, segments: segments, history: record,
+        metrics: metrics)
     }
   }
 
