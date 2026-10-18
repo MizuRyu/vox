@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import math
+import pickle
 from datetime import date
 
 import numpy as np
@@ -157,6 +158,10 @@ def export(x: np.ndarray, y: np.ndarray) -> None:
         "note": "入力 = [補完した特徴..., 欠損フラグ...] を標準化 → 内積 + bias → sigmoid。yin.py と同じ設定で特徴を作ること",
     }
     (voxdata.DATA / "model.json").write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
+    # ラベル付け画面の推奨に使う。Swift へは移さない（推奨はこの Python のツールの中だけ）。
+    suggester = boosting().fit(x, y)
+    with (voxdata.DATA / "suggester.pkl").open("wb") as f:
+        pickle.dump({"features": features.ACOUSTIC + features.TEXT, "model": suggester}, f)
 
 
 def main() -> None:
@@ -167,6 +172,9 @@ def main() -> None:
         evaluate(table, target, lines)
     report = "\n".join(lines) + "\n"
     (voxdata.DATA / "report.md").write_text(report, encoding="utf-8")
+    for name in ("report.md", "model.json", "suggester.pkl"):
+        if (voxdata.DATA / name).exists():
+            (voxdata.DATA / name).chmod(0o600)  # 本人の話し方の癖を含む
     print(report)
 
 

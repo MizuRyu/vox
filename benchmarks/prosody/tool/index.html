@@ -61,6 +61,10 @@
   .choices button.on.q { background: var(--question); border-color: var(--question); }
   .choices button.on.s { background: var(--statement); border-color: var(--statement); }
   .choices button.on.e { background: var(--hesitant); border-color: var(--hesitant); }
+  .choices button.suggested { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .choices button.suggested::after { content: " 推奨"; font-size: 12px; color: var(--accent); font-weight: 700; }
+  .suggestion { margin-top: 8px; font-size: 14px; }
+  .suggestion strong { color: var(--accent); }
   kbd { font: 12px ui-monospace, monospace; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; color: var(--muted); }
   select { font: inherit; padding: 6px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--text); max-width: 100%; }
   .notice { color: var(--rec); font-size: 13px; min-height: 1.6em; margin-top: 8px; }
@@ -105,6 +109,7 @@
     <div class="context" id="natural-context"></div>
     <div class="sentence"><span id="natural-body"></span><span class="mark" id="natural-mark">？／。</span></div>
     <div class="muted" id="natural-meta"></div>
+    <div class="suggestion" id="natural-suggestion"></div>
     <label class="reference-label" for="reference">正しい文（任意）: 誤字・抜け・読点「、」・文末の記号まで、文字にしたい形に直してください</label>
     <textarea id="reference" rows="3"></textarea>
     <div class="row" style="margin-top:6px">
@@ -132,6 +137,7 @@
         <li>相手に<strong>聞いている・確認している</strong>文なら 1（？）。例: 「これでいいかな？」「もう終わった？」</li>
         <li><strong>言い切り・独り言・お願い</strong>なら 2（。）。例: 「そろそろ帰ろうかな。」「これで進めてください。」</li>
         <li>認識が崩れている、文の途中で切れている、聞いても思い出せない、などは 3（判断できない）</li>
+        <li>推奨（青い枠）が合っていれば Enter だけで次に進みます。推奨は判断を楽にするためのもので、正解ではありません。違うと思ったら 1・2 で選んでください</li>
         <li>声が上がったかではなく、<strong>あなたが文字にするならどちらで書きたいか</strong>で選んでください</li>
         <li>迷いながら話した文で、末尾に「…」を付けたいなら、1・2 とは別に E も押してください</li>
         <li>誤字や、間を置いたところの「、」も直したいときは「正しい文」の欄を書き換えます。例: 「えっと権利の問題そうですね」→「えっと、権利の問題、そうですね。」。書き換えなければ保存しません</li>
@@ -354,6 +360,35 @@ function renderNatural() {
   $("want-e").classList.toggle("on", c.want_ellipsis === true);
   $("play").disabled = c.end_s == null;
   $("play-whole").disabled = c.end_s == null || c.start_s == null;
+  renderSuggestion(c);
+  loadSuggestion(c);
+  if (view[position + 1]) loadSuggestion(view[position + 1]);
+}
+// 表示中の文と次の文の推奨だけを取りにいく。一覧で全件を計算すると遅い。
+async function loadSuggestion(c) {
+  if (c.suggestion || c.suggestionLoading) return;
+  c.suggestionLoading = true;
+  try {
+    const res = await fetch(`/api/suggest?recording=${encodeURIComponent(c.recording)}&index=${c.sentence_index}`);
+    if (res.ok) c.suggestion = await res.json();
+  } finally {
+    c.suggestionLoading = false;
+  }
+  if (view[position] === c) renderSuggestion(c);
+}
+const SUGGESTED_BY = { text: "文字（です・ます＋か、っけ）", ending: "迷いやすい語尾ではない", model: "声の上げ下げ" };
+function renderSuggestion(c) {
+  const s = c.suggestion;
+  const mark = s && s.mark;
+  $("want-q").classList.toggle("suggested", mark === "q");
+  $("want-s").classList.toggle("suggested", mark === "s");
+  if (!mark) { $("natural-suggestion").textContent = c.suggestionLoading ? "推奨を計算中…" : ""; return; }
+  const confidence = s.p == null ? "" : `（「？」の確率 ${Math.round(s.p * 100)}%）`;
+  $("natural-suggestion").innerHTML = `推奨: <strong>${mark === "q" ? "？" : "。"}</strong> — ${SUGGESTED_BY[s.by]}${confidence}。合っていれば <kbd>Enter</kbd>`;
+}
+function acceptSuggestion() {
+  const c = view[position];
+  if (c.suggestion && c.suggestion.mark) choose(c.suggestion.mark === "q", true);
 }
 // サーバーが区間だけを切り出した wav を返す。録音全体は読まない。
 function play(whole = false) {
@@ -364,12 +399,12 @@ function play(whole = false) {
   player = new Audio(`/api/clip?recording=${encodeURIComponent(c.recording)}&start=${start.toFixed(3)}&end=${(c.end_s + 0.4).toFixed(3)}`);
   player.play();
 }
-async function label(wantQuestion, wantEllipsis) {
+async function label(wantQuestion, wantEllipsis, accepted = false) {
   const c = view[position];
   const reference = $("reference").value;
   const res = await fetch("/api/label", { method: "POST", body: JSON.stringify({
     recording: c.recording, sentence_index: c.sentence_index, want_question: wantQuestion, want_ellipsis: wantEllipsis,
-    reference_text: reference }) });
+    reference_text: reference, suggestion: c.suggestion || null, accepted_suggestion: accepted }) });
   if (!res.ok) { $("natural-notice").textContent = "保存できませんでした: " + (await res.json()).error; return false; }
   $("natural-notice").textContent = "";
   const edited = reference.trim() && reference.trim() !== c.text ? reference.trim() : null;
@@ -384,9 +419,9 @@ async function saveReference() {
     $("reference-state").textContent = c.reference_text ? "正しい文を保存しました" : "認識した文のままなので、正しい文としては保存していません";
   }
 }
-async function choose(wantQuestion) {
+async function choose(wantQuestion, accepted = false) {
   const c = view[position];
-  if (await label(wantQuestion, c.want_ellipsis ?? false)) move(1);
+  if (await label(wantQuestion, c.want_ellipsis ?? false, accepted)) move(1);
 }
 async function toggleEllipsis() {
   const c = view[position];
@@ -418,6 +453,7 @@ document.addEventListener("keydown", (e) => {
   if (e.code === "Space") { e.preventDefault(); natural ? play(e.shiftKey) : $("rec").click(); }
   else if (e.key === "ArrowRight") natural ? move(1) : $("skip").click();
   else if (e.key === "ArrowLeft" && natural) move(-1);
+  else if (natural && e.key === "Enter") { e.preventDefault(); acceptSuggestion(); }
   else if (natural && e.key === "1") choose(true);
   else if (natural && e.key === "2") choose(false);
   else if (natural && e.key === "3") choose(null);

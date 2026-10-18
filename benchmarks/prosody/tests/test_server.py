@@ -116,6 +116,15 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(self.request("/api/label", json.dumps(unchanged).encode())[0], 200)
         saved = [json.loads(line) for line in (self.data / "labels.jsonl").read_text().splitlines()]
         self.assertEqual([r["reference_text"] for r in saved], [None, "これで、いいかな？", None])
+        status, body = self.request("/api/suggest?recording=20261018/100000-01&index=0")
+        self.assertEqual(status, 200, body)
+        self.assertIn(json.loads(body)["by"], ("model", None))  # 「かな」は文字では決めない。重みが無ければ推奨なし
+        accepted = dict(label, suggestion={"mark": "s", "p": 0.2, "by": "model"}, accepted_suggestion=True)
+        self.assertEqual(self.request("/api/label", json.dumps(accepted).encode())[0], 200)
+        last = json.loads((self.data / "labels.jsonl").read_text().splitlines()[-1])
+        self.assertTrue(last["accepted_suggestion"])
+        self.assertEqual(last["suggestion"]["mark"], "s")
+        self.assertEqual(self.request("/api/suggest?recording=20261018/100000-01&index=9")[0], 404)
         bad = dict(label, sentence_index=5)
         self.assertEqual(self.request("/api/label", json.dumps(bad).encode())[0], 400)
 

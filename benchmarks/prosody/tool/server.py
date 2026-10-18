@@ -20,7 +20,7 @@ from urllib.parse import parse_qs, urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from prosody import features, voxdata, yin  # noqa: E402
+from prosody import features, suggest, voxdata, yin  # noqa: E402
 
 PAGE = Path(__file__).with_name("index.html")
 PROMPT_ID = re.compile(r"^[a-z0-9-]{1,40}$")
@@ -122,6 +122,7 @@ def _candidates_for(recording: str, labels: dict) -> list[dict]:
             "want_question": label.get("want_question"),
             "want_ellipsis": label.get("want_ellipsis"),
             "reference_text": label.get("reference_text"),
+            "suggestion": label.get("suggestion"),
             "labeled": bool(label),
         })
     return result
@@ -166,6 +167,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"prompts": PROMPTS, "counts": contrast_counts()})
         elif url.path == "/api/natural":
             self._json({"candidates": natural_candidates(), "vox_root_exists": voxdata.VOX_ROOT.exists()})
+        elif url.path == "/api/suggest":
+            self._suggest(parse_qs(url.query))
         elif url.path == "/api/clip":
             self._clip(parse_qs(url.query))
         elif url.path == "/api/audio":
@@ -177,6 +180,17 @@ class Handler(BaseHTTPRequestHandler):
                 self._error(HTTPStatus.NOT_FOUND, "録音がありません")
         else:
             self._error(HTTPStatus.NOT_FOUND, "not found")
+
+    def _suggest(self, query: dict) -> None:
+        """表示する文の推奨だけを計算する（一覧で全件の F0 を求めると遅い）。"""
+        recording = (query.get("recording") or [""])[0]
+        try:
+            index = int((query.get("index") or [""])[0])
+            candidate = next(c for c in _candidates_for(recording, {}) if c["sentence_index"] == index)
+        except (ValueError, StopIteration):
+            self._error(HTTPStatus.NOT_FOUND, "対象の文がありません")
+            return
+        self._json(suggest.question(recording, candidate["text"], candidate["end_s"], candidate["final_piece_s"]))
 
     def _clip(self, query: dict) -> None:
         """録音の [start, end] 秒だけを wav にして返す。ブラウザが全体を読まずに済むように。"""
@@ -278,6 +292,9 @@ class Handler(BaseHTTPRequestHandler):
             "end_s": candidate["end_s"], "final_piece_s": candidate["final_piece_s"],
             "want_question": row.get("want_question"), "want_ellipsis": row.get("want_ellipsis"),
             "reference_text": reference.strip() if reference else None,
+            # 推奨に引っ張られたかを後で調べるため、出した推奨と、それをそのまま受けたかを残す
+            "suggestion": row.get("suggestion") if isinstance(row.get("suggestion"), dict) else None,
+            "accepted_suggestion": row.get("accepted_suggestion") is True,
             "labeled_at": datetime.now().isoformat(timespec="seconds"),
         }
         voxdata.DATA.mkdir(parents=True, exist_ok=True, mode=0o700)
