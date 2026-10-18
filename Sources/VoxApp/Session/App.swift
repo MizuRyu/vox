@@ -193,6 +193,8 @@ final class VoxController {
     hotkeys.stop()
     await lane.abort()
     close()
+    // ADR-026。確定直後の JSON と、破棄した回の削除を書き終えてから終了を許す。
+    await RecordingWriter.drain()
   }
 
   // MARK: キー

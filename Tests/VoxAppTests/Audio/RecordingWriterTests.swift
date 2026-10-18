@@ -73,10 +73,8 @@ struct RecordingWriterTests {
       writer.append(try silence(.pcmFormatInt16, frames: 1_600))
       writer.discard()
       writer.finish { sidecar($0) }
-      await waitUntil {
-        !FileManager.default.fileExists(atPath: writer.wav.path)
-          && !FileManager.default.fileExists(atPath: writer.json.path)
-      }
+      // 終了処理と同じ待ち方。待った後には何も残っていない。
+      await RecordingWriter.drain()
       #expect(!FileManager.default.fileExists(atPath: writer.wav.path))
       #expect(!FileManager.default.fileExists(atPath: writer.json.path))
     }

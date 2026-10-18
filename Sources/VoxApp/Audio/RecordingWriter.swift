@@ -11,7 +11,8 @@ final class RecordingWriter: @unchecked Sendable {
 
   let wav: URL
   let json: URL
-  private let queue = DispatchQueue(label: "local.vox.recording-writer")
+  /// 全録音で 1 本。終了時に `drain()` で書き終わりを待てるように共有する。
+  private static let queue = DispatchQueue(label: "local.vox.recording-writer")
   // 以下は queue の中だけで触る。
   private var file: AVAudioFile?
   private var format: AVAudioFormat?
@@ -25,16 +26,23 @@ final class RecordingWriter: @unchecked Sendable {
     self.json = json
   }
 
+  /// それまでに頼んだ書き込み・削除が終わるまで待つ。終了の前に呼ぶ（途中の wav や空の JSON を残さない）。
+  static func drain() async {
+    await withCheckedContinuation { continuation in
+      queue.async { continuation.resume() }
+    }
+  }
+
   /// analyzer に渡したバッファを写して書く。渡した側はこの後もバッファを使ってよい。
   func append(_ buffer: AVAudioPCMBuffer) {
     guard let copy = Self.copy(buffer) else { return }
     let box = BufferBox(buffer: copy)
-    queue.async { self.write(box.buffer) }
+    Self.queue.async { self.write(box.buffer) }
   }
 
   /// wav を閉じて JSON を書く。`make` は wav の形式を受け取って JSON の中身を作る。
   func finish(_ make: @escaping @Sendable (RecordingSidecar.Audio?) -> RecordingSidecar) {
-    queue.async {
+    Self.queue.async {
       guard !self.closed else { return }
       self.closed = true
       let audio = self.audioSummary()
@@ -52,7 +60,7 @@ final class RecordingWriter: @unchecked Sendable {
 
   /// 残さない回。書きかけの wav と押さえた JSON を消す。`finish` の後なら何もしない。
   func discard() {
-    queue.async {
+    Self.queue.async {
       guard !self.closed else { return }
       self.closed = true
       self.file = nil
