@@ -73,6 +73,8 @@ macOS が再起動を求めたら Vox を終了して開き直す。ソースか
 | `voice_processing_enabled` | bool | `false` | Apple のエコー除去・ノイズ抑制（実験的。再生中の音楽が小さくなる場合がある） |
 | `microphone_input` | object | `{"mode":"automatic"}` | Vox の入力選択。`automatic` は既定の入出力が Bluetooth 系・出力稼働中なら内蔵入力を優先し、なければ既定入力。`system_default` は常に準備時の既定入力。`device` は `uid` で機器を固定し、未接続なら開始エラー |
 | `external_control_enabled` | bool | `false` | `vox://record/start` などの URL で、ほかのアプリから録音を操作できるようにする（ADR-022）。設定画面「連携」 |
+| `recording_save_enabled` | bool | `false` | 確定した録音ごとに、認識に渡した音声（wav）と本文・計測（JSON）を `recordings/` に残す（ADR-026）。設定画面「デバッグ」 |
+| `keep_text_on_clipboard` | bool | `true` | 貼り付けた後も確定本文をクリップボードに残し、履歴のアプリにも記録させる。オフなら貼る前の中身に戻す（ADR-027）。設定画面「貼り付け」 |
 
 マイクの指定は設定画面「使用するマイク」で保存する。個別指定の形式は `{"mode":"device","uid":"機器のUID"}`。UID は機器の再接続で変わりうる AudioDeviceID と区別し、診断ログには出さない。古い設定に `microphone_input` がなければ「自動」になる。macOS 全体の既定入力・既定出力は変更しない。録音中の設定変更は次の録音から反映する。
 

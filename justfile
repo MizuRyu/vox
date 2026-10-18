@@ -118,3 +118,13 @@ bench-jsut output="benchmarks/m0/jsut" limit="5000":
 
 bench-report inputs="benchmarks/m0/results/*.jsonl":
     python benchmarks/scripts/render_m0_results.py --input {{inputs}} --document benchmarks/m0/results/m0-results.md
+
+# ADR-029。韻律の試作。データはリポジトリの外（~/Library/Application Support/vox/prosody）。
+prosody-tool:
+    cd benchmarks/prosody && uv run python tool/server.py
+
+prosody-train:
+    cd benchmarks/prosody && uv run python -m prosody.train
+
+prosody-test:
+    cd benchmarks/prosody && uv run python -m unittest discover -s tests -t .

@@ -11,6 +11,7 @@ final class AudioLevelTracker: @unchecked Sendable {
   private var _onsetMilliseconds: Double?
   private var _lastSpeechMilliseconds: Double?
   private var _level = 0.0
+  private var _firstBufferMilliseconds: Double?
 
   static let floorWindowMilliseconds = 300.0
   static let onsetMultiplier = 4.0
@@ -20,6 +21,8 @@ final class AudioLevelTracker: @unchecked Sendable {
   /// 最後に発話レベル（発話開始と同じしきい値）を超えた時刻。
   var lastSpeechMilliseconds: Double? { lock.withLock { _lastSpeechMilliseconds } }
   var level: Double { lock.withLock { _level } }
+  /// 最初のバッファを受け取った時刻。マイクが実際に音を渡し始めた時刻として使う（ADR-026）。
+  var firstBufferMilliseconds: Double? { lock.withLock { _firstBufferMilliseconds } }
 
   func reset() {
     lock.withLock {
@@ -30,12 +33,14 @@ final class AudioLevelTracker: @unchecked Sendable {
       _onsetMilliseconds = nil
       _lastSpeechMilliseconds = nil
       _level = 0
+      _firstBufferMilliseconds = nil
     }
   }
 
   func accept(rms: Double, atMilliseconds now: Double) {
     lock.withLock {
       _level = rms
+      if _firstBufferMilliseconds == nil { _firstBufferMilliseconds = now }
       let start = floorStartMilliseconds ?? now
       floorStartMilliseconds = start
       if noiseFloor == nil {

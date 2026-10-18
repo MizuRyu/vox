@@ -16,7 +16,7 @@ Sources/
     Palette/             検索対象の解釈と最近使ったフォルダ、索引と常駐索引の判定、巡回の輪、ツリー、あいまい一致、パス表記、プレビュー読み取り
     Settings/            設定の形式と検証、ショートカット表記、権限チェックリストの状態
     Resident/            常駐の状態機械と表示文言、アプリ自身の bundle identifier、メニューバー項目の診断行
-    Records/             履歴・計測レコードの直列化
+    Records/             履歴・計測・保存した録音のレコードの直列化と、録音の回収の判定
     Process/             子プロセス実行、単調時計
   VoxApp/                macOS 層。AppKit / SwiftUI / AVFoundation / Speech / CoreGraphics を使う唯一の場所
     Session/             録音セッションの接続点（App.swift）。開始・確定・破棄の流れ
@@ -41,6 +41,7 @@ benchmarks/
   Tests/                 M0HarnessCoreTests, BenchmarkReport（python）
   scripts/               prepare_jsut.py, prepare_m0_audio.sh, render_m0_results.py
   m0/                    manifest.example.tsv（音声・モデル・結果は Git 対象外）
+  prosody/               韻律の試作ツール（Python・uv）。声・ラベル・重みはリポジトリの外（ADR-029）
 scripts/                 配布と検査だけ: bundle-app, sign-app, make-dmg, notarize-dmg, validate-app, make-app-icon,
                          install.sh, lint, security, setup, render-palette-example.py
 Resources/               Info.plist, entitlements, アイコン
@@ -86,7 +87,7 @@ images/                  README の画面例（合成データ）と再生成の
 | Palette/ | PaletteTarget（方式の選択と ps の解釈）, ZedWorkspace, FolderHistory, PaletteSigil, FileIndex, FileTree, FuzzyMatch, FilePathFormat, BoundedFileReader |
 | Settings/ | HotkeySettings, HotkeyBinding, SettingsPresentationState, SetupPermissions |
 | Resident/ | ResidentPolicy, StatusItemDiagnostics, ExternalCommand |
-| Records/ | HistoryRecord, MetricsRecord |
+| Records/ | HistoryRecord, MetricsRecord, RecordingSidecar, RecordingRetention |
 | Process/ | ProcessRunner, MonotonicClock |
 
 ### Tests

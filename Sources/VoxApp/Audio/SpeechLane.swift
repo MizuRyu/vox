@@ -217,6 +217,8 @@ final class SpeechLane {
   /// 入力デバイスが変わって engine が止まったとき。引数は新しい既定入力の接続方式。
   var onCaptureInterrupted: (@MainActor (AudioTransport) -> Void)?
 
+  /// ADR-026。確定した結果の語ごとの音声時刻。保存する録音の JSON に入れる。次の `start()` で空にする。
+  private(set) var finalTimings: [TimedText] = []
   private var run: RecognitionRun?
   private var lifecycle = RecognitionLifecycle()
   private var recognitionGeneration: RecognitionGeneration?
@@ -229,10 +231,12 @@ final class SpeechLane {
 
   /// 戻り値は `analyzer_start_ms`（`SpeechAnalyzer.start` が返った時刻）。
   func start(
-    voiceProcessingEnabled: Bool = false, microphoneInput: MicrophoneInput = .automatic
+    voiceProcessingEnabled: Bool = false, microphoneInput: MicrophoneInput = .automatic,
+    recordingWriter: RecordingWriter? = nil
   ) async throws -> Double {
     let generation = lifecycle.begin()
     recognitionGeneration = generation
+    finalTimings = []
     let run = RecognitionRun()
     self.run = run
     levels.reset()
@@ -287,7 +291,7 @@ final class SpeechLane {
         run, device: device, selection: microphoneInput, analyzerFormat: analyzerFormat, generation: generation)
     startFeedTask(
       run, bufferStream: bufferStream, inputBuilder: inputBuilder,
-      analyzerFormat: analyzerFormat)
+      analyzerFormat: analyzerFormat, recordingWriter: recordingWriter)
 
     run.isRunning = true
     return analyzerStartMilliseconds
@@ -442,7 +446,7 @@ final class SpeechLane {
   private func startFeedTask(
     _ run: RecognitionRun,
     bufferStream: AsyncStream<BufferBox>, inputBuilder: AsyncStream<AnalyzerInput>.Continuation,
-    analyzerFormat: AVAudioFormat
+    analyzerFormat: AVAudioFormat, recordingWriter: RecordingWriter?
   ) {
     let converter = BufferConverter()
     let debugAudio = ProcessInfo.processInfo.environment["VOX_HUD_DEBUG"] == "1"
@@ -466,6 +470,7 @@ final class SpeechLane {
           }
           let converted = try converter.convertBuffer(box.buffer, to: analyzerFormat)
           inputBuilder.yield(AnalyzerInput(buffer: converted))
+          recordingWriter?.append(converted)
           // finalize(through:) に渡す「給餌済み位置」。yield した分だけ進める。
           run.fedFrameCount += Int64(converted.frameLength)
           if debugAudio {
@@ -644,6 +649,7 @@ final class SpeechLane {
     if result.isFinal {
       run.committed += text
       run.tentative = ""
+      finalTimings += Self.timings(of: result.text)
     } else {
       run.tentative = text
     }
@@ -652,6 +658,16 @@ final class SpeechLane {
       "result index=\(run.resultCount) at_ms=\(voxNowMilliseconds()) is_final=\(result.isFinal) "
         + "committed_length=\(run.committed.count) tentative_length=\(run.tentative.count)")
     onTextUpdate?(run.committed, run.tentative)
+  }
+
+  /// 語ごとの区間（秒）。時刻は analyzer の時間軸で、保存する wav の先頭が 0。
+  private static func timings(of text: AttributedString) -> [TimedText] {
+    text.runs.map { run in
+      let range = run.audioTimeRange
+      return TimedText(
+        text: String(text[run.range].characters),
+        startSeconds: range.map { $0.start.seconds }, endSeconds: range.map { $0.end.seconds })
+    }
   }
 
   private func ensureAssets(

@@ -30,6 +30,9 @@ public func runVox(arguments: [String]) -> Never {
   if !options.settingsOnly {
     let attachments = AttachmentStore.standard
     Task.detached { attachments.purge() }
+    // ADR-026。保存した録音も同じ時に回収する（設定をオフにした後に残った分も消える）。
+    let recordings = RecordingStore.standard
+    Task.detached { recordings.purge() }
   }
 
   let settings = makeSettingsController(options: options)

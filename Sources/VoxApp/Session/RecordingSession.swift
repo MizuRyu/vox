@@ -11,8 +11,13 @@ final class RecordingSession {
   var metrics: MetricsSession?
   let autoEnterEnabled: Bool
   let autoEnterUnverified: Bool
+  let keepTextOnClipboard: Bool
   let voiceProcessingEnabled: Bool
   let microphoneInput: MicrophoneInput
+  /// ADR-026。設定がオンの回だけ持つ。確定まで進んだら JSON を書き、それ以外は消す。
+  let recordingWriter: RecordingWriter?
+  /// 書き出した計測の行。保存する録音の JSON に同じものを入れる。
+  var flushedMetrics: MetricsRecord?
   /// ADR-019。トグル ON 時に読んだ辞書。録音中にファイルを変えてもこの回には効かない。
   let dictionary: DictionaryTable
   /// R16。トグル ON 時の前面アプリ。確定までここに固定する。
@@ -43,8 +48,10 @@ final class RecordingSession {
     self.handsFree = handsFree
     autoEnterEnabled = settings.autoEnterEnabled
     autoEnterUnverified = settings.autoEnterUnverified
+    keepTextOnClipboard = settings.keepTextOnClipboard
     voiceProcessingEnabled = settings.voiceProcessingEnabled
     microphoneInput = settings.microphoneInput
+    recordingWriter = settings.recordingSaveEnabled ? RecordingStore.standard.makeWriter() : nil
     self.dictionary = dictionary
     self.target = target
     injectionTarget = target.map {

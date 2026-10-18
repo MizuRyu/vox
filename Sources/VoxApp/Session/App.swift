@@ -193,6 +193,8 @@ final class VoxController {
     hotkeys.stop()
     await lane.abort()
     close()
+    // ADR-026。確定直後の JSON と、破棄した回の削除を書き終えてから終了を許す。
+    await RecordingWriter.drain()
   }
 
   // MARK: キー
@@ -350,7 +352,8 @@ final class VoxController {
         guard proceed(recording) else { close(); return }
         let analyzerStart = try await lane.start(
           voiceProcessingEnabled: recording.voiceProcessingEnabled,
-          microphoneInput: recording.microphoneInput)
+          microphoneInput: recording.microphoneInput,
+          recordingWriter: recording.recordingWriter)
         recording.metrics?.analyzerStartMilliseconds = analyzerStart
         if recording.captureInterrupted {
           await lane.abort()
@@ -411,7 +414,9 @@ final class VoxController {
   private func flushMetrics(_ recording: RecordingSession) {
     guard var metricsSession = recording.metrics else { return }
     metricsSession.speechOnsetMilliseconds = lane.levels.onsetMilliseconds
-    metrics.append(metricsSession.record)
+    let record = metricsSession.record
+    metrics.append(record)
+    recording.flushedMetrics = record
     recording.metrics = nil
   }
 
@@ -420,18 +425,29 @@ final class VoxController {
     _ recording: RecordingSession,
     rawText: String, insertedText: String?, inserted: Bool, error: String?, edited: Bool
   ) {
-    history.append(
-      HistoryRecord(
-        at: HistoryStore.timestamp(Date()),
-        rawText: rawText,
-        insertedText: insertedText,
-        targetApp: recording.target?.bundleIdentifier,
-        inserted: inserted,
-        error: error,
-        edited: edited))
+    let record = HistoryRecord(
+      at: HistoryStore.timestamp(Date()),
+      rawText: rawText,
+      insertedText: insertedText,
+      targetApp: recording.target?.bundleIdentifier,
+      inserted: inserted,
+      error: error,
+      edited: edited)
+    history.append(record)
+    // ADR-026。履歴を書く回だけ録音を残す。計測の行は直前の flushMetrics で決まっている。
+    let metrics = recording.flushedMetrics
+    let captureStart = lane.levels.firstBufferMilliseconds
+    let segments = lane.finalTimings
+    recording.recordingWriter?.finish { audio in
+      RecordingSidecar(
+        audio: audio, captureStartMilliseconds: captureStart, segments: segments, history: record,
+        metrics: metrics)
+    }
   }
 
   private func close() {
+    // ADR-026。履歴を書かずに閉じた回（破棄・開始の失敗・終了）の録音は残さない。確定済みなら何もしない。
+    recording?.recordingWriter?.discard()
     settings.hide()
     settings.endSession()
     stopLevelUpdates()
@@ -637,6 +653,7 @@ extension VoxController {
     }
     let outcome = await injector.insert(text: text, target: injectionTarget,
       autoEnterEnabled: recording.autoEnterEnabled, autoEnterUnverified: recording.autoEnterUnverified,
+      keepTextOnClipboard: recording.keepTextOnClipboard,
       cancelAutoEnter: { recording.autoEnterCancelled || Task.isCancelled })
     recording.metrics?.pastePostedMilliseconds = outcome.pastePostedMilliseconds
     recording.metrics?.pasteReceivedMilliseconds = outcome.pasteReceivedMilliseconds

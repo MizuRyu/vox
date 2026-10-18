@@ -16,6 +16,8 @@ public final class SettingsController: NSObject, NSWindowDelegate {
   public private(set) var voiceProcessingEnabled: Bool
   public private(set) var microphoneInput: MicrophoneInput
   public private(set) var externalControlEnabled: Bool
+  public private(set) var recordingSaveEnabled: Bool
+  public private(set) var keepTextOnClipboard: Bool
   public var isKeyWindow: Bool { panel?.isKeyWindow == true }
   private let store: SettingsStore
   private let defaults: HotkeyConfiguration
@@ -39,6 +41,8 @@ public final class SettingsController: NSObject, NSWindowDelegate {
     voiceProcessingEnabled = saved?.voiceProcessingEnabled ?? false
     microphoneInput = saved?.microphoneInput ?? .automatic
     externalControlEnabled = saved?.externalControlEnabled ?? false
+    recordingSaveEnabled = saved?.recordingSaveEnabled ?? false
+    keepTextOnClipboard = saved?.keepTextOnClipboard ?? true
     super.init()
   }
 
@@ -70,6 +74,8 @@ public final class SettingsController: NSObject, NSWindowDelegate {
       voiceProcessingEnabled = saved.voiceProcessingEnabled
       microphoneInput = saved.microphoneInput
       externalControlEnabled = saved.externalControlEnabled
+      recordingSaveEnabled = saved.recordingSaveEnabled
+      keepTextOnClipboard = saved.keepTextOnClipboard
       onConfigurationChange?(runtime.active)
     } catch {
       // Keep a working finish key if a preferences file is malformed or temporarily unavailable.

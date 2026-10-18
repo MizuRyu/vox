@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>vox 韻律ラベル</title>
+<style>
+  :root {
+    --bg: #f7f7f5; --panel: #ffffff; --text: #1d1d1f; --muted: #6b6b70; --line: #e2e2e0;
+    --accent: #2f6fde; --question: #c2410c; --statement: #15803d; --hesitant: #7c3aed; --rec: #dc2626;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161618; --panel: #1f1f22; --text: #ececee; --muted: #9a9aa2; --line: #333338;
+      --accent: #6c9cff; --question: #fb923c; --statement: #4ade80; --hesitant: #a78bfa; --rec: #f87171;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.6 -apple-system, "Hiragino Sans", sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin: 0 0 20px; }
+  nav { display: flex; gap: 8px; margin-bottom: 20px; }
+  nav button { flex: 1; }
+  button { font: inherit; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:disabled { opacity: .45; cursor: default; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+  .prompt { font-size: 32px; font-weight: 600; margin: 12px 0 4px; letter-spacing: .02em; }
+  .badge { display: inline-flex; align-items: center; gap: 6px; margin-top: 12px; padding: 6px 16px; border-radius: 999px; font-size: 18px; font-weight: 700; color: #fff; }
+  .badge.small { margin: 0; padding: 2px 10px; font-size: 13px; }
+  .badge.question { background: var(--question); }
+  .badge.statement { background: var(--statement); }
+  .badge.hesitant { background: var(--hesitant); }
+  .block { margin-top: 12px; }
+  .group { margin-top: 20px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 16px; }
+  .rec { background: var(--rec); border-color: var(--rec); color: #fff; min-width: 140px; }
+  .meter { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; margin-top: 16px; }
+  .meter > div { height: 100%; width: 0; background: var(--accent); transition: width .05s; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .progress { margin-top: 12px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; margin-top: 16px; font-size: 12px; }
+  .grid div { padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; color: var(--muted); cursor: pointer; }
+  .grid div:hover { border-color: var(--accent); }
+  .grid div.done { color: var(--text); border-color: var(--statement); }
+  .sentence { font-size: 22px; margin: 8px 0; word-break: break-word; }
+  .ask { font-size: 16px; font-weight: 500; margin: 12px 0 8px; }
+  .context { color: var(--muted); font-size: 14px; min-height: 1.4em; }
+  .mark { display: inline-block; margin-left: 4px; padding: 0 8px; border: 2px dashed var(--accent); border-radius: 6px; color: var(--accent); font-weight: 600; }
+  .mark.q { border-style: solid; border-color: var(--question); color: var(--question); }
+  .mark.s { border-style: solid; border-color: var(--statement); color: var(--statement); }
+  .help { margin-top: 16px; font-size: 14px; }
+  .reference-label { display: block; margin-top: 16px; font-size: 13px; color: var(--muted); }
+  textarea { width: 100%; font: inherit; font-size: 16px; padding: 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--text); resize: vertical; }
+  textarea:focus { outline: 2px solid var(--accent); border-color: transparent; }
+  .help summary { cursor: pointer; color: var(--accent); }
+  .help ul { padding-left: 20px; margin: 8px 0; }
+  .choices button { min-width: 120px; }
+  .choices button.on.q { background: var(--question); border-color: var(--question); }
+  .choices button.on.s { background: var(--statement); border-color: var(--statement); }
+  .choices button.on.e { background: var(--hesitant); border-color: var(--hesitant); }
+  .choices button.suggested { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .choices button.suggested::after { content: " 推奨"; font-size: 12px; color: var(--accent); font-weight: 700; }
+  .suggestion { margin-top: 8px; font-size: 14px; }
+  .suggestion strong { color: var(--accent); }
+  kbd { font: 12px ui-monospace, monospace; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; color: var(--muted); }
+  select { font: inherit; padding: 6px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--text); max-width: 100%; }
+  .notice { color: var(--rec); font-size: 13px; min-height: 1.6em; margin-top: 8px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>vox 韻律ラベル</h1>
+  <p class="sub">音声とラベルはこの Mac の <code>~/Library/Application Support/vox/prosody/</code> にだけ保存します（リポジトリには入りません）。</p>
+  <nav>
+    <button id="tab-contrast" class="on">読み分け</button>
+    <button id="tab-natural">自然な発話</button>
+  </nav>
+
+  <section id="contrast" class="panel">
+    <div class="row" style="margin-top:0">
+      <label class="muted" for="mic">マイク</label>
+      <select id="mic"></select>
+    </div>
+    <div class="block muted" id="prompt-block"></div>
+    <div><span class="badge" id="prompt-badge"></span></div>
+    <div class="prompt" id="prompt-text">—</div>
+    <div class="muted" id="prompt-hint"></div>
+    <div class="meter"><div id="level"></div></div>
+    <div class="row">
+      <button id="rec" class="rec">● 録音 <kbd>Space</kbd></button>
+      <button id="replay" disabled>直前を聞く <kbd>R</kbd></button>
+      <button id="undo" disabled>直前を取り消して録り直す <kbd>⌫</kbd></button>
+      <button id="skip">飛ばす <kbd>→</kbd></button>
+    </div>
+    <div class="notice" id="contrast-notice"></div>
+    <div class="progress muted" id="contrast-progress"></div>
+    <div id="contrast-grid"></div>
+  </section>
+
+  <section id="natural" class="panel" hidden>
+    <div class="row" style="margin-top:0">
+      <label class="muted"><input type="checkbox" id="only-ambiguous" checked> 迷いやすい文末（かな・の・か・ね・っけ）だけ表示</label>
+    </div>
+    <div class="muted" id="natural-progress">読み込み中…</div>
+    <h2 class="ask">この文の<strong>最後に付ける記号</strong>を選んでください</h2>
+    <div class="context" id="natural-context"></div>
+    <div class="sentence"><span id="natural-body"></span><span class="mark" id="natural-mark">？／。</span></div>
+    <div class="muted" id="natural-meta"></div>
+    <div class="suggestion" id="natural-suggestion"></div>
+    <label class="reference-label" for="reference">正しい文（任意）: 誤字・抜け・読点「、」・文末の記号まで、文字にしたい形に直してください</label>
+    <textarea id="reference" rows="3"></textarea>
+    <div class="row" style="margin-top:6px">
+      <button id="save-reference">正しい文を保存 <kbd>⌘Enter</kbd></button>
+      <span class="muted" id="reference-state"></span>
+    </div>
+    <div class="row">
+      <button id="play">▶ 文末を聞く <kbd>Space</kbd></button>
+      <button id="play-whole">▶ 文全体 <kbd>⇧Space</kbd></button>
+      <button id="prev">← 前</button>
+      <button id="next">次 → <kbd>→</kbd></button>
+    </div>
+    <div class="row choices">
+      <button id="want-q" class="q"><span id="preview-q"></span> <kbd>1</kbd></button>
+      <button id="want-s" class="s"><span id="preview-s"></span> <kbd>2</kbd></button>
+      <button id="want-hold">判断できない <kbd>3</kbd></button>
+    </div>
+    <div class="row choices">
+      <button id="want-e" class="e">迷い・ためらいがある（…を付けたい） <kbd>E</kbd></button>
+    </div>
+    <div class="notice" id="natural-notice"></div>
+    <details class="help">
+      <summary>選び方</summary>
+      <ul>
+        <li>相手に<strong>聞いている・確認している</strong>文なら 1（？）。例: 「これでいいかな？」「もう終わった？」</li>
+        <li><strong>言い切り・独り言・お願い</strong>なら 2（。）。例: 「そろそろ帰ろうかな。」「これで進めてください。」</li>
+        <li>認識が崩れている、文の途中で切れている、聞いても思い出せない、などは 3（判断できない）</li>
+        <li>推奨（青い枠）が合っていれば Enter だけで次に進みます。推奨は判断を楽にするためのもので、正解ではありません。違うと思ったら 1・2 で選んでください</li>
+        <li>声が上がったかではなく、<strong>あなたが文字にするならどちらで書きたいか</strong>で選んでください</li>
+        <li>迷いながら話した文で、末尾に「…」を付けたいなら、1・2 とは別に E も押してください</li>
+        <li>誤字や、間を置いたところの「、」も直したいときは「正しい文」の欄を書き換えます。例: 「えっと権利の問題そうですね」→「えっと、権利の問題、そうですね。」。書き換えなければ保存しません</li>
+      </ul>
+      <p>Space で文末の 2.5 秒、Shift+Space で文の頭から終わりまでを再生します。選ぶと次の文に進みます。</p>
+    </details>
+  </section>
+</main>
+<script>
+const INTENT = {
+  question: { badge: "↑ 語尾を上げる", label: "問いかけ（語尾を上げる）", hint: "相手に聞くつもりで読んでください。" },
+  statement: { badge: "↓ 語尾を下げる", label: "独り言・言い切り（語尾を下げる）", hint: "自分に言う、または言い切るつもりで読んでください。" },
+  hesitant: { badge: "… ためらいながら", label: "ためらい", hint: "自信がなさそうに、迷いながら読んでください。" },
+};
+// 読み方ごとにまとめて録る。上げ・下げを交互にすると読み間違えやすいため。
+const ORDER = ["question", "statement", "hesitant"];
+const $ = (id) => document.getElementById(id);
+
+// ---- タブ ----
+for (const name of ["contrast", "natural"]) {
+  $("tab-" + name).onclick = () => {
+    for (const other of ["contrast", "natural"]) {
+      $(other).hidden = other !== name;
+      $("tab-" + other).classList.toggle("on", other === name);
+    }
+    if (name === "natural") loadNatural();
+  };
+}
+
+// ---- 読み分け ----
+let prompts = [], counts = {}, current = null, lastBlob = null, lastSaved = null;
+let stream = null, context = null, processor = null, chunks = [], recording = false;
+
+async function loadPrompts() {
+  const res = await fetch("/api/prompts").then((r) => r.json());
+  prompts = res.prompts; counts = res.counts;
+  renderGrid(); pickNext();
+}
+function pairs() { return prompts.flatMap((p) => p.intents.map((intent) => ({ ...p, intent }))); }
+const countOf = (p) => counts[p.id + ":" + p.intent] || 0;
+// 録った数が一番少ない段のうち、読み方の順（上げ → 下げ → ためらい）、文の並び順で次を選ぶ。
+// skip のときは、同じ読み方の中で今の文より後ろから選ぶ。
+function pickNext(skip = false) {
+  const all = pairs();
+  const least = Math.min(...all.map(countOf));
+  const pending = all.filter((p) => countOf(p) === least);
+  let next = pending[0];
+  if (skip && current) {
+    const same = pending.filter((p) => p.intent === current.intent);
+    const index = same.findIndex((p) => p.id === current.id);
+    next = same[index + 1] || same.find((p) => p.id !== current.id) || next;
+  } else if (current) {
+    next = pending.find((p) => p.intent === current.intent) || next;
+  }
+  showPrompt(next);
+}
+function showPrompt(pair) {
+  current = pair;
+  $("prompt-text").textContent = current.text;
+  $("prompt-badge").textContent = INTENT[current.intent].badge;
+  $("prompt-badge").className = "badge " + current.intent;
+  $("prompt-hint").textContent = INTENT[current.intent].hint;
+  const block = pairs().filter((p) => p.intent === current.intent);
+  const done = block.filter((p) => countOf(p) > 0).length;
+  $("prompt-block").textContent = `「${INTENT[current.intent].label}」のまとまり: ${done} / ${block.length} 文を録音済み`;
+}
+function renderGrid() {
+  const all = pairs();
+  const done = all.filter((p) => counts[p.id + ":" + p.intent]).length;
+  const total = Object.values(counts).reduce((a, b) => a + b, 0);
+  $("contrast-progress").textContent = `${done} / ${all.length} 通りを録音済み（合計 ${total} 本）。全部そろったら 2 周目も歓迎です。下の一覧をクリックすると、その文を録れます。`;
+  $("contrast-grid").innerHTML = "";
+  for (const intent of ORDER) {
+    const group = document.createElement("div");
+    group.className = "group";
+    const items = all.filter((p) => p.intent === intent);
+    group.innerHTML = `<span class="badge small ${intent}">${INTENT[intent].badge}</span> <span class="muted">${items.filter((p) => countOf(p)).length} / ${items.length}</span>`;
+    const grid = document.createElement("div");
+    grid.className = "grid";
+    for (const p of items) {
+      const div = document.createElement("div");
+      div.className = countOf(p) ? "done" : "";
+      div.textContent = `${p.text} ×${countOf(p)}`;
+      div.title = "クリックでこの文を録音する";
+      div.onclick = () => { if (!recording) { showPrompt(p); $("contrast-notice").textContent = ""; } };
+      grid.appendChild(div);
+    }
+    group.appendChild(grid);
+    $("contrast-grid").appendChild(group);
+  }
+}
+async function listMics() {
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const mics = devices.filter((d) => d.kind === "audioinput");
+    $("mic").innerHTML = mics.map((d) => `<option value="${d.deviceId}">${d.label || "マイク"}</option>`).join("");
+  } catch { /* 許可前はラベルが空 */ }
+}
+async function startRecording() {
+  stream = await navigator.mediaDevices.getUserMedia({ audio: {
+    deviceId: $("mic").value ? { exact: $("mic").value } : undefined,
+    echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+  await listMics();
+  context = new AudioContext();
+  const source = context.createMediaStreamSource(stream);
+  processor = context.createScriptProcessor(4096, 1, 1);
+  chunks = [];
+  processor.onaudioprocess = (e) => {
+    const data = e.inputBuffer.getChannelData(0);
+    chunks.push(new Float32Array(data));
+    let peak = 0; for (const v of data) peak = Math.max(peak, Math.abs(v));
+    $("level").style.width = Math.min(100, peak * 140) + "%";
+  };
+  source.connect(processor); processor.connect(context.destination);
+  recording = true;
+  $("rec").textContent = "■ 止めて保存 "; $("rec").appendChild(Object.assign(document.createElement("kbd"), { textContent: "Space" }));
+}
+async function stopRecording() {
+  recording = false;
+  processor.disconnect(); stream.getTracks().forEach((t) => t.stop());
+  const rate = context.sampleRate; await context.close();
+  $("level").style.width = "0";
+  $("rec").textContent = "● 録音 "; $("rec").appendChild(Object.assign(document.createElement("kbd"), { textContent: "Space" }));
+  const samples = concat(chunks);
+  if (samples.length < rate * 0.3) { $("contrast-notice").textContent = "短すぎるため保存しませんでした。"; return; }
+  lastBlob = encodeWav(resample(samples, rate, 16000), 16000);
+  $("replay").disabled = false;
+  const res = await fetch(`/api/contrast?prompt=${current.id}&intent=${current.intent}`, { method: "POST", body: lastBlob });
+  const body = await res.json();
+  if (!res.ok) { $("contrast-notice").textContent = "保存できませんでした: " + body.error; return; }
+  lastSaved = { name: body.saved, pair: current };
+  $("undo").disabled = false;
+  $("contrast-notice").textContent = `保存しました: 「${current.text}」（${INTENT[current.intent].badge}）。間違えたら ⌫ で取り消せます。`;
+  counts = body.counts; renderGrid(); pickNext();
+}
+async function undoLast() {
+  if (!lastSaved || recording) return;
+  const res = await fetch(`/api/contrast?name=${encodeURIComponent(lastSaved.name)}`, { method: "DELETE" });
+  const body = await res.json();
+  if (!res.ok) { $("contrast-notice").textContent = "取り消せませんでした: " + body.error; return; }
+  counts = body.counts; renderGrid();
+  showPrompt(lastSaved.pair);
+  lastSaved = null; lastBlob = null;
+  $("undo").disabled = true; $("replay").disabled = true;
+  $("contrast-notice").textContent = "直前の録音を消しました。同じ文をもう一度録音してください。";
+}
+function concat(parts) {
+  const out = new Float32Array(parts.reduce((n, p) => n + p.length, 0));
+  let offset = 0; for (const p of parts) { out.set(p, offset); offset += p.length; }
+  return out;
+}
+// 区間平均で間引く（48kHz → 16kHz なら 3 点平均）。整数比でなくても線形の重みで近似する。
+function resample(input, from, to) {
+  if (from === to) return input;
+  const ratio = from / to, out = new Float32Array(Math.floor(input.length / ratio));
+  for (let i = 0; i < out.length; i++) {
+    const start = i * ratio, end = start + ratio;
+    let sum = 0, weight = 0;
+    for (let j = Math.floor(start); j < Math.ceil(end) && j < input.length; j++) {
+      const w = Math.min(end, j + 1) - Math.max(start, j);
+      sum += input[j] * w; weight += w;
+    }
+    out[i] = weight ? sum / weight : 0;
+  }
+  return out;
+}
+function encodeWav(samples, rate) {
+  const buffer = new ArrayBuffer(44 + samples.length * 2), view = new DataView(buffer);
+  const text = (offset, s) => { for (let i = 0; i < s.length; i++) view.setUint8(offset + i, s.charCodeAt(i)); };
+  text(0, "RIFF"); view.setUint32(4, 36 + samples.length * 2, true); text(8, "WAVE");
+  text(12, "fmt "); view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+  view.setUint32(24, rate, true); view.setUint32(28, rate * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+  text(36, "data"); view.setUint32(40, samples.length * 2, true);
+  for (let i = 0; i < samples.length; i++) view.setInt16(44 + i * 2, Math.max(-1, Math.min(1, samples[i])) * 32767, true);
+  return new Blob([buffer], { type: "audio/wav" });
+}
+$("rec").onclick = () => (recording ? stopRecording() : startRecording().catch((e) => { $("contrast-notice").textContent = "マイクを開けませんでした: " + e.message; }));
+$("replay").onclick = () => lastBlob && new Audio(URL.createObjectURL(lastBlob)).play();
+$("skip").onclick = () => !recording && pickNext(true);
+$("undo").onclick = undoLast;
+
+// ---- 自然な発話 ----
+let candidates = [], view = [], position = 0, player = null, prefilled = "";
+
+async function loadNatural() {
+  const res = await fetch("/api/natural").then((r) => r.json());
+  candidates = res.candidates;
+  if (!res.vox_root_exists || !candidates.length) {
+    $("natural-progress").textContent = "vox の保存した録音がまだありません。vox の設定で「録音を保存する」をオンにして話してください。";
+    return;
+  }
+  applyFilter();
+}
+function applyFilter() {
+  view = $("only-ambiguous").checked ? candidates.filter((c) => c.priority) : candidates;
+  if (!view.length) { $("natural-progress").textContent = "表示する文がありません。"; return; }
+  position = Math.max(0, view.findIndex((c) => !c.labeled));
+  renderNatural();
+}
+function renderNatural() {
+  const c = view[position];
+  const labeled = view.filter((x) => x.labeled).length;
+  $("natural-progress").textContent = `${labeled} / ${view.length} 件にラベル済み（${position + 1} 件目を表示。全体では ${candidates.filter((x) => x.labeled).length} / ${candidates.length} 件）`;
+  const body = c.text.replace(/[。？?！!、\s]+$/, "");
+  const tail = body.length > 12 ? "…" + body.slice(-12) : body;
+  const previous = candidates.find((x) => x.recording === c.recording && x.sentence_index === c.sentence_index - 1);
+  $("natural-context").textContent = previous ? "前の文: " + previous.text : "";
+  $("natural-body").textContent = body;
+  const mark = c.want_question === true ? "？" : c.want_question === false ? "。" : "？／。";
+  $("natural-mark").textContent = mark + (c.want_ellipsis ? "（…）" : "");
+  $("natural-mark").className = "mark" + (c.want_question === true ? " q" : c.want_question === false ? " s" : "");
+  prefilled = c.reference_text || c.reference_suggestion || c.text;
+  $("reference").value = prefilled;
+  $("reference-state").textContent = c.reference_text ? "保存済みの正しい文があります"
+    : c.reference_suggestion ? "辞書を当てた案を入れています。文末の記号は選んだ記号に合わせます" : "選んだ記号に文末を合わせて保存します";
+  $("preview-q").textContent = tail + "？";
+  $("preview-s").textContent = tail + "。";
+  $("natural-meta").textContent = `${c.recording} の ${c.sentence_index + 1} 文目` + (c.end_s == null ? "（時刻なし。再生できません）" : "");
+  $("want-q").classList.toggle("on", c.want_question === true);
+  $("want-s").classList.toggle("on", c.want_question === false);
+  $("want-hold").classList.toggle("on", c.labeled && c.want_question === null);
+  $("want-e").classList.toggle("on", c.want_ellipsis === true);
+  $("play").disabled = c.end_s == null;
+  $("play-whole").disabled = c.end_s == null || c.start_s == null;
+  renderSuggestion(c);
+  loadSuggestion(c);
+  if (view[position + 1]) loadSuggestion(view[position + 1]);
+}
+// 表示中の文と次の文の推奨だけを取りにいく。一覧で全件を計算すると遅い。
+async function loadSuggestion(c) {
+  if (c.suggestion || c.suggestionLoading) return;
+  c.suggestionLoading = true;
+  try {
+    const res = await fetch(`/api/suggest?recording=${encodeURIComponent(c.recording)}&index=${c.sentence_index}`);
+    if (res.ok) c.suggestion = await res.json();
+  } finally {
+    c.suggestionLoading = false;
+  }
+  if (view[position] === c) renderSuggestion(c);
+}
+const SUGGESTED_BY = { text: "文字（です・ます＋か、っけ）", ending: "迷いやすい語尾ではない", model: "声の上げ下げ" };
+function renderSuggestion(c) {
+  const s = c.suggestion;
+  const mark = s && s.mark;
+  $("want-q").classList.toggle("suggested", mark === "q");
+  $("want-s").classList.toggle("suggested", mark === "s");
+  if (!mark) { $("natural-suggestion").textContent = c.suggestionLoading ? "推奨を計算中…" : ""; return; }
+  const confidence = s.p == null ? "" : `（「？」の確率 ${Math.round(s.p * 100)}%）`;
+  $("natural-suggestion").innerHTML = `推奨: <strong>${mark === "q" ? "？" : "。"}</strong> — ${SUGGESTED_BY[s.by]}${confidence}。合っていれば <kbd>Enter</kbd>`;
+}
+function acceptSuggestion() {
+  const c = view[position];
+  if (c.suggestion && c.suggestion.mark) choose(c.suggestion.mark === "q", true);
+}
+// サーバーが区間だけを切り出した wav を返す。録音全体は読まない。
+function play(whole = false) {
+  const c = view[position];
+  if (c.end_s == null || (whole && c.start_s == null)) return;
+  const start = whole ? Math.max(0, c.start_s - 0.2) : Math.max(0, c.end_s - 2.5);
+  if (player) player.pause();
+  player = new Audio(`/api/clip?recording=${encodeURIComponent(c.recording)}&start=${start.toFixed(3)}&end=${(c.end_s + 0.4).toFixed(3)}`);
+  player.play();
+}
+// 欄を触っていなければ、文末の記号だけを選んだ記号に合わせる。書き換えた文はそのまま使う。
+function referenceFor(wantQuestion) {
+  const value = $("reference").value;
+  if (value !== prefilled || wantQuestion == null) return value;
+  return value.replace(/[。？?！!\s]*$/, "") + (wantQuestion ? "？" : "。");
+}
+async function label(wantQuestion, wantEllipsis, accepted = false) {
+  const c = view[position];
+  const edited = $("reference").value !== prefilled;
+  const reference = referenceFor(wantQuestion);
+  const res = await fetch("/api/label", { method: "POST", body: JSON.stringify({
+    recording: c.recording, sentence_index: c.sentence_index, want_question: wantQuestion, want_ellipsis: wantEllipsis,
+    reference_text: reference, reference_edited: edited, suggestion: c.suggestion || null, accepted_suggestion: accepted }) });
+  if (!res.ok) { $("natural-notice").textContent = "保存できませんでした: " + (await res.json()).error; return false; }
+  $("natural-notice").textContent = "";
+  const saved = reference.trim() && reference.trim() !== c.text ? reference.trim() : null;
+  Object.assign(c, { want_question: wantQuestion, want_ellipsis: wantEllipsis, reference_text: saved, labeled: true });
+  return true;
+}
+async function saveReference() {
+  const c = view[position];
+  if (await label(c.labeled ? c.want_question : null, c.want_ellipsis ?? false)) {
+    $("reference").blur();
+    renderNatural();
+    $("reference-state").textContent = c.reference_text ? "正しい文を保存しました" : "認識した文のままなので、正しい文としては保存していません";
+  }
+}
+async function choose(wantQuestion, accepted = false) {
+  const c = view[position];
+  if (await label(wantQuestion, c.want_ellipsis ?? false, accepted)) move(1);
+}
+async function toggleEllipsis() {
+  const c = view[position];
+  if (await label(c.labeled ? c.want_question : null, !(c.want_ellipsis === true))) renderNatural();
+}
+function move(step) {
+  position = Math.min(view.length - 1, Math.max(0, position + step));
+  renderNatural();
+}
+$("play").onclick = () => play(false);
+$("play-whole").onclick = () => play(true);
+$("only-ambiguous").onchange = applyFilter;
+$("prev").onclick = () => move(-1);
+$("next").onclick = () => move(1);
+$("want-q").onclick = () => choose(true);
+$("want-s").onclick = () => choose(false);
+$("want-hold").onclick = () => choose(null);
+$("want-e").onclick = toggleEllipsis;
+$("save-reference").onclick = saveReference;
+$("reference").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); saveReference(); }
+  else if (e.key === "Escape") $("reference").blur();
+});
+
+// ---- キー ----
+document.addEventListener("keydown", (e) => {
+  if (["SELECT", "TEXTAREA", "INPUT"].includes(e.target.tagName)) return;
+  const natural = !$("natural").hidden;
+  if (e.code === "Space") { e.preventDefault(); natural ? play(e.shiftKey) : $("rec").click(); }
+  else if (e.key === "ArrowRight") natural ? move(1) : $("skip").click();
+  else if (e.key === "ArrowLeft" && natural) move(-1);
+  else if (natural && e.key === "Enter") { e.preventDefault(); acceptSuggestion(); }
+  else if (natural && e.key === "1") choose(true);
+  else if (natural && e.key === "2") choose(false);
+  else if (natural && e.key === "3") choose(null);
+  else if (natural && e.key.toLowerCase() === "e") toggleEllipsis();
+  else if (!natural && e.key.toLowerCase() === "r") $("replay").click();
+  else if (!natural && e.key === "Backspace") { e.preventDefault(); undoLast(); }
+});
+
+listMics();
+loadPrompts();
+</script>
+</body>
+</html>
