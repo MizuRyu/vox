@@ -134,6 +134,20 @@ struct HotkeyTests {
     }
   }
 
+  @Test("keeping the text on the clipboard defaults to on, also for older files, and round trips")
+  func keepTextOnClipboardRoundTrips() throws {
+    #expect(HotkeySettings().keepTextOnClipboard, "keep-on-clipboard default changed")
+    let old = try JSONDecoder().decode(HotkeySettings.self, from: Data("{\"schema_version\":1}".utf8))
+    #expect(old.keepTextOnClipboard, "a file without the key turned keep-on-clipboard off")
+    for enabled in [false, true] {
+      var settings = HotkeySettings()
+      settings.keepTextOnClipboard = enabled
+      let decoded = try JSONDecoder().decode(
+        HotkeySettings.self, from: try JSONEncoder().encode(settings))
+      #expect(decoded.keepTextOnClipboard == enabled, "keep-on-clipboard \(enabled) was lost")
+    }
+  }
+
   @Test("external control defaults to off, round trips, and rejects non-bool values")
   func externalControlRoundTrips() throws {
     #expect(!HotkeySettings().externalControlEnabled, "external control default changed")

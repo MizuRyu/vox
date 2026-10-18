@@ -50,6 +50,7 @@ final class SettingsCoordinator {
   var microphoneInput: MicrophoneInput { controller.microphoneInput }
   var externalControlEnabled: Bool { controller.externalControlEnabled }
   var recordingSaveEnabled: Bool { controller.recordingSaveEnabled }
+  var keepTextOnClipboard: Bool { controller.keepTextOnClipboard }
 
   func listen() { controller.listen() }
   func reload() { controller.reload() }

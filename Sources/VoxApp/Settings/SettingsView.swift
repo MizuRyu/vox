@@ -52,6 +52,15 @@ public struct SettingsView: View {
               .font(.caption)
               .foregroundStyle(.secondary)
               .fixedSize(horizontal: false, vertical: true)
+            Divider()
+            Toggle("確定した本文をクリップボードに残す", isOn: $model.keepTextOnClipboard)
+              .disabled(model.loadFailed)
+            Text(model.keepTextOnClipboard
+              ? "貼り付けた後も本文をクリップボードに残します。クリップボード履歴のアプリにも記録されます。"
+              : "貼り付けた後、クリップボードを貼り付ける前の内容に戻します。")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .fixedSize(horizontal: false, vertical: true)
           }
           .padding(10)
         } label: {

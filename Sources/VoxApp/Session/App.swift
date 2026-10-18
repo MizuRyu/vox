@@ -649,6 +649,7 @@ extension VoxController {
     }
     let outcome = await injector.insert(text: text, target: injectionTarget,
       autoEnterEnabled: recording.autoEnterEnabled, autoEnterUnverified: recording.autoEnterUnverified,
+      keepTextOnClipboard: recording.keepTextOnClipboard,
       cancelAutoEnter: { recording.autoEnterCancelled || Task.isCancelled })
     recording.metrics?.pastePostedMilliseconds = outcome.pastePostedMilliseconds
     recording.metrics?.pasteReceivedMilliseconds = outcome.pasteReceivedMilliseconds

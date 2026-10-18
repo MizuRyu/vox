@@ -101,6 +101,7 @@ final class Injector: NSObject, NSPasteboardTypeOwner, @unchecked Sendable {
   func insert(
     text: String, target: CapturedInjectionTarget, autoEnterEnabled: Bool = false,
     autoEnterUnverified: Bool = false,
+    keepTextOnClipboard: Bool = false,
     cancelAutoEnter: @escaping () -> Bool = { Task.isCancelled }
   ) async -> InjectionOutcome {
     // トグルキーの修飾（⌃ など）を握ったまま OFF すると、合成イベントの ⌘ と合流して
@@ -159,7 +160,7 @@ final class Injector: NSObject, NSPasteboardTypeOwner, @unchecked Sendable {
     guard let receipt else {
       return receiptTimeoutOutcome(
         text: text, pasteboard: pasteboard, changeCount: changeCount, modifierWait: modifierWait,
-        postedMilliseconds: postedMilliseconds)
+        postedMilliseconds: postedMilliseconds, keepTextOnClipboard: keepTextOnClipboard)
     }
 
     // 受領証の直後に自分で読み返す。ここで全長が取れていれば、消費者が読んだ時点の
@@ -186,13 +187,15 @@ final class Injector: NSObject, NSPasteboardTypeOwner, @unchecked Sendable {
 
     // Restore only after verification finishes, so it cannot race the ownership check above.
     // 復元は猶予のあとに別タスクで行う。await して返すと HUD が閉じるのがその分遅れる。
-    scheduleRestore(
-      preparation.saved, to: pasteboard, changeCount: changeCount, expectedCharacters: text.count,
+    // ADR-027。残す設定でも同じ猶予を待つ。先に印を外すと履歴ツールの読みが受領証を先取りする。
+    scheduleSettle(
+      keepTextOnClipboard ? .keep(text) : .restore(preparation.saved), to: pasteboard,
+      changeCount: changeCount, expectedCharacters: text.count,
       after: restoreDelay, from: postedMilliseconds)
 
     return InjectionOutcome(
       pastePostedMilliseconds: postedMilliseconds, pasteReceivedMilliseconds: receipt,
-      clipboardRestored: true, modifierWaitMilliseconds: modifierWait,
+      clipboardRestored: !keepTextOnClipboard, modifierWaitMilliseconds: modifierWait,
       pastedCharacters: text.count, readbackCharacters: readback, clipboardContainsText: true,
       pasteVerified: autoEnter.isVerifiedInsertion, error: nil, autoEnterResult: autoEnter)
   }
@@ -272,12 +275,18 @@ final class Injector: NSObject, NSPasteboardTypeOwner, @unchecked Sendable {
   @MainActor
   private func receiptTimeoutOutcome(
     text: String, pasteboard: NSPasteboard, changeCount: Int, modifierWait: Double,
-    postedMilliseconds: Double
+    postedMilliseconds: Double, keepTextOnClipboard: Bool
   ) -> InjectionOutcome {
     lock.withLock { pendingText = text }
     let stillOwned = ClipboardSafety.mutateIfOwned(
       expectedChangeCount: changeCount, currentChangeCount: pasteboard.changeCount
     ) { pasteboard.setData(Data(text.utf8), forType: .string) }
+    // ADR-027。誰も読まなかった回は、受領証を先取りされる心配がないのですぐ印を外す。
+    if stillOwned, keepTextOnClipboard {
+      Self.settle(
+        .keep(text), on: pasteboard, changeCount: changeCount, expectedCharacters: text.count,
+        delayMilliseconds: 0)
+    }
     return InjectionOutcome(
       pastePostedMilliseconds: postedMilliseconds, pasteReceivedMilliseconds: nil,
       clipboardRestored: false, modifierWaitMilliseconds: modifierWait,
@@ -305,8 +314,8 @@ final class Injector: NSObject, NSPasteboardTypeOwner, @unchecked Sendable {
   /// （受領証はクリップボード履歴ツールの読みでも立つので、窓を縮める合図には使えない）。
   /// 復元の直前にもう一度読み返し、置いた文字数と食い違う回は復元せず確定テキストを残す。
   @MainActor
-  private func scheduleRestore(
-    _ saved: [NSPasteboardItem], to pasteboard: NSPasteboard, changeCount: Int,
+  private func scheduleSettle(
+    _ settle: ClipboardSettle, to pasteboard: NSPasteboard, changeCount: Int,
     expectedCharacters: Int, after milliseconds: Int, from postedMilliseconds: Double
   ) {
     Task { @MainActor in
@@ -314,19 +323,50 @@ final class Injector: NSObject, NSPasteboardTypeOwner, @unchecked Sendable {
       if remaining > 0 {
         try? await Task.sleep(for: .milliseconds(Int(remaining.rounded(.up))))
       }
-      let readback = pasteboard.string(forType: .string)?.count
-      // 次の挿入が始まっていたら changeCount が動いている。そこへ復元をかけない。
-      if pasteboard.changeCount != changeCount {
-        voxLog("clipboard_restore skipped reason=change_count_moved")
-      } else if readback != expectedCharacters {
-        voxLog(
-          "clipboard_restore skipped reason=readback_mismatch "
-            + "readback_chars=\(readback.map(String.init) ?? "nil")")
-      } else {
-        Self.restore(saved, to: pasteboard, expectedChangeCount: changeCount)
-        voxLog("clipboard_restore done delay_ms=\(milliseconds)")
-      }
+      Self.settle(
+        settle, on: pasteboard, changeCount: changeCount, expectedCharacters: expectedCharacters,
+        delayMilliseconds: milliseconds)
     }
+  }
+
+  /// 貼り付けの後のクリップボードの片付け。元に戻すか、確定本文を印なしの実データで残す（ADR-027）。
+  enum ClipboardSettle {
+    case restore([NSPasteboardItem])
+    case keep(String)
+  }
+
+  /// 次の挿入やほかのアプリが書いていたら（changeCount が動いていたら）どちらもしない。
+  /// 読み返しが置いた文字数と食い違う回も触らない（消費者が読み切っていない可能性がある）。
+  @MainActor
+  static func settle(
+    _ settle: ClipboardSettle, on pasteboard: NSPasteboard, changeCount: Int,
+    expectedCharacters: Int, delayMilliseconds: Int
+  ) {
+    let readback = pasteboard.string(forType: .string)?.count
+    let kind: String
+    switch settle {
+    case .restore: kind = "clipboard_restore"
+    case .keep: kind = "clipboard_keep"
+    }
+    if pasteboard.changeCount != changeCount {
+      voxLog("\(kind) skipped reason=change_count_moved")
+      return
+    }
+    if readback != expectedCharacters {
+      voxLog(
+        "\(kind) skipped reason=readback_mismatch "
+          + "readback_chars=\(readback.map(String.init) ?? "nil")")
+      return
+    }
+    switch settle {
+    case .restore(let saved):
+      restore(saved, to: pasteboard, expectedChangeCount: changeCount)
+    case .keep(let text):
+      // why: ConcealedType を付けたままだと、履歴ツールは本文を記録しない。
+      pasteboard.clearContents()
+      pasteboard.setString(text, forType: .string)
+    }
+    voxLog("\(kind) done delay_ms=\(delayMilliseconds)")
   }
 
   /// T19。復元の猶予。Chromium / Electron 系は Cmd+V を受けてからも非同期に読み・描画を続けるので長くする。

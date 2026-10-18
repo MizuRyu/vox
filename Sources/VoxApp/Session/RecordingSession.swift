@@ -11,6 +11,7 @@ final class RecordingSession {
   var metrics: MetricsSession?
   let autoEnterEnabled: Bool
   let autoEnterUnverified: Bool
+  let keepTextOnClipboard: Bool
   let voiceProcessingEnabled: Bool
   let microphoneInput: MicrophoneInput
   /// ADR-026。設定がオンの回だけ持つ。確定まで進んだら JSON を書き、それ以外は消す。
@@ -47,6 +48,7 @@ final class RecordingSession {
     self.handsFree = handsFree
     autoEnterEnabled = settings.autoEnterEnabled
     autoEnterUnverified = settings.autoEnterUnverified
+    keepTextOnClipboard = settings.keepTextOnClipboard
     voiceProcessingEnabled = settings.voiceProcessingEnabled
     microphoneInput = settings.microphoneInput
     recordingWriter = settings.recordingSaveEnabled ? RecordingStore.standard.makeWriter() : nil

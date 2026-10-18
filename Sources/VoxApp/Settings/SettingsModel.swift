@@ -13,6 +13,7 @@ public final class SettingsModel: ObservableObject {
   @Published public var microphoneInput: MicrophoneInput = .automatic
   @Published public var externalControlEnabled = false
   @Published public var recordingSaveEnabled = false
+  @Published public var keepTextOnClipboard = true
   @Published public var errorMessage: String?
   @Published public var savedMessage: String?
   @Published public private(set) var loadFailed = false
@@ -190,6 +191,7 @@ public final class SettingsModel: ObservableObject {
     microphoneInput = original.microphoneInput
     externalControlEnabled = original.externalControlEnabled
     recordingSaveEnabled = original.recordingSaveEnabled
+    keepTextOnClipboard = original.keepTextOnClipboard
   }
 
   public func resetDraft() {
@@ -201,6 +203,7 @@ public final class SettingsModel: ObservableObject {
     microphoneInput = .automatic
     externalControlEnabled = false
     recordingSaveEnabled = false
+    keepTextOnClipboard = true
     resetting = true
     savedMessage = nil
   }
@@ -217,7 +220,8 @@ public final class SettingsModel: ObservableObject {
         autoEnterUnverified: autoEnterUnverified,
         voiceProcessingEnabled: voiceProcessingEnabled, microphoneInput: microphoneInput,
         externalControlEnabled: externalControlEnabled,
-        recordingSaveEnabled: recordingSaveEnabled)
+        recordingSaveEnabled: recordingSaveEnabled,
+        keepTextOnClipboard: keepTextOnClipboard)
       // A CLI override is not editable here and must never become a persisted preference.
       if overrides.toggle != nil { settings.toggleKey = original.toggleKey }
       if overrides.palette != nil { settings.paletteKey = original.paletteKey }

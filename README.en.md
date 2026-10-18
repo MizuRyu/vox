@@ -92,7 +92,7 @@ Full details on operation, permissions, and limitations are in [docs/usage.md](d
 
 *The app's own settings view, rendered offscreen with synthetic settings and fictional microphone data.*
 
-Open settings from the menu bar item, the gear in the HUD, or `⌘,`. You can change the recording and file-search shortcuts, enable auto-Enter and whether it also sends in terminals, turn on the experimental voice processing, and review the available microphones. See [docs/usage.md](docs/usage.md#設定) for what each item does.
+Open settings from the menu bar item, the gear in the HUD, or `⌘,`. You can change the recording and file-search shortcuts, enable auto-Enter and whether it also sends in terminals, choose whether the committed text stays on the clipboard (on by default), turn on the experimental voice processing, save recordings for debugging (off by default), and review the available microphones. See [docs/usage.md](docs/usage.md#設定) for what each item does.
 
 ## Development
 
