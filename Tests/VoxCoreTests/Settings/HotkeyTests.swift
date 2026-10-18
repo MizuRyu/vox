@@ -120,6 +120,20 @@ struct HotkeyTests {
     }
   }
 
+  @Test("recording save defaults to off and round trips")
+  func recordingSaveRoundTrips() throws {
+    #expect(!HotkeySettings().recordingSaveEnabled, "recording save default changed")
+    let old = try JSONDecoder().decode(HotkeySettings.self, from: Data("{\"schema_version\":1}".utf8))
+    #expect(!old.recordingSaveEnabled, "a file without the key enabled recording save")
+    for enabled in [false, true] {
+      var settings = HotkeySettings()
+      settings.recordingSaveEnabled = enabled
+      let decoded = try JSONDecoder().decode(
+        HotkeySettings.self, from: try JSONEncoder().encode(settings))
+      #expect(decoded.recordingSaveEnabled == enabled, "recording save \(enabled) was lost")
+    }
+  }
+
   @Test("external control defaults to off, round trips, and rejects non-bool values")
   func externalControlRoundTrips() throws {
     #expect(!HotkeySettings().externalControlEnabled, "external control default changed")

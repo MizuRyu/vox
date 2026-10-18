@@ -107,6 +107,21 @@ public struct SettingsView: View {
         }
 
         GroupBox {
+          VStack(alignment: .leading, spacing: 6) {
+            Toggle("録音を保存する", isOn: $model.recordingSaveEnabled)
+              .disabled(model.loadFailed)
+            Text("確定した録音ごとに、認識に使った音声（wav）と本文（JSON）をこのMacに保存します。外部には送りません。7日を過ぎたものと、合計500MiBを超える古いものは起動時に削除します。")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .fixedSize(horizontal: false, vertical: true)
+            Button("保存先を開く") { model.openRecordingsFolder() }
+          }
+          .padding(10)
+        } label: {
+          Text("デバッグ").font(.headline)
+        }
+
+        GroupBox {
           DictionaryEditor(model: model).padding(10)
         } label: {
           Text("辞書").font(.headline)

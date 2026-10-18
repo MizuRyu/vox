@@ -229,7 +229,8 @@ final class SpeechLane {
 
   /// 戻り値は `analyzer_start_ms`（`SpeechAnalyzer.start` が返った時刻）。
   func start(
-    voiceProcessingEnabled: Bool = false, microphoneInput: MicrophoneInput = .automatic
+    voiceProcessingEnabled: Bool = false, microphoneInput: MicrophoneInput = .automatic,
+    recordingWriter: RecordingWriter? = nil
   ) async throws -> Double {
     let generation = lifecycle.begin()
     recognitionGeneration = generation
@@ -287,7 +288,7 @@ final class SpeechLane {
         run, device: device, selection: microphoneInput, analyzerFormat: analyzerFormat, generation: generation)
     startFeedTask(
       run, bufferStream: bufferStream, inputBuilder: inputBuilder,
-      analyzerFormat: analyzerFormat)
+      analyzerFormat: analyzerFormat, recordingWriter: recordingWriter)
 
     run.isRunning = true
     return analyzerStartMilliseconds
@@ -442,7 +443,7 @@ final class SpeechLane {
   private func startFeedTask(
     _ run: RecognitionRun,
     bufferStream: AsyncStream<BufferBox>, inputBuilder: AsyncStream<AnalyzerInput>.Continuation,
-    analyzerFormat: AVAudioFormat
+    analyzerFormat: AVAudioFormat, recordingWriter: RecordingWriter?
   ) {
     let converter = BufferConverter()
     let debugAudio = ProcessInfo.processInfo.environment["VOX_HUD_DEBUG"] == "1"
@@ -466,6 +467,7 @@ final class SpeechLane {
           }
           let converted = try converter.convertBuffer(box.buffer, to: analyzerFormat)
           inputBuilder.yield(AnalyzerInput(buffer: converted))
+          recordingWriter?.append(converted)
           // finalize(through:) に渡す「給餌済み位置」。yield した分だけ進める。
           run.fedFrameCount += Int64(converted.frameLength)
           if debugAudio {

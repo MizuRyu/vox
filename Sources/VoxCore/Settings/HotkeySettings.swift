@@ -46,12 +46,15 @@ public struct HotkeySettings: Codable, Equatable, Sendable {
   public var microphoneInput: MicrophoneInput
   /// ADR-022。`vox://record/…` の URL を受け付けるか。
   public var externalControlEnabled: Bool
+  /// ADR-026。認識に渡した音声を wav で残すか。
+  public var recordingSaveEnabled: Bool
 
   public init(
     toggleKey: String? = nil, paletteKey: String? = nil,
     autoEnterEnabled: Bool = false, autoEnterUnverified: Bool = false,
     voiceProcessingEnabled: Bool = false, microphoneInput: MicrophoneInput = .automatic,
-    externalControlEnabled: Bool = false
+    externalControlEnabled: Bool = false,
+    recordingSaveEnabled: Bool = false
   ) {
     self.toggleKey = toggleKey
     self.paletteKey = paletteKey
@@ -60,6 +63,7 @@ public struct HotkeySettings: Codable, Equatable, Sendable {
     self.voiceProcessingEnabled = voiceProcessingEnabled
     self.microphoneInput = microphoneInput
     self.externalControlEnabled = externalControlEnabled
+    self.recordingSaveEnabled = recordingSaveEnabled
   }
 
   enum CodingKeys: String, CodingKey {
@@ -71,6 +75,7 @@ public struct HotkeySettings: Codable, Equatable, Sendable {
     case voiceProcessingEnabled = "voice_processing_enabled"
     case microphoneInput = "microphone_input"
     case externalControlEnabled = "external_control_enabled"
+    case recordingSaveEnabled = "recording_save_enabled"
   }
 
   /// 方式の設定は廃止した。`after_paste` を選んでいた意図は「確認できなくても送る」なので、
@@ -93,6 +98,8 @@ public struct HotkeySettings: Codable, Equatable, Sendable {
     microphoneInput = try container.decodeIfPresent(MicrophoneInput.self, forKey: .microphoneInput) ?? .automatic
     externalControlEnabled =
       try container.decodeIfPresent(Bool.self, forKey: .externalControlEnabled) ?? false
+    recordingSaveEnabled =
+      try container.decodeIfPresent(Bool.self, forKey: .recordingSaveEnabled) ?? false
   }
 
   public func validate() throws {
