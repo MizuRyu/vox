@@ -187,4 +187,4 @@ README の画像を更新する場合は `swift run vox-doc-images` で合成デ
 
 ## 依存の更新
 
-依存の更新 PR は [Renovate](https://docs.renovatebot.com/) が毎週月曜に作ります（設定は `renovate.json`）。対象は GitHub Actions、`flake.lock`、`benchmarks/Package.swift` の FluidAudio です。本体の `Package.swift` は外部依存を持ちません。CI はビルドを走らせないので、PR は手元で `just verify`（FluidAudio なら `just bench-test`）を通してからマージします。
+依存の更新 PR は [Renovate](https://docs.renovatebot.com/) が毎週月曜に作ります（設定は `renovate.json`）。対象は GitHub Actions、`flake.lock`、`benchmarks/Package.swift` の FluidAudio です。本体の `Package.swift` は外部依存を持ちません。CI はビルドを走らせないので、本体に届かない更新だけを自動でマージします（`flake.lock` と、GitHub Actions の minor・patch。PR の gitleaks が通れば Renovate がマージする）。それ以外の PR は手元で `just verify`（FluidAudio なら `just bench-test`）を通してからマージします。
