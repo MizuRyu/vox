@@ -5,13 +5,13 @@
   "schedule": ["before 6am on monday"],
   "labels": ["dependencies"],
   "prConcurrentLimit": 3,
+  "automerge": true,
   "platformAutomerge": false,
   "nix": { "enabled": true },
   "lockFileMaintenance": {
     "enabled": true,
     "schedule": ["before 6am on monday"],
-    "commitMessageAction": "Update flake.lock",
-    "automerge": true
+    "commitMessageAction": "Update flake.lock"
   },
   "packageRules": [
     {
@@ -19,17 +19,9 @@
       "groupName": "GitHub Actions"
     },
     {
-      "matchManagers": ["github-actions"],
-      "matchUpdateTypes": ["minor", "patch", "digest"],
-      "automerge": true
-    },
-    {
       "matchManagers": ["swift"],
       "matchPackageNames": ["FluidAudio"],
-      "groupName": "FluidAudio (benchmarks only)",
-      "prBodyNotes": [
-        "ベンチ専用の依存。マージ前に `just bench-test` と `swift build --package-path benchmarks` を手元で通すこと。本体（root Package.swift）は外部依存なし。"
-      ]
+      "groupName": "FluidAudio (benchmarks only)"
     }
   ]
 }
