@@ -17,8 +17,10 @@ jobs:
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
       - run: swift run --package-path benchmarks m0-core-tests
-      - run: python3 -m unittest discover -s benchmarks/Tests/BenchmarkReport -v
+      # 手元では flake.nix の benchPython が jiwer を入れる。ランナーには nix が無い
+      - run: uv run --no-project --with jiwer python -m unittest discover -s benchmarks/Tests/BenchmarkReport -v
 
   prosody:
     runs-on: macos-26
