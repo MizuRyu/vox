@@ -9,15 +9,15 @@ jobs:
   app:
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: swift build -c release --product Vox
       - run: swift test --no-parallel
 
   benchmarks:
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.2
       - run: swift run --package-path benchmarks m0-core-tests
       # 手元では flake.nix の benchPython が jiwer を入れる。ランナーには nix が無い
       - run: uv run --no-project --with jiwer python -m unittest discover -s benchmarks/Tests/BenchmarkReport -v
@@ -25,7 +25,7 @@ jobs:
   prosody:
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.2
       - run: uv run python -m unittest discover -s tests -t .
         working-directory: benchmarks/prosody
