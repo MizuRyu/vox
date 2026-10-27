@@ -128,4 +128,50 @@ out="$(python3 "$script" list --dir "$fresh")"
 contains "$out" 'ソロ → （削除）' 'list shows empty right side as deletion'
 pass
 
+# sessions: エージェントへの入力履歴から誤変換の対を出す。音声らしい発話の語の読みが、打鍵でよく打つ語に似ているもの。
+sessions="$temporary_root/sessions"
+mkdir -p "$sessions"
+cat >"$sessions/claude.jsonl" <<'JSONL'
+{"display":"えっと、なんか山川でブロフィンとトレスを使う。ちょっとゾルテックも見て","timestamp":1789473600000}
+{"display":"えっと、なんか ゾルテック の設定をちょっと直して。ひみつのほんぶん","timestamp":1789473600000}
+{"display":"えっと、なんか zoltech をそのまま話した。ちょっと待って","timestamp":1789473600000}
+{"display":"yamakawa yamakawa yamakawa yamakawa yamakawa の設定","timestamp":1789473600000}
+{"display":"blorfin blorfin blorfin blorfin blorfin を動かす","timestamp":1789473600000}
+{"display":"trex trex trex trex trex を入れる","timestamp":1789473600000}
+{"display":"zoltech zoltech zoltech zoltech zoltech トレス表示","timestamp":1789473600000}
+{"display":"トレス トレス トレス トレス トレス の表示","timestamp":1789473600000}
+JSONL
+printf '' >"$sessions/codex.jsonl"
+printf 'ゾルテック\tzoltech\n' >"$sessions/dictionary.tsv"
+out="$(python3 "$script" sessions --dir "$sessions" --claude "$sessions/claude.jsonl" --codex "$sessions/codex.jsonl")"
+contains "$out" '| 山川 | yamakawa | 1 | 5 | 一致 |' 'sessions pairs a kanji misrecognition by reading'
+contains "$out" '| ブロフィン | blorfin | 1 | 5 | 一致 |' 'sessions joins words split by the tokenizer'
+contains "$out" '| ゾルテック | zoltech | 2 | 5 | 一致 | 済 |' 'sessions marks registered pairs'
+lacks "$out" '| トレス |' 'sessions skips words that also appear in typed messages'
+lacks "$out" '| zoltech | zoltech' 'sessions skips the correct spelling itself'
+lacks "$out" 'ひみつ' 'sessions hides body text'
+lacks "$out" 'ほんぶん' 'sessions hides body text'
+pass
+printf '{"display":"えっと、なんか トレクス の件をちょっと","timestamp":1789473600000}\n' >>"$sessions/claude.jsonl"
+out="$(python3 "$script" sessions --dir "$sessions" --claude "$sessions/claude.jsonl" --codex "$sessions/codex.jsonl")"
+contains "$out" '| トレクス | trex | 1 | 5 | 一致 |' 'sessions reads x as ks'
+pass
+cat >>"$sessions/claude.jsonl" <<'JSONL'
+{"display":"pix pix pix pix pix と zen3.5 zen3.5 zen3.5 zen3.5 zen3.5","timestamp":1789473600000}
+{"display":"えっと、なんか ピス で ZN3.5 を動かすのをちょっと","timestamp":1789473600000}
+JSONL
+out="$(python3 "$script" sessions --dir "$sessions" --claude "$sessions/claude.jsonl" --codex "$sessions/codex.jsonl")"
+contains "$out" '| ピス | pix | 1 | 5 | 近い |' 'sessions accepts a short reading close to the spelling'
+contains "$out" '| ZN3.5 | zen3.5 | 1 | 5 | 一致 |' 'sessions reads letters and digits by their spelling'
+pass
+printf '{"display":"えっと、なんか トレ の件をちょっと","timestamp":1789473600000}\n' >>"$sessions/claude.jsonl"
+out="$(python3 "$script" sessions --dir "$sessions" --claude "$sessions/claude.jsonl" --codex "$sessions/codex.jsonl" --min-typed 6)"
+lacks "$out" 'yamakawa' 'sessions honours --min-typed'
+lacks "$out" '| トレ |' 'sessions needs three sounds for a near match'
+pass
+err="$(python3 "$script" sessions --dir "$sessions" --claude "$temporary_root/none" --codex "$temporary_root/none2" 2>&1)" \
+  && fail 'sessions without history must fail'
+lacks "$err" "$temporary_root" 'errors do not print the storage path'
+pass
+
 printf 'dictionary-script-tests: %d passed\n' "$pass_count"

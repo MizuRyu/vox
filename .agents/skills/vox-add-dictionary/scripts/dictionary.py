@@ -7,6 +7,7 @@ import json
 import os
 import re
 import stat
+import subprocess
 import sys
 import unicodedata
 
@@ -127,9 +128,23 @@ def skeleton(word):
     """英字の綴りとローマ字を同じ土俵に置く子音の並び（claude と kurodo が同じ krd になる）。"""
     text = word.lower().replace("ph", "f").replace("x", "ks")
     text = re.sub(r"g(?=[eiy])", "j", text)
+    text = re.sub(r"c(?=[eiy])", "s", text)
     text = text.translate(str.maketrans("cqlv", "kkrb"))
     text = re.sub(r"[aeiouyhw.+-]", "", text)
     return re.sub(r"(.)\1+", r"\1", text)
+
+
+def sounds(word):
+    """綴りと読みを、母音を残したまま同じ土俵に置く（zoltech と zorutekku が同じ zortek になる）。
+    子音は skeleton と同じに寄せ、日本語の読みが子音の後に足す u（t / d の後は o）を落とす。"""
+    text = word.lower().replace("ph", "f").replace("x", "ks")
+    text = re.sub(r"g(?=[eiy])", "j", text)
+    text = re.sub(r"c(?=[eiy])", "s", text)
+    text = text.translate(str.maketrans("cqlv", "kkrb"))
+    text = re.sub(r"[hwy.+-]", "", text)
+    text = re.sub(r"(.)\1+", r"\1", text)
+    text = re.sub(r"(?<=[bcdfgjklmnprstvz])u(?=[bcdfgjklmnprstvz0-9]|$)", "", text)
+    return re.sub(r"(?<=[td])o(?=[bcdfgjklmnprstvz0-9]|$)", "", text)
 
 
 def edit_distance(left, right):
@@ -250,6 +265,222 @@ def cmd_suggest(arguments):
             print("| {} | {} |".format(word, typed[word]))
 
 
+# --- sessions --------------------------------------------------------------
+# エージェントへの入力履歴（vox が認識した後の文が混ざる）から、誤変換の対を推定する。
+# 誤変換は 1〜3 回しか出ないので件数では見つからない。逆向きに、打鍵でよく打つ語（正しい表記）を起点にして、
+# 音声らしい発話の中で読みの子音の並びが同じか 1 音違いの語（認識される表記）を探す。
+
+SCRIPTS = os.path.dirname(os.path.abspath(__file__))
+READINGS = os.path.join(SCRIPTS, "readings.swift")
+# 履歴の読み込みと「音声入力らしい」の判定は vox-input-habits が持つ（定義を 1 か所にする）。
+HABITS = os.path.join(os.path.dirname(os.path.dirname(SCRIPTS)), "vox-input-habits", "scripts")
+WORDY = re.compile(r"[ァ-ヶ一-龥A-Za-z0-9]")
+STOPWORDS = frozenset(
+    "the and for with this that from have not are you your can will was were but all any one out "
+    "use get set new add run see how why what when where which who its into than then them they "
+    "there here also just like more some such only very want need make made done dont does did "
+    "has had our ours http https www com org".split())
+MAXIMUM_SURFACE = 12
+# 認識される表記に小文字の英単語は入れない。vox の認識は日本語を小文字の英単語に変えないので、
+# それは英語で話した語（「users」）か、英単語にまたがった窓（「ハskill」）。英字は大文字と数字だけ（GPD、QN3.5）。
+LOWERCASE_WORD = re.compile(r"[a-z]{2,}")
+# 表記に使える文字。記号（「数:%d」「SERVICE_NAME」）を含む窓はコードの断片なので外す。
+SURFACE = re.compile(r"[ァ-ヶー一-龥ぁ-んA-Z0-9 .]+")
+KANJI = re.compile(r"[一-龥]")
+# 普通の英単語（macOS 同梱の単語表）は、固有名（製品名・サービス名）より後に並べる。無ければ並びに使わない。
+WORD_LIST = "/usr/share/dict/words"
+
+
+def plain_english():
+    try:
+        with open(WORD_LIST, encoding="utf-8", errors="replace") as handle:
+            return frozenset(line.strip() for line in handle if line.strip().islower())
+    except OSError:
+        return frozenset()
+
+
+def is_plain_english(word, english):
+    return any(stem in english for stem in (word, word[:-1] if word.endswith("s") else "",
+                                            word[:-2] if word.endswith("es") else ""))
+
+
+def read_aloud(texts):
+    """文ごとに [(開始, 長さ, 読み)]（UTF-16 単位）。macOS の日本語の単語分割（readings.swift）を使う。"""
+    lines = "".join(text.replace("\r", " ").replace("\n", " ") + "\n" for text in texts)
+    try:
+        output = subprocess.run(["swift", READINGS], input=lines, capture_output=True, text=True,
+                                check=True).stdout
+    except (OSError, subprocess.CalledProcessError):
+        fail("読みを取れません。Xcode の swift が要ります（xcode-select -p で確かめる）")
+    sentences, current = [], []
+    for line in output.split("\n"):
+        if not line:
+            sentences.append(current)
+            current = []
+            continue
+        start, length, reading = line.split("\t", 2)
+        current.append((int(start), int(length), reading))
+    return sentences[:len(texts)]
+
+
+def plain(reading):
+    """ōpasu → opasu。英字と数字だけにする。"""
+    decomposed = unicodedata.normalize("NFKD", reading.lower())
+    return "".join(character for character in decomposed if character.isascii() and character.isalnum())
+
+
+def deletions(key):
+    return {key[:i] + key[i + 1:] for i in range(len(key))}
+
+
+class Targets(object):
+    """打鍵でよく打つ語。子音の並びと、そこから 1 音消した形で引けるようにする。"""
+
+    def __init__(self, counts):
+        self.counts, self.exact, self.near = counts, collections.defaultdict(set), collections.defaultdict(set)
+        for word in counts:
+            key = skeleton(word)
+            if len(key) < 2:
+                continue
+            self.exact[key].add(word)
+            if len(key) >= 3:
+                for variant in {key} | deletions(key):
+                    self.near[variant].add(word)
+
+    def match(self, reading):
+        """[(語, 一致か, 綴りとの距離)]。一致 = 子音の並びが同じ。近い = 1 音違い（並びが 3 音以上）。
+        どちらも、読み全体が綴りと近いもの（語の長さの半分以内、最低 2 文字）だけを残す。
+        子音だけでは、無関係な英単語との偶然の一致が多すぎるため。"""
+        key = skeleton(reading)
+        candidates = {word: True for word in self.exact.get(key, ())}
+        variants = {key} | deletions(key) if len(key) >= 3 else {key}
+        for variant in variants:
+            for word in self.near.get(variant, ()):
+                if word not in candidates and edit_distance(key, skeleton(word)) == 1:
+                    candidates[word] = False
+        found = []
+        heard = sounds(reading)
+        for word, exact in candidates.items():
+            spelled = sounds(word)
+            distance = edit_distance(heard, spelled)
+            if distance <= max(2, len(spelled) // 2):
+                found.append((word, exact, distance))
+        return found
+
+
+def windows(text, tokens):
+    """連続する 1〜3 語の（表記, 読み）。ひらがなだけの語（助詞など）はまたがない。"""
+    data = text.encode("utf-16-le")
+
+    def cut(start, length):
+        return data[start * 2:(start + length) * 2].decode("utf-16-le", errors="replace")
+
+    for first in range(len(tokens)):
+        reading = ""
+        for last in range(first, min(first + 3, len(tokens))):
+            start, length, token_reading = tokens[last]
+            word = cut(start, length)
+            if not WORDY.search(word):
+                break
+            # why: 英字と数字は綴りそのものが読み。分割器は「3.5」を「5」と読む。
+            reading += plain(word if word.isascii() else token_reading)
+            first_start = tokens[first][0]
+            surface = cut(first_start, start + length - first_start).strip()
+            if len(surface) <= MAXIMUM_SURFACE:
+                yield first_start, start + length, surface, reading
+
+
+def session_pairs(voice_texts, typed_text, targets):
+    """Counter[(表記, 語)]、{(表記, 語): (一致か, 綴りとの距離)}、{表記: 打鍵の文に出た回数}。
+    同じ発話で同じ語に当たる短い表記は、長い方に含める。"""
+    counts, quality, in_typed = collections.Counter(), {}, {}
+    for text, tokens in zip(voice_texts, read_aloud(voice_texts)):
+        hits = []
+        for start, end, surface, reading in windows(text, tokens):
+            if len(skeleton(reading)) < 2 or LOWERCASE_WORD.search(surface) \
+                    or not SURFACE.fullmatch(surface):
+                continue
+            for word, exact, distance in targets.match(reading):
+                if surface.lower().replace(" ", "") == word:
+                    continue
+                # why: 漢字を含む表記は、音が同じで 4 音以上の語に限る。普段の語が短い英単語に偶然似るため。
+                if KANJI.search(surface) and not (distance == 0 and len(sounds(word)) >= 4):
+                    continue
+                if surface not in in_typed:
+                    in_typed[surface] = typed_text.count(surface.lower())
+                # why: 正しい表記より打鍵の文でよく出る表記は、誤変換ではなく普段の語（「トレス表示」など）。
+                if in_typed[surface] < targets.counts[word]:
+                    hits.append((end - start, start, end, surface, word, (exact, distance)))
+        accepted = []
+        for _, start, end, surface, word, grade in sorted(hits, key=lambda hit: hit[:3], reverse=True):
+            if any(word == other and start >= s and end <= e for s, e, other in accepted):
+                continue
+            accepted.append((start, end, word))
+            counts[(surface, word)] += 1
+            quality[(surface, word)] = grade
+    return counts, quality, in_typed
+
+
+def best_targets(counts, quality, typed):
+    """表記ごとに、音が近い → よく打つ → 子音の並びが一致 の順で並べた語。"""
+    by_surface = collections.defaultdict(list)
+    for (surface, word), count in counts.items():
+        exact, distance = quality[(surface, word)]
+        by_surface[surface].append(((distance, -typed[word], not exact, word), word, count))
+    return {surface: sorted(options) for surface, options in by_surface.items()}
+
+
+def cmd_sessions(arguments):
+    sys.path.insert(0, HABITS)
+    import habits  # noqa: E402  # pylint: disable=import-outside-toplevel
+
+    messages = habits.load_messages(arguments.claude, arguments.codex)
+    if not messages:
+        fail("入力履歴が見つかりません（Claude Code / Codex の history.jsonl）")
+    voice = [message.text for message in messages if habits.is_voice_like(message.text)]
+    typed_texts = [message.text for message in messages if not habits.is_voice_like(message.text)]
+    typed_text = "\n".join(typed_texts).lower()
+    typed = collections.Counter()
+    for text in typed_texts:
+        for word in TYPED_WORD.findall(text):
+            word = word.lower().rstrip(".-")
+            if len(word) >= 3 and word not in STOPWORDS:
+                typed[word] += 1
+    for word, count in count_typed(arguments.typed).items():
+        if len(word) >= 3 and word not in STOPWORDS:
+            typed[word] += count
+    targets = Targets({word: count for word, count in typed.items() if count >= arguments.min_typed})
+
+    counts, quality, in_typed = session_pairs(voice, typed_text, targets)
+    text = read_dictionary(dictionary_path(arguments.dir))
+    registered = parse_dictionary(text)[0] if text else {}
+
+    # 1 表記 1 行。並びは、一致を先に、その中は「正しい表記の打鍵回数 ÷ 表記が打鍵の文に出た回数」が大きい順
+    # （普段は打たない表記ほど誤変換らしい。ファイル → file のような普段の語は下に沈む）。
+    options = best_targets(counts, quality, typed)
+    english = plain_english()
+
+    def order(item):
+        surface, ranked = item
+        (distance, _, not_exact, _), best, _ = ranked[0]
+        # 音が同じ → 3 文字より長い → 固有名 → 子音の並びが一致 → 普段打たない表記ほど先。
+        return (distance > 0, len(best) <= 3, is_plain_english(best, english), not_exact,
+                -typed[best] / (1.0 + in_typed[surface]), surface)
+
+    rows = sorted(options.items(), key=order)[:arguments.limit]
+    print("## 誤変換の候補（音声らしい発話 {} 件 / 打鍵の語 {} 種）".format(len(voice), len(targets.counts)))
+    print()
+    print("| 認識される表記 | 入れたい表記の候補 | 音声での件数 | 打鍵回数 | 近さ | 登録済み |")
+    print("|---|---|---|---|---|---|")
+    for surface, ranked in rows:
+        (_, _, not_exact, _), best, count = ranked[0]
+        alternatives = [word for _, word, _ in ranked[1:3]]
+        shown = best + ("（ほか: {}）".format(", ".join(alternatives)) if alternatives else "")
+        print("| {} | {} | {} | {} | {} | {} |".format(
+            surface, shown, count, typed[best], "近い" if not_exact else "一致",
+            "済" if same_key(surface) in registered else ""))
+
+
 # --- add / list ------------------------------------------------------------
 
 def parse_row(row):
@@ -336,6 +567,16 @@ def main():
                          help="普段キーボードで打つ文章（英字の語を数えて対応づける）")
     suggest.add_argument("--min-count", type=int, default=2)
     suggest.set_defaults(handler=cmd_suggest)
+
+    sessions = commands.add_parser(
+        "sessions", parents=[common], help="エージェントへの入力履歴から誤変換の対を推定する")
+    sessions.add_argument("--claude", default=os.path.expanduser("~/.claude/history.jsonl"))
+    sessions.add_argument("--codex", default=os.path.expanduser("~/.codex/history.jsonl"))
+    sessions.add_argument("--typed", action="append", default=[], metavar="FILE",
+                          help="打鍵の文章を足す（commit message など）")
+    sessions.add_argument("--min-typed", type=int, default=3, help="正しい表記として扱う打鍵回数の下限")
+    sessions.add_argument("--limit", type=int, default=300)
+    sessions.set_defaults(handler=cmd_sessions)
 
     add = commands.add_parser("add", parents=[common], help="'左辺<TAB>右辺' を末尾に足す")
     add.add_argument("rows", nargs="+")

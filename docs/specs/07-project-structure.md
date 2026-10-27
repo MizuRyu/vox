@@ -47,7 +47,7 @@ scripts/                 配布と検査だけ: bundle-app, sign-app, make-dmg, 
 Resources/               Info.plist, entitlements, アイコン
 docs/                    adr/ specs/ usage.md development.md MANUAL-VERIFICATION.md KNOWN-ISSUES.md
 images/                  README の画面例（合成データ）と再生成の手順
-.agents/skills/          vox-release, vox-setup, vox-change-docs, vox-add-dictionary, vox-debug（scripts/ に python）
+.agents/skills/          vox-release, vox-setup, vox-change-docs, vox-add-dictionary, vox-debug, vox-input-habits（scripts/ に python。vox-add-dictionary は読みを取る swift も）
 ```
 
 ## 責務の線
