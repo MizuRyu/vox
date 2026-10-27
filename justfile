@@ -30,6 +30,7 @@ tooling-test:
     Tests/Tooling/development-signing-tests.sh
     Tests/Tooling/dictionary-script-tests.sh
     Tests/Tooling/voxlog-script-tests.sh
+    Tests/Tooling/habits-script-tests.sh
 
 # ビルドやアプリ起動を含まない開発用チェック。
 check: security lint tooling-test
