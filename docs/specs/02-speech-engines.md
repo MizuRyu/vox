@@ -32,10 +32,6 @@ SpeechTranscriber(
 これは M0 の実験で確定させた事実で、ドキュメントには書かれていない。詳細は
 [ADR-007](../adr/007-latency-measurement-method.md)（測定記録は非公開）。
 
-**ただし `.fastResults` は確定の精度を落とす**（実発話 40 本で CER 1.0% → 2.3%）。本体は同じ analyzer に
-`reportingOptions` を空にした 2 つ目の `SpeechTranscriber` を載せ、本文はそちらの final から取る。
-表示用の結果は本文用が届くまで淡色に残す（[ADR-031](../adr/031-body-transcriber-without-fast-results.md)）。
-
 ### 実測した性能
 
 | 指標 | 値 | 測り方 |

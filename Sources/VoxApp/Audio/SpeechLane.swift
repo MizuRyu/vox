@@ -55,12 +55,11 @@ enum SpeechLaneError: Error, CustomStringConvertible {
 @MainActor
 private final class RecognitionRun {
   var isRunning = false
-  var transcript = SplitTranscript()
+  var committed = ""
+  var tentative = ""
   var resultCount = 0
   var firstResultReported = false
-  var displayFinished = false
-  var committedFinished = false
-  var resultsFinished: Bool { displayFinished && committedFinished }
+  var resultsFinished = false
 
   var analyzer: SpeechAnalyzer?
   var engine: AVAudioEngine?
@@ -69,7 +68,7 @@ private final class RecognitionRun {
   var inputBuilder: AsyncStream<AnalyzerInput>.Continuation?
   var bufferBuilder: AsyncStream<BufferBox>.Continuation?
   var feedTask: Task<Void, Never>?
-  var resultTasks: [Task<Void, Never>] = []
+  var resultTask: Task<Void, Never>?
 
   /// analyzer へ yield 済みのフレーム数と、その形式のサンプルレート。
   /// `finalize(through:)` に渡す位置の計算に使う（`through: nil` は入力終端まで待つので使えない）。
@@ -116,7 +115,7 @@ final class SpeechLane {
   private var interruption = CaptureInterruption()
 
   /// ADR-020。無音で区切る前に、締める淡色があるかを見る。
-  var hasTentativeText: Bool { run?.transcript.tentative.isEmpty == false }
+  var hasTentativeText: Bool { run?.tentative.isEmpty == false }
   /// 締めが走っている間は重ねて頼まない（同じ analyzer に finalize を 2 つ入れない。ADR-007）。
   var isSegmentFinalizePending: Bool { run?.segmentFinalize.hasPending == true }
 
@@ -140,19 +139,15 @@ final class SpeechLane {
       throw SpeechLaneError.japaneseUnavailable
     }
 
-    // ADR-031。表示用は発話中に文字を出すため `.fastResults` を付ける。それは確定の精度を落とすので、
-    // 本文は設定なしの認識器から取る。同じ analyzer に載せ、同じ音声と同じ締めを受ける。
-    let display = SpeechTranscriber(
+    let transcriber = SpeechTranscriber(
       locale: locale,
       transcriptionOptions: [],
       reportingOptions: [.volatileResults, .fastResults],
       attributeOptions: [.audioTimeRange]
     )
-    let body = SpeechTranscriber(
-      locale: locale, transcriptionOptions: [], reportingOptions: [], attributeOptions: [.audioTimeRange])
-    let modules: [any SpeechModule] = [display, body]
+    let modules: [any SpeechModule] = [transcriber]
 
-    try await ensureAssets(for: display, locale: locale, modules: modules)
+    try await ensureAssets(for: transcriber, locale: locale, modules: modules)
     try Task.checkCancellation()
 
     guard let analyzerFormat = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: modules)
@@ -170,7 +165,7 @@ final class SpeechLane {
     run.inputBuilder = inputBuilder
 
     // results Task は start より先に立てる（プローブと同じ）。
-    startResultTasks(run, display: display, body: body, generation: generation)
+    startResultTask(run, transcriber: transcriber, generation: generation)
 
     try await analyzer.start(inputSequence: inputSequence)
     let analyzerStartMilliseconds = voxNowMilliseconds()
@@ -192,48 +187,22 @@ final class SpeechLane {
     return analyzerStartMilliseconds
   }
 
-  private func startResultTasks(
-    _ run: RecognitionRun, display: SpeechTranscriber, body: SpeechTranscriber,
-    generation: RecognitionGeneration
+  private func startResultTask(
+    _ run: RecognitionRun, transcriber: SpeechTranscriber, generation: RecognitionGeneration
   ) {
-    let displayTask = Task { @MainActor in
-      _ = await self.consume(display, lane: "display", generation: generation) {
-        self.accept(display: $0, into: run)
+    run.resultTask = Task { @MainActor in
+      do {
+        for try await result in transcriber.results {
+          guard self.lifecycle.accepts(generation) else { break }
+          self.accept(result: result, into: run)
+        }
+      } catch is CancellationError {
+        // 破棄（esc）でループを畳んだときに来る。異常ではない。
+      } catch {
+        voxLog("result_error \(String(describing: error))")
       }
-      run.displayFinished = true
+      run.resultsFinished = true
     }
-    let bodyTask = Task { @MainActor in
-      let completed = await self.consume(body, lane: "body", generation: generation) {
-        self.accept(body: $0, into: run)
-      }
-      // 本文用が入力の終わりまで届いた回だけ、淡色に残る表示用の文字を捨てる。
-      // 途中で落ちた回は淡色を残し、確定はそれを含めて貼る（今までと同じ）。
-      if completed {
-        run.transcript.finishCommitted()
-        self.publish(run)
-      }
-      run.committedFinished = true
-    }
-    run.resultTasks = [displayTask, bodyTask]
-  }
-
-  /// 結果を最後まで読んだら true。破棄・取り消し・失敗で途中で抜けたら false。
-  private func consume(
-    _ transcriber: SpeechTranscriber, lane: String, generation: RecognitionGeneration,
-    _ handle: (SpeechTranscriber.Result) -> Void
-  ) async -> Bool {
-    do {
-      for try await result in transcriber.results {
-        guard lifecycle.accepts(generation) else { return false }
-        handle(result)
-      }
-      return true
-    } catch is CancellationError {
-      // 破棄（esc）でループを畳んだときに来る。異常ではない。
-    } catch {
-      voxLog("result_error lane=\(lane) \(String(describing: error))")
-    }
-    return false
   }
 
   /// 通常の録音。選んだ機器だけを入力専用 AUHAL で開く（ADR-016）。戻り値は AUHAL が流す音声。
@@ -464,7 +433,7 @@ final class SpeechLane {
         try await analyzer.finalize(through: through)
         voxLog(
           "segment_finalized reason=\(reason.rawValue) at_ms=\(voxNowMilliseconds()) "
-            + "through_s=\(throughSeconds) committed_length=\(run.transcript.committed.count)")
+            + "through_s=\(throughSeconds) committed_length=\(run.committed.count)")
       } catch {
         voxLog("segment_finalize_error reason=\(reason.rawValue) \(String(describing: error))")
       }
@@ -501,7 +470,7 @@ final class SpeechLane {
     let finalizedMilliseconds = voxNowMilliseconds()
 
     await drainResults(run)
-    let text = run.transcript.committed + run.transcript.tentative
+    let text = run.committed + run.tentative
     teardown(run)
     lifecycle.finish(generation)
     recognitionGeneration = nil
@@ -548,8 +517,8 @@ final class SpeechLane {
       run.configurationObserver = nil
     }
     run.analyzer = nil
-    run.resultTasks.forEach { $0.cancel() }
-    run.resultTasks = []
+    run.resultTask?.cancel()
+    run.resultTask = nil
     self.run = nil
   }
 
@@ -561,37 +530,24 @@ final class SpeechLane {
       step: .milliseconds(5), now: voxNowMilliseconds)
   }
 
-  private func accept(display result: SpeechTranscriber.Result, into run: RecognitionRun) {
+  private func accept(result: SpeechTranscriber.Result, into run: RecognitionRun) {
+    let text = String(result.text.characters)
     if !run.firstResultReported {
       run.firstResultReported = true
       onFirstResult?(voxNowMilliseconds())
     }
-    run.transcript.acceptDisplay(
-      String(result.text.characters), isFinal: result.isFinal, endSeconds: result.range.end.seconds)
-    log(result, lane: "display", run: run)
-    publish(run)
-  }
-
-  private func accept(body result: SpeechTranscriber.Result, into run: RecognitionRun) {
-    // why: reportingOptions が空なので final しか来ない。念のため volatile は捨てる。
-    guard result.isFinal else { return }
-    run.transcript.acceptCommitted(
-      String(result.text.characters), endSeconds: result.range.end.seconds)
-    finalTimings += Self.timings(of: result.text)
-    log(result, lane: "body", run: run)
-    publish(run)
-  }
-
-  private func log(_ result: SpeechTranscriber.Result, lane: String, run: RecognitionRun) {
+    if result.isFinal {
+      run.committed += text
+      run.tentative = ""
+      finalTimings += Self.timings(of: result.text)
+    } else {
+      run.tentative = text
+    }
     run.resultCount += 1
     voxLog(
-      "result index=\(run.resultCount) lane=\(lane) at_ms=\(voxNowMilliseconds()) "
-        + "is_final=\(result.isFinal) committed_length=\(run.transcript.committed.count) "
-        + "tentative_length=\(run.transcript.tentative.count)")
-  }
-
-  private func publish(_ run: RecognitionRun) {
-    onTextUpdate?(run.transcript.committed, run.transcript.tentative)
+      "result index=\(run.resultCount) at_ms=\(voxNowMilliseconds()) is_final=\(result.isFinal) "
+        + "committed_length=\(run.committed.count) tentative_length=\(run.tentative.count)")
+    onTextUpdate?(run.committed, run.tentative)
   }
 
   /// 語ごとの区間（秒）。時刻は analyzer の時間軸で、保存する wav の先頭が 0。

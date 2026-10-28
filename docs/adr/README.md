@@ -44,4 +44,4 @@
 | [028](028-question-mark-text-rule.md) | 文字だけで疑問と言える文末の「。」を「？」にする | 提案 | 2026-10-18 |
 | [029](029-prosody-tuning-tool-outside-data.md) | 韻律の試作ツールはリポジトリに置き、声・ラベル・学習した重みは置かない | 提案 | 2026-10-18 |
 | [030](030-apple-vocabulary-hints-not-adopted.md) | Apple の語彙指定（contextualStrings・カスタム言語モデル）は入れず、SpeechTranscriber のままにする | 提案 | 2026-10-28 |
-| [031](031-body-transcriber-without-fast-results.md) | 本文は `.fastResults` を付けない 2 つ目の認識器から取り、表示用の認識器と同じ analyzer に載せる | 提案 | 2026-10-28 |
+| [031](031-body-transcriber-without-fast-results.md) | 本文は `.fastResults` を付けない 2 つ目の認識器から取り、表示用の認識器と同じ analyzer に載せる | 廃止 | 2026-10-28 |

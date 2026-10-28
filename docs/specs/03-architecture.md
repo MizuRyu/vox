@@ -124,9 +124,9 @@ HUD の展開時の高さは、本文と同じ書体の TextKit で測り、画�
   `nonisolated static func makeTapBlock(...) -> AVAudioNodeTapBlock` の中で作って渡す形にすること
   （`Sources/VoxM0LiveProbe/main.swift` が実例）
 - Apple `SpeechTranscriber` は `reportingOptions` に `.fastResults` がないと、ファイル給餌では finalize まで
-  結果を出さない（[ADR-007](../adr/007-latency-measurement-method.md)）。逆に `.fastResults` は確定の精度を落とすので、
-  本文は同じ analyzer に載せた設定なしの認識器から取る。**analyzer を 2 つ作って同じ音声を並行して渡すと結果が崩れ、
-  途中で返らなくなる**（[ADR-031](../adr/031-body-transcriber-without-fast-results.md)）
+  結果を出さない（[ADR-007](../adr/007-latency-measurement-method.md)）
+- `.fastResults` は確定の精度を落とす（実発話 40 本で CER 1.0% → 2.3%）。ただし `.fastResults` なしの認識器を同じ analyzer に足すと、
+  表示用の結果もその区切り（約 12 秒）まで届かなくなる。analyzer を 2 つにすると結果が崩れる（[ADR-031](../adr/031-body-transcriber-without-fast-results.md)、廃止）
 - `AVAudioFile` は analyzer の `commonFormat` / `isInterleaved` で開くこと。既定の processingFormat で開くと
   結果が空になる。`AVAudioFile.length` は実データより多く報告されることがある（[ADR-007](../adr/007-latency-measurement-method.md)「測定の前提条件」）
 - `finalize` を給餌と同じタスクから呼ぶと自己デッドロックする（[ADR-007](../adr/007-latency-measurement-method.md)）
@@ -144,7 +144,6 @@ HUD の展開時の高さは、本文と同じ書体の TextKit で測り、画�
 ## テキスト契約 — Handy 方式を採用する
 
 現在は認識レーンの `committed` / `tentative` を HUD の `TranscriptBuffer` に反映します。
-認識レーンは認識器を 2 つ持ち、`committed` は本文用（`.fastResults` なし）の final だけ、`tentative` は本文用がまだ届いていない表示用の結果です（`SplitTranscript`、[ADR-031](../adr/031-body-transcriber-without-fast-results.md)）。
 HUD 本文は **`head + tentative + tail`** の 3 区画。
 `head` は未確定音声より前に確定した本文、`tail` はその音声の表示後に打った文字。
 音声確定時は `head` に追記して `tentative` を空にする。新しい未確定音声が始まるときに `tail` を `head` に合流させ、時間順を保つ。
