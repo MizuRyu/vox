@@ -139,12 +139,7 @@ final class SpeechLane {
       throw SpeechLaneError.japaneseUnavailable
     }
 
-    let transcriber = SpeechTranscriber(
-      locale: locale,
-      transcriptionOptions: [],
-      reportingOptions: [.volatileResults, .fastResults],
-      attributeOptions: [.audioTimeRange]
-    )
+    let (transcriber, analyzer) = Self.makeRecognizer(locale: locale)
     let modules: [any SpeechModule] = [transcriber]
 
     try await ensureAssets(for: transcriber, locale: locale, modules: modules)
@@ -157,8 +152,6 @@ final class SpeechLane {
 
     run.sampleRate = analyzerFormat.sampleRate
 
-    // プローブと同じ。options は渡さず、prepareToAnalyze も呼ばない。
-    let analyzer = SpeechAnalyzer(modules: modules)
     run.analyzer = analyzer
 
     let (inputSequence, inputBuilder) = AsyncStream<AnalyzerInput>.makeStream()
@@ -185,6 +178,17 @@ final class SpeechLane {
 
     run.isRunning = true
     return analyzerStartMilliseconds
+  }
+
+  static func makeRecognizer(locale: Locale) -> (SpeechTranscriber, SpeechAnalyzer) {
+    let transcriber = SpeechTranscriber(
+      locale: locale,
+      transcriptionOptions: [],
+      reportingOptions: [.volatileResults, .fastResults],
+      attributeOptions: [.audioTimeRange]
+    )
+    // プローブと同じ。options は渡さず、prepareToAnalyze も呼ばない。
+    return (transcriber, SpeechAnalyzer(modules: [transcriber]))
   }
 
   private func startResultTask(

@@ -57,6 +57,31 @@ FluidAudio は benchmarks の別 package だけが依存するので、本体は
 pasteboard とパレットの検査は API の意味を確かめるもので、他アプリへの実際の貼り付けまで
 保証するものではありません。
 
+### 音声認識の逐次出力の検査
+
+認識器の設定や組合せを変えるときは、`just verify` に加えて `SpeechStreamingTests` を実行します。
+本体と同じ `SpeechLane.makeRecognizer` と `BufferConverter` を使い、合成音声を 100ms 分ずつ実時間で流します。
+マイク・HUD・キー送出は使いません。日本語の認識モデルが導入済みの macOS 26 以降で実行し、モデルの取得は行いません。
+
+通常の `just verify` ではこの 1 件をスキップします。以下は約 30 秒の入力例です。`say` はファイルに保存するだけで、音は再生しません。
+
+```sh
+mkdir -p z-ai/2026-10-28-speech-streaming-check
+cat > z-ai/2026-10-28-speech-streaming-check/input.txt <<'EOF'
+朝の公園を歩くと小さな鳥が木の枝にとまり遠くの山が明るく見えます。今日は青いノートと赤い鉛筆を机に並べて来月の旅行の予定を順番に考えています。駅の前には新しい店ができて果物やパンを買う人たちがゆっくり道を歩いています。夕方になったら図書館に立ち寄り科学の本と料理の本を借りて静かな部屋で読む予定です。明日の天気が晴れなら川に沿って散歩を続け橋の向こうにある花畑まで足を延ばしてみます。
+EOF
+say -v Kyoko -r 230 -f z-ai/2026-10-28-speech-streaming-check/input.txt \
+  -o z-ai/2026-10-28-speech-streaming-check/input.aiff
+VOX_SPEECH_REPLAY_AUDIO="$PWD/z-ai/2026-10-28-speech-streaming-check/input.aiff" \
+  swift test --no-parallel --filter SpeechStreamingTests
+```
+
+入力には 15〜60 秒の、長い無音を含まない合成音声を使います。認識本文や音声ファイルは出力・コミットしません。
+検査は給餌中に 3 件以上の結果が届き、初出と最大空白（給餌開始・終了までを含む）がともに 5 秒未満なら合格です。
+`OK: speech_replay ...` / `NG: speech_replay ...` の 1 行に計測値を出します。
+5 秒は約 12 秒の滞留を検出するための境界であり、一般の発話に対する速度の保証ではありません。
+実マイクから HUD 描画までの遅延と CER は、この検査では確認しません（[REC-16](MANUAL-VERIFICATION.md#rec-16-話し続けている間も淡色の本文が更新される)）。
+
 ## 静的解析と pre-commit
 
 フックは `scripts/security --staged` と `scripts/lint --staged` を実行し、実際の index の内容を検査します。自動修正・自動 stage・Swift ビルド・モデル取得はしません。

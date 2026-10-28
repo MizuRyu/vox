@@ -125,8 +125,11 @@ HUD の展開時の高さは、本文と同じ書体の TextKit で測り、画�
   （`Sources/VoxM0LiveProbe/main.swift` が実例）
 - Apple `SpeechTranscriber` は `reportingOptions` に `.fastResults` がないと、ファイル給餌では finalize まで
   結果を出さない（[ADR-007](../adr/007-latency-measurement-method.md)）
-- `.fastResults` は確定の精度を落とす（実発話 40 本で CER 1.0% → 2.3%）。ただし `.fastResults` なしの認識器を同じ analyzer に足すと、
-  表示用の結果もその区切り（約 12 秒）まで届かなくなる。analyzer を 2 つにすると結果が崩れる（[ADR-031](../adr/031-body-transcriber-without-fast-results.md)、廃止）
+- `.fastResults` は確定の精度を落とす（実発話 40 本で CER 1.0% → 2.3%）。ただし `.fastResults` なしの認識器を同じ analyzer に足した v1.3.1 では、
+  表示用の初出が約 12 秒まで遅れる例を観測した。合成音声の実時間給餌でも再現する。Apple 内部の待ち合わせ方は未確認。
+  本体は `.volatileResults` / `.fastResults` の認識器 1 つを使い、生成は `SpeechLane.makeRecognizer` に集約する。
+  構成変更時は CER・終了後の確定時間に加え、給餌中の初出と最大空白を検査する（[開発手順](../development.md#音声認識の逐次出力の検査)）。
+  別 analyzer を使った以前の実験も結果が崩れたが、一般的な制約かは未確認（[ADR-031](../adr/031-body-transcriber-without-fast-results.md)、廃止）
 - `AVAudioFile` は analyzer の `commonFormat` / `isInterleaved` で開くこと。既定の processingFormat で開くと
   結果が空になる。`AVAudioFile.length` は実データより多く報告されることがある（[ADR-007](../adr/007-latency-measurement-method.md)「測定の前提条件」）
 - `finalize` を給餌と同じタスクから呼ぶと自己デッドロックする（[ADR-007](../adr/007-latency-measurement-method.md)）
