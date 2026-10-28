@@ -9,6 +9,33 @@ import Testing
 @MainActor
 @Suite("Hud: 本文の描画と編集の可否")
 struct TranscriptEditorTests {
+  @Test("展開時の高さは全文レイアウトと一致し、画面の半分を超えない")
+  func expandedHeightMatchesFullLayout() {
+    let texts = [
+      "", "音声入力", "確認します。\n", "\n\n\n",
+      "👨‍👩‍👧‍👦と絵文字、e\u{301}と日本語を確認します。\n次の行です。",
+      String(repeating: "👨‍👩‍👧‍👦🙂\n", count: 30),
+      String(repeating: "\tAPI\t入力\n", count: 30),
+      String(repeating: "a\u{301}\u{302}\u{303}\n", count: 30),
+      String(repeating: "設定を確認してAPIの応答を検証します。\n", count: 40),
+      String(repeating: "一二三四五六七八九十", count: 60)
+    ]
+    for text in texts {
+      for width: CGFloat in [120, 320, 680] {
+        for visibleHeight: CGFloat in [200, 600, 900] {
+          let bounding = NSAttributedString(
+            string: text.isEmpty ? " " : text, attributes: TranscriptEditor.committedAttributes
+          ).boundingRect(
+            with: NSSize(width: max(1, width - 36), height: CGFloat.greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading])
+          let expected = min(visibleHeight / 2, max(132, ceil(bounding.height) + 88))
+          #expect(HudPanel.expandedHeight(text: text, width: width, visibleHeight: visibleHeight) == expected)
+        }
+      }
+    }
+    expectNoVisibleWindows()
+  }
+
   /// HUD 本文と同じ text system を、有限幅の container 付きで組み立てる。
   private func editor() throws -> (
     model: HudModel, coordinator: TranscriptEditor.Coordinator, textView: NSTextView,

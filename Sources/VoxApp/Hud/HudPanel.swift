@@ -238,7 +238,8 @@ final class HudPanel {
   /// 1px 未満の差では触らない（tentative の更新ごとに setFrame を投げない）。
   func refreshExpandedHeight() {
     guard model.isExpanded, panel.isVisible, let screen = NSScreen.main else { return }
-    let height = expandedHeight(width: panel.frame.width, visible: screen.visibleFrame)
+    let height = Self.expandedHeight(
+      text: model.transcript.text, width: panel.frame.width, visibleHeight: screen.visibleFrame.height)
     guard abs(height - panel.frame.height) >= 1 else { return }
     reposition()
   }
@@ -282,7 +283,9 @@ final class HudPanel {
     let visible = screen.visibleFrame
     let width = min(680, visible.width - 80)
     let height =
-      model.isExpanded ? expandedHeight(width: width, visible: visible) : Self.collapsedHeight
+      model.isExpanded
+      ? Self.expandedHeight(text: model.transcript.text, width: width, visibleHeight: visible.height)
+      : Self.collapsedHeight
     let origin = NSPoint(
       x: visible.midX - width / 2,
       y: visible.minY + 24
@@ -292,17 +295,23 @@ final class HudPanel {
 
   /// T18。展開時の高さ。本文（3 領域の全文）が要る高さを測り、可視領域の半分を上限にする。
   /// 内容がそれより短ければ内容に合わせる（畳んだ高さは下限）。
-  private func expandedHeight(width: CGFloat, visible: NSRect) -> CGFloat {
-    let text = model.transcript.text
-    // 本文の幅は HudView の横 padding（18 * 2）を引いた分。
-    let bounding = NSAttributedString(
-      string: text.isEmpty ? " " : text, attributes: TranscriptEditor.committedAttributes
-    ).boundingRect(
-      with: NSSize(width: max(1, width - 36), height: .greatestFiniteMagnitude),
-      options: [.usesLineFragmentOrigin, .usesFontLeading])
-    // 本文以外（上段・下段・padding）が占める分。畳んだ高さのうち本文枠の 44 を除いた残り。
+  static func expandedHeight(text: String, width: CGFloat, visibleHeight: CGFloat) -> CGFloat {
     let chrome = Self.collapsedHeight - 44
-    let needed = ceil(bounding.height) + chrome
-    return min(visible.height / 2, max(Self.collapsedHeight, needed))
+    let maximumHeight = visibleHeight / 2
+    let storage = NSTextStorage(
+      string: text.isEmpty ? " " : text, attributes: TranscriptEditor.committedAttributes)
+    let layout = NSLayoutManager()
+    // 本文の幅は HudView の横 padding（18 * 2）を引いた分。
+    // 上限を超えた行も 1 行測り、途中の行で高さが切り下がるのを避ける。
+    let lineHeight = layout.defaultLineHeight(for: TranscriptEditor.font)
+    let container = NSTextContainer(containerSize: NSSize(
+      width: max(1, width - 36), height: max(0, maximumHeight - chrome) + lineHeight))
+    container.lineFragmentPadding = 0
+    storage.addLayoutManager(layout)
+    layout.addTextContainer(container)
+    layout.ensureLayout(for: container)
+    // 本文以外（上段・下段・padding）が占める分。畳んだ高さのうち本文枠の 44 を除いた残り。
+    let needed = ceil(layout.usedRect(for: container).height) + chrome
+    return min(maximumHeight, max(Self.collapsedHeight, needed))
   }
 }

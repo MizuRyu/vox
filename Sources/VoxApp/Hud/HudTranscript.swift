@@ -260,7 +260,7 @@ public struct TranscriptEditor: NSViewRepresentable {
     window.makeFirstResponder(textView)
   }
 
-  private static let font = NSFont.systemFont(ofSize: 14)
+  static let font = NSFont.systemFont(ofSize: 14)
   /// 通常色（committed）と淡色（tentative）。この 2 つで編集可能域の境目を見せる。
   public static let committedAttributes: [NSAttributedString.Key: Any] = [
     .font: font, .foregroundColor: NSColor.labelColor
