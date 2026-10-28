@@ -22,6 +22,12 @@
       "matchManagers": ["swift"],
       "matchPackageNames": ["FluidAudio"],
       "groupName": "FluidAudio (benchmarks only)"
+    },
+    {
+      "description": "semgrep を動く nixpkgs に rev で固定している（flake.nix の nixpkgs-semgrep）。CI は devShell を組まないので、更新が通ると nix develop が壊れたまま自動で取り込まれる。撤去条件は flake.nix の注記と同じ: nix build --no-link github:NixOS/nixpkgs/nixpkgs-unstable#legacyPackages.aarch64-darwin.semgrep が通ったら、この規則と input を消す",
+      "matchManagers": ["nix"],
+      "matchPackageNames": ["nixpkgs-semgrep"],
+      "enabled": false
     }
   ]
 }
