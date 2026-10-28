@@ -23,12 +23,12 @@
 
 | リスク | 影響 | 対策 |
 |---|---|---|
-| **`SpeechTranscriber` の日本語 CER が実発話で未測定** | 速報レーンの前提が崩れる | コーパス録音での CER 実測。悪ければ Nemotron @560ms に落とす |
+| **`SpeechTranscriber` のライブ認識はファイル認識の約 3 倍誤る** | 貼り付ける本文の精度 | 実発話 40 本の推定でライブ 3.0%、ファイル 1.0%（[ADR-030](../adr/030-apple-vocabulary-hints-not-adopted.md)）。逐次の確定と無音での区切りのどちらが原因かを切り分ける |
 | **初回モデル DL の要否** | 「ネットワーク不要」要件の唯一の穴 | 初回のみ約 24 秒の取得が必要。以後は完全ローカル |
 | **macOS 26 でグローバルホットキーが動かない** | 機能の入口が死ぬ | VoiceInk #735「Global Shortcut Key not working on macOS 26」は **open** (26.5 / M3 で再現)。Carbon `RegisterEventHotKey` も Sequoia 以降 option/shift 修飾で `-9868` 失敗の報告。**自前 CGEventTap 前提で組む** |
 | **アイドル後のコールドスタート** | 「速い」の看板が落ちる | VoiceInk #595 が「5〜10 分放置後の初回推論がコールドスタート同然」を報告。**アイドルでモデルをアンロードする設計 (Handy / Whispering の既定 5 分) は「待機メモリを抑える」と「初回レイテンシ」の同じトレードオフの両端**。keep-alive 推論を 5 分間隔で打つ案を検討 |
 | Metal ライブラリ未キャッシュの初回ロード | 初回起動が極端に遅い | `anomalyco/hex` の実測でキャッシュ後 269〜277ms に対し**初回 9,921ms**。FluidAudio も初回 ANE コンパイル約 15s / 以降約 2s。初回はオンボーディング内で済ませる |
-| 語彙バイアスが日本語で効かない | R5 の実装方針が変わる | [05 テキスト後処理](05-text-postprocessing.md)の L2 (読み一致置換) だけで成立する設計にしてある |
+| 語彙バイアスが日本語で効かない | R5 の実装方針が変わる | Apple では効かないことを確かめた（[ADR-030](../adr/030-apple-vocabulary-hints-not-adopted.md)）。[05 テキスト後処理](05-text-postprocessing.md)の L2 (読み一致置換) だけで成立する設計にしてある |
 | CoreML 変換による精度劣化 | 確定レーンの精度が想定より低い | 上流 nvidia FLEURS ja 11.48%@1.12s に対し FluidAudio 13.77%@1.12s。量子化損失か評価条件差か不明。同一音声で両方測る |
 | VAD の無音判定が日本語に長すぎる | 確定レーンの投入が遅れる | sherpa-onnx の既定は trailing silence 2.4s / 1.2s。日本語の「間」に対して長い可能性が高い |
 | ANE の競合 (他アプリが占有) | レイテンシ悪化 | CPU / GPU フォールバックの計測を取る |

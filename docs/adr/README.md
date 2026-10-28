@@ -43,3 +43,4 @@
 | [027](027-keep-text-on-clipboard.md) | 貼り付けた後も確定本文をクリップボードに残す（既定オン、設定で戻せる） | 提案 | 2026-10-18 |
 | [028](028-question-mark-text-rule.md) | 文字だけで疑問と言える文末の「。」を「？」にする | 提案 | 2026-10-18 |
 | [029](029-prosody-tuning-tool-outside-data.md) | 韻律の試作ツールはリポジトリに置き、声・ラベル・学習した重みは置かない | 提案 | 2026-10-18 |
+| [030](030-apple-vocabulary-hints-not-adopted.md) | Apple の語彙指定（contextualStrings・カスタム言語モデル）は入れず、SpeechTranscriber のままにする | 提案 | 2026-10-28 |

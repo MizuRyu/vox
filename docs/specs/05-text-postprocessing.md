@@ -8,7 +8,7 @@
 |---|---|---|
 | フィラー除去 | 規則ベース（[ADR-012](../adr/012-filler-removal-rule-based.md)） | 実装済み |
 | 疑問符 | 丁寧語とくだけた形の疑問（「ですか」「でしょうかね」「いいっすか」）、「っけ」、同意・頼みの「よくね」「なくね」「方が良くない」「てくれん」で終わる文の「。」を「？」にする。「かな」「の」は変えない（[ADR-028](../adr/028-question-mark-text-rule.md)） | 実装済み |
-| L1 語彙バイアス | デコード段で候補を寄せる | 未実装。Apple `SpeechTranscriber` に公開 API が無い |
+| L1 語彙バイアス | デコード段で候補を寄せる | 入れない。Apple の語彙指定は `SpeechTranscriber` に効かない（[ADR-030](../adr/030-apple-vocabulary-hints-not-adopted.md)） |
 | L2 表記置換 | `dictionary.tsv` の最長一致・完全一致（[ADR-019](../adr/019-dictionary-surface-replacement.md)） | 実装済み |
 | L2' 読み正規化 + 編集距離 | カタカナ読みに正規化して照合 | 未実装。ADR-019 の見直しの条件 |
 | 形態素解析での絞り込み | 品詞・文脈で適用範囲を絞る | 未実装。ADR-019 の見直しの条件 |
@@ -37,8 +37,8 @@ FluidAudio に本物の文脈バイアス API が公開されています。
 - **L2: 認識後の置換（必ず実装）** — 確定テキストの表記を辞書で置き換える。
   「オルカ」→「Orca」、「エヌエスパネル」→「NSPanel」。**L1 が日本語で不発でもこれだけで成立する**
 
-現在の採用エンジンである Apple `SpeechTranscriber` には語彙バイアスの公開 API がないため、
-L1 は Apple では使えません（[02 音声エンジン](02-speech-engines.md)）。上の FluidAudio の API は
+現在の採用エンジンである Apple `SpeechTranscriber` には、`contextualStrings` は渡せても効かず、
+カスタム言語モデルは載らないため、L1 は Apple では使えません（[ADR-030](../adr/030-apple-vocabulary-hints-not-adopted.md)）。上の FluidAudio の API は
 確定レーンを入れ替える判断をしたときに再評価します。
 
 ### L2 表記置換（実装済み）
@@ -92,7 +92,7 @@ VoiceInk の CJK 関連 issue が、実装前に潰しておくべき項目を�
 利用者が音声入力そのもので報告: **「末尾」と言うと「松尾」になる。**
 開発用語（末尾・尾びれ）が人名に化けるのは、固有名詞側の言語モデルが強いためです。
 
-- Apple `SpeechTranscriber` の語彙バイアス API は**ドキュメント上見つかっていない**
+- Apple `SpeechTranscriber` の語彙指定は**効かない**（2026-10-28 に測定。[ADR-030](../adr/030-apple-vocabulary-hints-not-adopted.md)）
 - したがって **L2（確定テキストの置換）が唯一の手段**になる。「松尾」→「末尾」のように、
   聞こえた表記を書きたい表記へ置き換えるのがまさにこの用途（実装した方式は [ADR-019](../adr/019-dictionary-surface-replacement.md)）
 - **形態素解析の併用**: 表記一致だけだと「松尾さん」のような正しい人名も壊す。形態素解析で品詞と文脈（直後が「さん」なら人名、

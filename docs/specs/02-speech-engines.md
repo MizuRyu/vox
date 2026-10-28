@@ -2,7 +2,7 @@
 
 採用している認識エンジン、その実測値と制約、比較して却下した候補。
 
-最終確認日: 2026-09-23（候補の現状を再確認。採用は変わらず Apple 1 本）
+最終確認日: 2026-10-28（実発話の CER と Apple の語彙指定を測定。採用は変わらず Apple 1 本）
 
 ## いま動いているもの
 
@@ -39,16 +39,17 @@ SpeechTranscriber(
 | 初出遅延（喋り始めてから最初の文字まで） | **0.78〜1.53 秒** | 約 1 秒周期の tick 待ち。周期を変える API は見つかっていない |
 | 確定処理（finalize）| 約 75〜210ms | 発話が長いほど伸びる |
 | 発話終了 → 挿入完了 | **166 / 244 / 316 / 570 / 692ms**（実測 5 回） | 看板指標。目標は 300ms、許容 500ms |
-| 日本語 CER | **未測定** | 合成音声では 0〜0.16。実発話の正式値はコーパス録音待ち |
+| 日本語 CER | **ライブ 3.0% / ファイル 1.0%**（推定） | デバッグ録音 40 本、エージェントが作った推定正解。ファイルの値は下限（[ADR-030](../adr/030-apple-vocabulary-hints-not-adopted.md)） |
 
 初出遅延が約 1 秒あるのは Apple の性質で、変えられない。だから「速さ」の看板を
 **発話終了 → 挿入完了**に移した（[ADR-010](../adr/010-speed-metric-axis-a-apple.md)）。最初の 1 秒は「聞いています」表示で埋めている。
 
 ### Apple の API でできないこと
 
-**語彙バイアス（辞書をモデルに教える）の公開 API が存在しない。**
+**語彙を渡す口はあるが、`SpeechTranscriber` には効かない（[ADR-030](../adr/030-apple-vocabulary-hints-not-adopted.md)）。**
 
-`Speech` framework のドキュメントを調べた範囲では、認識前に単語リストを渡して優先させる仕組みが見つからなかった。
+`AnalysisContext.contextualStrings` は渡せるが、実発話 100 本で出力を 1 文字も変えなかった。
+カスタム言語モデル（`SFCustomLanguageModelData`）は `DictationTranscriber` にしか載らず、その `DictationTranscriber` は CER が 15 ポイント悪い。
 そのため「末尾」が「松尾」になる、「形態素解析」が「携帯素解析」になる、といった誤りは
 **認識後のテキストを置換する**しか手がない（[05 テキスト後処理](05-text-postprocessing.md)の L2）。
 
@@ -119,7 +120,7 @@ M0 の測定ハーネス（`vox-m0`）には Apple と Nemotron の両方が実�
 **入れない（[ADR-018](../adr/018-no-engine-switch.md)）。** 以下は検討の記録で、着手の予定ではない。
 
 **本当の価値は「辞書がデコード段で効くモデルを試せること」**にある。認識後の置換（[05](05-text-postprocessing.md) の L2）より原理的に強い。
-Apple は語彙バイアスの API を持たないので、Apple のままではこの道が閉じている。
+Apple の語彙指定は `SpeechTranscriber` に効かないので（[ADR-030](../adr/030-apple-vocabulary-hints-not-adopted.md)）、Apple のままではこの道が閉じている。
 
 現状は `SpeechLane` が Apple に直結していて、差し替え可能な境界になっていない。
 やるなら `SpeechEngine` プロトコル（`start` / `feed` / `finalize` / `results`）を切り出し、Apple と Nemotron の 2 実装を置く。
