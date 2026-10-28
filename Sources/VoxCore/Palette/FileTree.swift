@@ -179,12 +179,12 @@ public struct FileTree: Sendable {
     }
 
     func sortedFiles() -> [IndexedFile] {
-      files.sorted { left, right in
-        let leftName = left.path.split(separator: "/").last.map(String.init) ?? left.path
-        let rightName = right.path.split(separator: "/").last.map(String.init) ?? right.path
-        if leftName != rightName { return leftName < rightName }
-        return left.path < right.path
-      }
+      files.map { file in
+        (file: file, name: file.path.split(separator: "/").last.map(String.init) ?? file.path)
+      }.sorted { left, right in
+        if left.name != right.name { return left.name < right.name }
+        return left.file.path < right.file.path
+      }.map(\.file)
     }
   }
 }

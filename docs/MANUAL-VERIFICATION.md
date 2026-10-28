@@ -410,6 +410,15 @@
 | **期待結果** | 押すたびに別 worktree → 最近使ったフォルダの順で検索対象が切り替わり、一周すると押し始めたフォルダに戻る。パスは挿入されない。検索中でも同じ順で巡る。HUD のフォーカス移動（`Tab`）や `Enter` の挙動は変わらない |
 | **自動化済み** | `swift test --filter "TargetCycleTests\|TargetCycleKeyTests"`（輪の順と一周、キーの見分け、選び直した後の写し直し）。`⌘]` が実際にパネルへ届くかだけが手動対象 |
 
+### PAL-15 表示切り替え後も現在の検索語と索引を使う
+
+| 項目 | 内容 |
+|---|---|
+| **前提** | Changes と Tree を切り替えられる状態 |
+| **手順** | 検索語を変えて表示を切り替える。Changes またはフォルダ選択中に索引を差し替え、その後 Tree を表示する |
+| **期待結果** | 現在の検索語に一致する行が並び、古い索引のファイルが残らない。選択も現在の行を指す |
+| **自動化済み** | `IndexSwapTests.viewSwitchUsesTheCurrentQuery`、`IndexSwapTests.treeFollowsIndexUpdatesWhileHidden` |
+
 ## ATT — 画像の添付
 
 ### ATT-01 スクリーンショットを貼るとパスが本文に入る

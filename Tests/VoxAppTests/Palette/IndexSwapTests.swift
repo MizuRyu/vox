@@ -9,6 +9,38 @@ import VoxCore
 @MainActor
 @Suite("Palette: 索引の差し替え")
 struct IndexSwapTests {
+  @Test("ChangesとTreeを切り替えても現在のクエリで絞られる")
+  func viewSwitchUsesTheCurrentQuery() {
+    let model = model(files: ["Sources/App.swift", "Tests/Settings.swift"])
+    model.query = "App"
+    model.refreshRows()
+    model.setFileViewMode(.tree)
+    #expect(model.treeRows.compactMap(\.file).map(\.path) == ["Sources/App.swift"])
+
+    model.query = "Settings"
+    model.refreshRows()
+    model.setFileViewMode(.changes)
+    #expect(model.rows.map(\.file.path) == ["Tests/Settings.swift"])
+    #expect(model.selectedRow?.file.path == "Tests/Settings.swift")
+  }
+
+  @Test("非表示中に索引が変わってもTreeに古いファイルが残らない")
+  func treeFollowsIndexUpdatesWhileHidden() {
+    let model = model(files: ["Old/App.swift"])
+    model.setFileViewMode(.tree)
+    model.setFileViewMode(.changes)
+    setIndex(model, files: ["New/Settings.swift"])
+    model.setFileViewMode(.tree)
+    #expect(model.treeRows.map(\.path) == ["New"])
+
+    model.setPickingFolder(true)
+    setIndex(model, files: ["Latest/Current.swift"])
+    model.setPickingFolder(false)
+    #expect(model.rows.map(\.file.path) == ["Latest/Current.swift"])
+    model.setFileViewMode(.tree)
+    #expect(model.treeRows.map(\.path) == ["Latest"])
+  }
+
   private func model(files: [String]) -> PaletteModel {
     let model = PaletteModel()
     model.resolvingTarget = false

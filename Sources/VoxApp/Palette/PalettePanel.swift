@@ -69,9 +69,9 @@ final class PaletteModel: ObservableObject {
 
   /// 索引の全件。検索のたびにここから絞る。
   var files: [IndexedFile] = [] {
-    didSet { fileTree = FileTree(files: files) }
+    didSet { fileTree = nil }
   }
-  private var fileTree = FileTree(files: [])
+  private var fileTree: FileTree?
   private var expandedDirectories = Set<String>()
 
   /// Enter（`fileNameOnly` は ⌥Enter）。
@@ -185,8 +185,16 @@ final class PaletteModel: ObservableObject {
   }
 
   func refreshRows() {
-    rows = FileIndex.rows(query: query, in: files)
-    refreshTreeRows()
+    guard !isPickingFolder else {
+      clampSelection()
+      return
+    }
+    if fileViewMode == .tree {
+      refreshTreeRows()
+    } else {
+      rows = FileIndex.rows(query: query, in: files)
+      clampSelection()
+    }
   }
 
   /// T38-b。索引を入れ替える（常駐索引を先に出し、読み直した索引で差し替える）。
@@ -222,7 +230,7 @@ final class PaletteModel: ObservableObject {
     guard fileViewMode != mode else { return }
     fileViewMode = mode
     selection = defaultSelection
-    clampSelection()
+    refreshRows()
     preview = nil
   }
 
@@ -243,12 +251,14 @@ final class PaletteModel: ObservableObject {
   func resetFileView() {
     fileViewMode = .changes
     expandedDirectories.removeAll()
-    fileTree = FileTree(files: [])
+    fileTree = nil
     treeRows = []
   }
 
   private func refreshTreeRows(preservingID: String? = nil) {
-    treeRows = fileTree.rows(query: query, expandedDirectories: expandedDirectories)
+    let tree = fileTree ?? FileTree(files: files)
+    fileTree = tree
+    treeRows = tree.rows(query: query, expandedDirectories: expandedDirectories)
     if let preservingID, let index = treeRows.firstIndex(where: { $0.id == preservingID }) {
       selection = index
     }
