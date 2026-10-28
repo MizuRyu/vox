@@ -15,13 +15,19 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    # semgrep だけ、動いていた nixpkgs に rev で固定する。nixpkgs-unstable の semgrep 1.180 は
+    # mcp 2.x（FastMCP → MCPServer に改名）と組み合わさり、import で落ちてビルドできない。
+    # 撤去条件: 次が成功したら、この input と semgrepPkgs を消して pkgs.semgrep に戻す。
+    #   nix build --no-link github:NixOS/nixpkgs/nixpkgs-unstable#legacyPackages.aarch64-darwin.semgrep
+    nixpkgs-semgrep.url = "github:NixOS/nixpkgs/afb4584a80bbf779ce0f691509ff902d188c2b3d";
   };
 
-  outputs = { self, nixpkgs }:
+  outputs = { self, nixpkgs, nixpkgs-semgrep }:
     let
       # 決定 1 により macOS 専用。他システムは意図的に定義しない。
       system = "aarch64-darwin";
       pkgs = nixpkgs.legacyPackages.${system};
+      semgrepPkgs = nixpkgs-semgrep.legacyPackages.${system};
 
       # fsspec の test_expiry が時刻依存で不安定 (assert が μ 秒差で落ちる) なため
       # チェックを外す。fsspec は huggingface-hub の依存で、JSUT の取得
@@ -63,7 +69,7 @@
           pkgs.fd
           pkgs.ripgrep
           pkgs.gitleaks
-          pkgs.semgrep
+          semgrepPkgs.semgrep
           pkgs.lefthook
           pkgs.swiftlint
           pkgs.shellcheck
