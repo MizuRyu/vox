@@ -6,9 +6,52 @@ import Foundation
 import Testing
 @testable import VoxApp
 
+private final class ClipboardReadProbe: NSObject, NSPasteboardTypeOwner, @unchecked Sendable {
+  private let lock = NSLock()
+  private var calls = 0
+  let data = Data(repeating: 65, count: 1024)
+  var readCount: Int { lock.withLock { calls } }
+
+  func pasteboard(_ sender: NSPasteboard, provideDataForType type: NSPasteboard.PasteboardType) {
+    lock.withLock { calls += 1 }
+    sender.setData(data, forType: type)
+  }
+}
+
 @MainActor
 @Suite("Injection: 貼り付け後のクリップボード")
 struct ClipboardSettleTests {
+  @Test("本文を残す回は以前のクリップボードのデータを読み出さない")
+  func keepingDoesNotReadPreviousData() {
+    withPasteboard { pasteboard in
+      let owner = ClipboardReadProbe()
+      pasteboard.declareTypes([.png], owner: owner)
+      let injector = Injector(pasteboard: pasteboard)
+      var preparation = Injector.PostPreparation()
+      injector.prepareClipboard(text: "合成の本文", keepTextOnClipboard: true, into: &preparation)
+      #expect(owner.readCount == 0)
+      #expect(preparation.saved.isEmpty)
+      #expect(pasteboard.string(forType: .string) == "合成の本文")
+    }
+  }
+
+  @Test("元に戻す回は以前のクリップボードを退避して復元できる")
+  func restoringReadsAndPreservesPreviousData() throws {
+    try withPasteboard { pasteboard in
+      let owner = ClipboardReadProbe()
+      pasteboard.declareTypes([.png], owner: owner)
+      let injector = Injector(pasteboard: pasteboard)
+      var preparation = Injector.PostPreparation()
+      injector.prepareClipboard(text: "合成の本文", keepTextOnClipboard: false, into: &preparation)
+      #expect(owner.readCount == 1)
+      let changeCount = try #require(preparation.changeCount)
+      Injector.settle(
+        .restore(preparation.saved), on: pasteboard, changeCount: changeCount,
+        expectedCharacters: 5, delayMilliseconds: 0)
+      #expect(pasteboard.data(forType: .png) == owner.data)
+    }
+  }
+
   private func withPasteboard(_ body: (NSPasteboard) throws -> Void) rethrows {
     let pasteboard = NSPasteboard(name: .init("vox-settle-\(UUID().uuidString)"))
     defer { pasteboard.releaseGlobally() }

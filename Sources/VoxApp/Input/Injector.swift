@@ -128,7 +128,8 @@ final class Injector: NSObject, NSPasteboardTypeOwner, @unchecked Sendable {
       waitForModifierRelease: { modifierWait = await Self.waitForModifierRelease() },
       prepareToPost: {
         preparation = self.preparePost(
-          text: text, target: target, autoEnterEnabled: autoEnterEnabled)
+          text: text, target: target, autoEnterEnabled: autoEnterEnabled,
+          keepTextOnClipboard: keepTextOnClipboard)
       },
       postEvent: {
         guard let down = preparation.down, let up = preparation.up else { return }
@@ -144,11 +145,8 @@ final class Injector: NSObject, NSPasteboardTypeOwner, @unchecked Sendable {
         preparation: preparation, modifierWait: modifierWait)
     }
     guard let pasteboard = preparation.pasteboard, let changeCount = preparation.changeCount else {
-      return Self.failure(text: text, error: preparation.error ?? "cg_event_creation_failed")
-    }
-    if let preparationError = preparation.error {
-      Self.restore(preparation.saved, to: pasteboard, expectedChangeCount: changeCount)
-      return Self.failure(text: text, error: preparationError, modifierWait: modifierWait)
+      return Self.failure(
+        text: text, error: preparation.error ?? "cg_event_creation_failed", modifierWait: modifierWait)
     }
     let postedMilliseconds = voxNowMilliseconds()
     voxLog(
@@ -200,7 +198,7 @@ final class Injector: NSObject, NSPasteboardTypeOwner, @unchecked Sendable {
       pasteVerified: autoEnter.isVerifiedInsertion, error: nil, autoEnterResult: autoEnter)
   }
 
-  /// promise を置いて Cmd+V のイベントを作るまでの状態。失敗は `error` に残して呼び出し側が判断する。
+  /// Cmd+V のイベントと pasteboard の準備状態。失敗は `error` に残して呼び出し側が判断する。
   struct PostPreparation {
     var pasteboard: NSPasteboard?
     var saved: [NSPasteboardItem] = []
@@ -214,7 +212,7 @@ final class Injector: NSObject, NSPasteboardTypeOwner, @unchecked Sendable {
 
   @MainActor
   private func preparePost(
-    text: String, target: CapturedInjectionTarget, autoEnterEnabled: Bool
+    text: String, target: CapturedInjectionTarget, autoEnterEnabled: Bool, keepTextOnClipboard: Bool
   ) -> PostPreparation {
     var preparation = PostPreparation()
     if autoEnterEnabled,
@@ -222,16 +220,6 @@ final class Injector: NSObject, NSPasteboardTypeOwner, @unchecked Sendable {
       baseline == AccessibleInput.snapshot(target.focusedElement) {
       preparation.autoEnterPlan = AutoEnterPlan(before: baseline, insertedText: text)
     }
-    let currentPasteboard = generalPasteboard
-    preparation.pasteboard = currentPasteboard
-    preparation.saved = Self.snapshot(currentPasteboard)
-    lock.withLock {
-      pendingText = text
-      receiptMilliseconds = nil
-    }
-    let ownedCount = currentPasteboard.declareTypes([.string, Self.concealedType], owner: self)
-    preparation.changeCount = ownedCount
-    lock.withLock { ownedChangeCount = ownedCount }
     guard
       let source = CGEventSource(stateID: .privateState)
         ?? CGEventSource(stateID: .hidSystemState)
@@ -245,8 +233,24 @@ final class Injector: NSObject, NSPasteboardTypeOwner, @unchecked Sendable {
     preparation.up = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false)
     if preparation.down == nil || preparation.up == nil {
       preparation.error = "cg_event_creation_failed"
+      return preparation
     }
+    prepareClipboard(text: text, keepTextOnClipboard: keepTextOnClipboard, into: &preparation)
     return preparation
+  }
+
+  /// イベントの準備後に本文を置く。元の中身を戻す回だけ、そのデータを読み出す。
+  @MainActor
+  func prepareClipboard(text: String, keepTextOnClipboard: Bool, into preparation: inout PostPreparation) {
+    preparation.pasteboard = generalPasteboard
+    preparation.saved = keepTextOnClipboard ? [] : Self.snapshot(generalPasteboard)
+    lock.withLock {
+      pendingText = text
+      receiptMilliseconds = nil
+    }
+    let ownedCount = generalPasteboard.declareTypes([.string, Self.concealedType], owner: self)
+    preparation.changeCount = ownedCount
+    lock.withLock { ownedChangeCount = ownedCount }
   }
 
   @MainActor

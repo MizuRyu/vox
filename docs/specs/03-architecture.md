@@ -179,6 +179,9 @@ VoiceInk は「単語を正規化して 3 回一致したら確定」する `Wor
 2. `pasteboard:provideDataForType:` コールバックを「消費者が実際に読んだ受領証」として使う
 3. 受領証が途絶えてから `changeCount` ガード付きで元クリップボードを復元。設定「確定した本文をクリップボードに残す」（`keep_text_on_clipboard`、既定オン）の回は、復元の代わりに同じ時点・同じ条件で本文を印なしの実データに置き直す（[ADR-027](../adr/027-keep-text-on-clipboard.md)）
 
+Cmd+V のキーイベントを作成してから本文の promise を置く。元のクリップボードの全形式を退避するのは復元する回だけで、
+本文を残す回は以前のデータを読み出さない。イベントを作れなかった回はクリップボードを変更しない。
+
 合わせて最初から入れるもの:
 
 - **V の keycode を `TISCopyCurrentKeyboardLayoutInputSource` + `UCKeyTranslate` で解決** (日本語配列・非 QWERTY 対策)
