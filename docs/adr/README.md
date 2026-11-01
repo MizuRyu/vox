@@ -47,3 +47,4 @@
 | [031](031-body-transcriber-without-fast-results.md) | 本文は `.fastResults` を付けない 2 つ目の認識器から取り、表示用の認識器と同じ analyzer に載せる | 廃止 | 2026-10-28 |
 | [032](032-switchable-haas-and-apple.md) | Haas Q4 を既定にし、Apple と認識部分を切り替える | 承認 | 2026-11-01 |
 | [033](033-speech-insertion-at-caret.md) | 新しい音声をカーソル位置から挿入する | 承認 | 2026-11-01 |
+| [034](034-haas-hot-standby.md) | Haasを先読みし、録音の間もモデルを保持する | 承認 | 2026-11-02 |

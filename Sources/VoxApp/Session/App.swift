@@ -117,7 +117,7 @@ final class VoxController {
   func enableHotkeys() throws {
     guard !isShuttingDown else { return }
     try hotkeys.start()
-    lane.verifyInstalledSpeechFiles(speechEngine: settings.speechEngine)
+    settings.enableStandby(using: lane)
   }
 
   func disableHotkeysWhenIdle() {
@@ -192,7 +192,7 @@ final class VoxController {
     indexes.stop()
     sigilNoticeTask?.cancel()
     hotkeys.stop()
-    await lane.abort()
+    await lane.shutdown()
     close()
     // ADR-026。確定直後の JSON と、破棄した回の削除を書き終えてから終了を許す。
     await RecordingWriter.drain()
@@ -364,7 +364,7 @@ final class VoxController {
           return
         }
         if recording.cancelRequested || !proceed(recording) {
-          await lane.abort()
+          await lane.abort(keepHaasPrepared: recording.cancelRequested)
           close()
           return
         }
@@ -374,7 +374,7 @@ final class VoxController {
         hud.model.isRecording = true
         startLevelUpdates()
       } catch {
-        await lane.abort()
+        await lane.abort(keepHaasPrepared: recording.cancelRequested)
         guard proceed(recording) else { close(); return }
         if recording.cancelRequested || error is CancellationError { close(); return }
         let message = String(describing: error)
@@ -398,7 +398,7 @@ final class VoxController {
     stopLevelUpdates()
     voxLog("discarded")
     recording.task = Task { @MainActor in
-      await lane.abort()
+      await lane.abort(keepHaasPrepared: true)
       // 破棄は「1 回の入力」ではないので JSONL にも履歴にも書かない（軸 A の母数を汚さない）。
       recording.metrics = nil
       close()

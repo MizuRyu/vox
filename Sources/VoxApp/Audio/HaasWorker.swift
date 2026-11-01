@@ -3,22 +3,23 @@ import Foundation
 import VoxCore
 
 protocol HaasTranscribing: Sendable {
-  func prepare(keywords: String, onProgress: @Sendable (SpeechPreparationStage) async -> Void) async throws
+  func prepare(keywords: String, cachedOnly: Bool, onProgress: @Sendable (SpeechPreparationStage) async -> Void) async throws
   func transcribe(_ pcm: Data, windowStartFrame: Int, isFinal: Bool) async throws -> String
   func shutdown() async
   func speechEndFrame() async -> Int?
   func setKeywords(_ keywords: String) async
+  func resetSession() async
 }
 
 extension HaasTranscribing {
-  func prepare(keywords: String = "") async throws {
-    try await prepare(keywords: keywords, onProgress: { _ in })
+  func prepare(keywords: String = "", cachedOnly: Bool = false) async throws {
+    try await prepare(keywords: keywords, cachedOnly: cachedOnly, onProgress: { _ in })
   }
 }
 
 /// 固定版 speech.cpp の JSONL。推論・パイプ I/O・モデルの検証は MainActor の外。
 actor HaasWorker: HaasTranscribing {
-  private let prepareAssets: @Sendable (@Sendable (SpeechPreparationStage) async -> Void) async throws -> HaasAssets
+  private let prepareAssets: @Sendable (Bool, @Sendable (SpeechPreparationStage) async -> Void) async throws -> HaasAssets
   private let startupTimeout: Duration
   private let requestTimeout: Duration
   private let makeVAD: @Sendable (HaasAssets) throws -> HaasVAD?
@@ -33,9 +34,9 @@ actor HaasWorker: HaasTranscribing {
   private var sequence = 0
 
   init(
-    prepareAssets: @escaping @Sendable (@Sendable (SpeechPreparationStage) async -> Void) async throws -> HaasAssets = { progress in
+    prepareAssets: @escaping @Sendable (Bool, @Sendable (SpeechPreparationStage) async -> Void) async throws -> HaasAssets = { cachedOnly, progress in
       let assets = HaasAssets.standard
-      try await assets.prepare(onProgress: progress)
+      try await assets.prepare(allowDownload: !cachedOnly, onProgress: progress)
       return assets
     },
     startupTimeout: Duration = .seconds(60), requestTimeout: Duration = .seconds(5),
@@ -49,12 +50,12 @@ actor HaasWorker: HaasTranscribing {
     self.makeVAD = makeVAD
   }
 
-  func prepare(keywords: String, onProgress: @Sendable (SpeechPreparationStage) async -> Void) async throws {
+  func prepare(
+    keywords: String, cachedOnly: Bool = false, onProgress: @Sendable (SpeechPreparationStage) async -> Void
+  ) async throws {
     let started = voxNowMilliseconds()
     if process?.isRunning == true {
-      vad?.reset()
-      previousText = ""
-      previousAudio = nil
+      resetSession()
       self.keywords = keywords
       voxLog("haas_prepared reused=true total_ms=\(Int(voxNowMilliseconds() - started))")
       return
@@ -62,7 +63,7 @@ actor HaasWorker: HaasTranscribing {
     shutdown()
     self.keywords = keywords
     let assetsStarted = voxNowMilliseconds()
-    let assets = try await prepareAssets(onProgress)
+    let assets = try await prepareAssets(cachedOnly, onProgress)
     let assetsReady = voxNowMilliseconds()
     await onProgress(.loadingModel)
     vad = try makeVAD(assets)
@@ -150,6 +151,13 @@ actor HaasWorker: HaasTranscribing {
 
   func setKeywords(_ keywords: String) { self.keywords = keywords }
 
+  func resetSession() {
+    vad?.reset()
+    previousText = ""
+    previousAudio = nil
+    keywords = ""
+  }
+
   func shutdown() {
     try? input?.close()
     input = nil
@@ -164,10 +172,8 @@ actor HaasWorker: HaasTranscribing {
       for _ in 0..<100 where process.isRunning { usleep(2_000) }
     }
     process = nil
+    resetSession()
     vad = nil
-    previousText = ""
-    previousAudio = nil
-    keywords = ""
     received.removeAll(keepingCapacity: false)
   }
 

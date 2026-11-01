@@ -23,7 +23,9 @@ final class HaasSpeechRecognizer: SpeechRecognizer {
   private(set) var pauseCommitCount = 0
   private let worker: any HaasTranscribing
   private var run: HaasRecognitionRun?
-  private var idleTask: Task<Void, Never>?
+  private var standbyTask: Task<Void, Never>?
+  private var standbyStage: SpeechPreparationStage?
+  private var standbyProgress: (@MainActor (SpeechPreparationStage) -> Void)?
   var isSegmentFinalizePending: Bool {
     guard let run else { return false }
     return run.commitThrough > run.audio.startFrame
@@ -31,17 +33,49 @@ final class HaasSpeechRecognizer: SpeechRecognizer {
 
   init(worker: any HaasTranscribing = HaasWorker()) { self.worker = worker }
 
+  @discardableResult
+  func prewarm() -> Task<Void, Never>? {
+    guard run == nil else { return nil }
+    if let standbyTask { return standbyTask }
+    standbyStage = .checkingFiles
+    standbyTask = Task { [weak self, worker] in
+      defer { self?.standbyStage = nil }
+      do {
+        try await worker.prepare(keywords: "", cachedOnly: true) { [weak self] stage in
+          await self?.reportStandbyProgress(stage)
+        }
+      } catch is CancellationError {
+        return
+      } catch {
+        voxLog("haas_standby ready=false")
+      }
+    }
+    return standbyTask
+  }
+
+  private func reportStandbyProgress(_ stage: SpeechPreparationStage) {
+    standbyStage = stage
+    standbyProgress?(stage)
+  }
+
+  private func awaitStandby(onPreparation: (@MainActor (SpeechPreparationStage) -> Void)?) async throws {
+    let pending = standbyTask
+    standbyProgress = onPreparation
+    if let standbyStage { onPreparation?(standbyStage) }
+    await withTaskCancellationHandler {
+      await pending?.value
+    } onCancel: { pending?.cancel() }
+    standbyTask = nil
+    standbyProgress = nil
+    try Task.checkCancellation()
+  }
+
   func start(onPreparation: (@MainActor (SpeechPreparationStage) -> Void)?) async throws -> AVAudioFormat {
-    idleTask?.cancel()
-    await idleTask?.value
-    idleTask = nil
     pauseCommitCount = 0
     let vocabulary = vocabularyTask
     vocabularyTask = nil
     try await withTaskCancellationHandler {
-      async let prepared: Void = worker.prepare(keywords: keywords) { stage in
-        await onPreparation?(stage)
-      }
+      async let prepared: Void = prepareForRecording(onPreparation: onPreparation)
       if let vocabulary { keywords = await vocabulary.value }
       try Task.checkCancellation()
       try await prepared
@@ -53,6 +87,13 @@ final class HaasSpeechRecognizer: SpeechRecognizer {
     else { throw SpeechLaneError.noCompatibleAudioFormat }
     run = HaasRecognitionRun()
     return format
+  }
+
+  private func prepareForRecording(onPreparation: (@MainActor (SpeechPreparationStage) -> Void)?) async throws {
+    try await awaitStandby(onPreparation: onPreparation)
+    try await worker.prepare(keywords: keywords, cachedOnly: false) { stage in
+      await onPreparation?(stage)
+    }
   }
 
   func append(_ buffer: AVAudioPCMBuffer) throws {
@@ -89,22 +130,29 @@ final class HaasSpeechRecognizer: SpeechRecognizer {
     await run.inference?.value
     if let failure = run.failure { throw failure }
     self.run = nil
-    // 次の録音は読み込み済みのモデルを使い、使わない間のメモリは解放する。
-    idleTask = Task { [worker] in
-      do { try await Task.sleep(for: .seconds(60)) } catch { return }
-      await worker.shutdown()
-    }
+    await worker.resetSession()
+    keywords = ""
   }
 
   func abort() async {
-    idleTask?.cancel()
-    await idleTask?.value
-    idleTask = nil
+    await discard()
+    await worker.shutdown()
+  }
+
+  func discard() async {
+    standbyTask?.cancel()
+    await standbyTask?.value
+    standbyTask = nil
+    standbyStage = nil
+    standbyProgress = nil
     let previous = run
     run = nil
     previous?.inference?.cancel()
     await previous?.inference?.value
-    await worker.shutdown()
+    await worker.resetSession()
+    keywords = ""
+    vocabularyTask?.cancel()
+    vocabularyTask = nil
   }
 
   private func schedule(_ run: HaasRecognitionRun, force: Bool = false) {

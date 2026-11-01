@@ -9,6 +9,8 @@ final class SettingsCoordinator {
   private let hud: HudPanel
   private let hotkeys: HotkeyMonitor
   private let palette: PaletteCoordinator
+  private weak var lane: SpeechLane?
+  private var phase = SettingsPresentationState.Phase.idle
 
   init(
     controller: SettingsController, hud: HudPanel, hotkeys: HotkeyMonitor,
@@ -28,6 +30,7 @@ final class SettingsCoordinator {
       hotkeys.toggleChord = configuration.toggle
       hotkeys.paletteChord = configuration.palette
       hud.model.toggleShortcutLabel = configuration.toggle.label
+      updateStandby()
     }
     controller.onClose = { [weak self] in
       guard let self else { return }
@@ -58,5 +61,19 @@ final class SettingsCoordinator {
   func beginSession() { controller.beginSession() }
   func endSession() { controller.endSession() }
   func hide() { controller.hide() }
-  func transition(to phase: SettingsPresentationState.Phase) { controller.transition(to: phase) }
+  func enableStandby(using lane: SpeechLane) {
+    self.lane = lane
+    updateStandby()
+  }
+
+  func transition(to phase: SettingsPresentationState.Phase) {
+    self.phase = phase
+    controller.transition(to: phase)
+    updateStandby()
+  }
+
+  private func updateStandby() {
+    guard phase == .idle else { return }
+    lane?.setStandbyEngine(speechEngine)
+  }
 }

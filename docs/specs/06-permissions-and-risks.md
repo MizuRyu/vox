@@ -33,7 +33,7 @@
 | VAD の無音判定が日本語に長すぎる | 確定レーンの投入が遅れる | sherpa-onnx の既定は trailing silence 2.4s / 1.2s。日本語の「間」に対して長い可能性が高い |
 | ANE の競合 (他アプリが占有) | レイテンシ悪化 | CPU / GPU フォールバックの計測を取る |
 | 二段レーンのちらつき | 体験が不快になる | `committed` を追記専用にする契約（[03 アーキテクチャ](03-architecture.md)）で原理的に抑える。日本語は漢字ごと差し替わるため英語より目立つ可能性がある |
-| 常駐メモリ | R8 に反する | 参考実測: Parakeet 系 peak RSS 115〜131MB / Nemotron 141〜142MB / Whisper turbo 274MB。Apple の認識モデルは OS 側のメモリを使う。Haas Q4 の比較実験はワーカー約473MiBで、使用中と確定後60秒までは待機300MBの目標を超える。未使用60秒で解放する（ADR-032） |
+| 常駐メモリ | R8 に反する | 参考実測: Parakeet 系 peak RSS 115〜131MB / Nemotron 141〜142MB / Whisper turbo 274MB。Apple の認識モデルは OS 側のメモリを使う。Haas Q4 の比較実験はワーカー約473MiB。Haas選択中は待機中もモデルを保持し、待機300MBの目標を超える。繰り返しの起動待ちを減らすための判断（[ADR-034](../adr/034-haas-hot-standby.md)）。Appleへの切り替えとVox終了で解放する |
 
 ## データの扱い
 

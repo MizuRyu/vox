@@ -5,6 +5,15 @@ import Testing
 
 @Suite("Haas: 検証済みファイルの再利用")
 struct HaasAssetVerifierTests {
+  @Test("先読みは未取得のモデルをダウンロードしない")
+  func cachedPreparationDoesNotDownload() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("vox-cached-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let assets = HaasAssets(root: root)
+    await #expect(throws: HaasError.invalidAsset) { try await assets.prepare(allowDownload: false) }
+    #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).isEmpty)
+  }
+
   @Test("検証を再利用しても、同じサイズと更新日時に戻した改変を見逃さない")
   func changedContentsAreRejected() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("vox-asset-\(UUID().uuidString)")

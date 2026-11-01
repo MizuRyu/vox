@@ -57,7 +57,9 @@ struct HaasAssets: Sendable {
     Self(root: RecordingStore.standard.root.deletingLastPathComponent().appendingPathComponent("models/haas-v1-q4"))
   }
 
-  func prepare(onProgress: @Sendable (SpeechPreparationStage) async -> Void = { _ in }) async throws {
+  func prepare(
+    allowDownload: Bool = true, onProgress: @Sendable (SpeechPreparationStage) async -> Void = { _ in }
+  ) async throws {
     await onProgress(.checkingFiles)
     try FileManager.default.createDirectory(
       at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
@@ -66,28 +68,22 @@ struct HaasAssets: Sendable {
       try await !Self.verifier.matches(library, sha256: Self.librarySHA256)
     } else { false }
     if runtimeMissing || libraryMissing {
+      guard allowDownload else { throw HaasError.invalidAsset }
       await onProgress(.downloading)
       try await installRuntime()
     }
     guard FileManager.default.fileExists(atPath: library.path) else { throw HaasError.invalidAsset }
     if try await !Self.verifier.matches(model, sha256: Self.modelSHA256) {
+      guard allowDownload else { throw HaasError.invalidAsset }
       await onProgress(.downloading)
       try await download(Self.modelURL, to: model, sha256: Self.modelSHA256)
     }
     if try await !Self.verifier.matches(vadModel, sha256: Self.vadSHA256) {
+      guard allowDownload else { throw HaasError.invalidAsset }
       await onProgress(.downloading)
       try await download(Self.vadURL, to: vadModel, sha256: Self.vadSHA256)
     }
     try Task.checkCancellation()
-  }
-
-  func verifyInstalledFiles() async throws {
-    let files = [(executable, Self.runtimeSHA256), (model, Self.modelSHA256), (vadModel, Self.vadSHA256)]
-      + (bundledLibrary == nil ? [(library, Self.librarySHA256)] : [])
-    for (file, digest) in files {
-      try Task.checkCancellation()
-      guard try await Self.verifier.matches(file, sha256: digest) else { return }
-    }
   }
 
   static func matches(_ file: URL, sha256: String) throws -> Bool {

@@ -9,29 +9,40 @@ private actor StubHaasWorker: HaasTranscribing {
   var finalRequests: [Bool] = []
   var stopped = false
   var currentKeywords = ""
+  var modelLoads = 0
+  private var prepared = false
   let fails: Bool
   let delay: Duration
   let prepareDelay: Duration
   let emptyResult: Bool
   let speechEnd: Int?
+  let cachedAssetsMissing: Bool
 
   init(
     fails: Bool = false, delay: Duration = .zero, prepareDelay: Duration = .zero, emptyResult: Bool = false,
-    speechEnd: Int? = nil
+    speechEnd: Int? = nil, cachedAssetsMissing: Bool = false
   ) {
     self.fails = fails
     self.delay = delay
     self.prepareDelay = prepareDelay
     self.emptyResult = emptyResult
     self.speechEnd = speechEnd
+    self.cachedAssetsMissing = cachedAssetsMissing
   }
 
-  func prepare(keywords: String, onProgress: @Sendable (SpeechPreparationStage) async -> Void) async throws {
-    await onProgress(.loadingModel)
-    try await Task.sleep(for: prepareDelay)
+  func prepare(keywords: String, cachedOnly: Bool, onProgress: @Sendable (SpeechPreparationStage) async -> Void) async throws {
+    if cachedOnly && cachedAssetsMissing { throw HaasError.invalidAsset }
+    if !prepared {
+      await onProgress(.loadingModel)
+      try await Task.sleep(for: prepareDelay)
+      modelLoads += 1
+      prepared = true
+    }
     stopped = false
+    currentKeywords = keywords
   }
-  func shutdown() { stopped = true }
+  func shutdown() { stopped = true; prepared = false }
+  func resetSession() { currentKeywords = "" }
   func speechEndFrame() -> Int? { speechEnd }
   func setKeywords(_ keywords: String) { currentKeywords = keywords }
 
@@ -47,6 +58,151 @@ private actor StubHaasWorker: HaasTranscribing {
 @Suite("Haas: 認識のライフサイクル", .serialized)
 @MainActor
 struct HaasRecognizerTests {
+  @Test("先読みで取得済みモデルが見つからなくても、通常の録音準備で取得できる")
+  func missingCachedAssetsDoNotBlockRecording() async throws {
+    let worker = StubHaasWorker(cachedAssetsMissing: true)
+    let recognizer = HaasSpeechRecognizer(worker: worker)
+    await recognizer.prewarm()?.value
+    #expect(await worker.modelLoads == 0)
+    _ = try await recognizer.start(onPreparation: nil)
+    #expect(await worker.modelLoads == 1)
+    await recognizer.abort()
+  }
+
+  @Test("先読みの起動直後に終了しても、あとからモデルを起動しない")
+  func shutdownBeforeStandbyTaskStarts() async throws {
+    let worker = StubHaasWorker(prepareDelay: .seconds(3))
+    let lane = SpeechLane(haasRecognizer: HaasSpeechRecognizer(worker: worker))
+    lane.setStandbyEngine(.haas)
+    await lane.shutdown()
+    lane.setStandbyEngine(.haas)
+    try await Task.sleep(for: .milliseconds(20))
+    #expect(await worker.modelLoads == 0)
+    #expect(await worker.stopped)
+  }
+
+  @Test("Appleへの切り替えと終了では待機モデルを解放する", arguments: [true, false])
+  func standbyEndsWithEngineOrApp(switchToApple: Bool) async throws {
+    let worker = StubHaasWorker()
+    let lane = SpeechLane(haasRecognizer: HaasSpeechRecognizer(worker: worker))
+    lane.setStandbyEngine(.haas)
+    for _ in 0..<100 {
+      if await worker.modelLoads == 1 { break }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    #expect(await worker.modelLoads == 1)
+    if switchToApple { lane.setStandbyEngine(.apple) } else { await lane.shutdown() }
+    for _ in 0..<100 {
+      if await worker.stopped { break }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    #expect(await worker.stopped)
+    await lane.shutdown()
+    lane.setStandbyEngine(.haas)
+    try await Task.sleep(for: .milliseconds(20))
+    #expect(await worker.stopped)
+    #expect(await worker.modelLoads == 1)
+  }
+
+  @Test("先読みを待つ録音準備もすぐに取り消せる")
+  func cancelRecordingWhilePrewarming() async throws {
+    let worker = StubHaasWorker(prepareDelay: .seconds(3))
+    let recognizer = HaasSpeechRecognizer(worker: worker)
+    recognizer.prewarm()
+    let start = Task { try await recognizer.start(onPreparation: nil) }
+    try await Task.sleep(for: .milliseconds(20))
+    let cancelled = ContinuousClock.now
+    start.cancel()
+    await #expect(throws: CancellationError.self) { _ = try await start.value }
+    #expect(cancelled.duration(to: .now) < .milliseconds(500))
+    await recognizer.abort()
+    #expect(await worker.stopped)
+  }
+
+  @Test("破棄後もモデルを保持し、処理中だった文字と用語は次回へ渡さない")
+  func discardRetainsOnlyModel() async throws {
+    let worker = StubHaasWorker(delay: .milliseconds(100))
+    let recognizer = HaasSpeechRecognizer(worker: worker)
+    recognizer.keywords = "Haas"
+    var updates: [RecognitionUpdate] = []
+    recognizer.onUpdate = { updates.append($0) }
+    let format = try await recognizer.start(onPreparation: nil)
+    try recognizer.append(audio(16000, format: format))
+    let commit = Task { await recognizer.finalizeSegment(reason: .pause) }
+    try await Task.sleep(for: .milliseconds(10))
+    await recognizer.discard()
+    await commit.value
+    #expect(updates.isEmpty)
+    #expect(await worker.stopped == false)
+    #expect(await worker.currentKeywords.isEmpty)
+    _ = try await recognizer.start(onPreparation: nil)
+    try recognizer.append(audio(4000, format: format))
+    try await recognizer.finish()
+    #expect(updates.map(\.text) == ["音声4000"])
+    #expect(updates.first?.timings.first?.startSeconds == 0)
+    #expect(await worker.modelLoads == 1)
+    await recognizer.abort()
+  }
+
+  @Test("先読み中に開始しても読み込みを重ねず、次回は準備表示を出さない")
+  func prewarmJoinsRecordingStart() async throws {
+    let worker = StubHaasWorker(prepareDelay: .milliseconds(100))
+    let recognizer = HaasSpeechRecognizer(worker: worker)
+    recognizer.prewarm()
+    var stages: [SpeechPreparationStage] = []
+    _ = try await recognizer.start { stages.append($0) }
+    #expect(stages.contains(.loadingModel))
+    #expect(await worker.modelLoads == 1)
+    try await recognizer.finish()
+    stages = []
+    _ = try await recognizer.start { stages.append($0) }
+    #expect(stages.isEmpty)
+    #expect(await worker.modelLoads == 1)
+    await recognizer.abort()
+  }
+
+  @Test("先読み中の終了でモデルを残さず、終了後も起動しない")
+  func shutdownDuringPrewarm() async throws {
+    let worker = StubHaasWorker(prepareDelay: .seconds(3))
+    let recognizer = HaasSpeechRecognizer(worker: worker)
+    recognizer.prewarm()
+    try await Task.sleep(for: .milliseconds(20))
+    let started = ContinuousClock.now
+    await recognizer.abort()
+    #expect(started.duration(to: .now) < .milliseconds(500))
+    #expect(await worker.stopped)
+    #expect(await worker.modelLoads == 0)
+  }
+
+  @Test("先読みが終わっていれば最初の録音でもモデル準備を表示しない")
+  func completedPrewarmDoesNotFlashPreparation() async throws {
+    let worker = StubHaasWorker()
+    let recognizer = HaasSpeechRecognizer(worker: worker)
+    await recognizer.prewarm()?.value
+    var stages: [SpeechPreparationStage] = []
+    _ = try await recognizer.start { stages.append($0) }
+    #expect(stages.isEmpty)
+    #expect(await worker.modelLoads == 1)
+    await recognizer.discard()
+    #expect(await worker.stopped == false)
+    #expect(await worker.currentKeywords.isEmpty)
+    _ = try await recognizer.start(onPreparation: nil)
+    #expect(await worker.modelLoads == 1)
+    await recognizer.abort()
+  }
+
+  @Test("確定後はモデルを残し、録音の用語は待機中に残さない")
+  func finishedSessionClearsKeywords() async throws {
+    let worker = StubHaasWorker()
+    let recognizer = HaasSpeechRecognizer(worker: worker)
+    recognizer.keywords = "Haas"
+    _ = try await recognizer.start(onPreparation: nil)
+    try await recognizer.finish()
+    #expect(await worker.currentKeywords.isEmpty)
+    #expect(await worker.stopped == false)
+    await recognizer.abort()
+  }
+
   @Test("音量床の判定を待たず、VADが示す発話後の無音で淡色を確定する")
   func speechEndpointCommitsPreview() async throws {
     let worker = StubHaasWorker(speechEnd: 8000)

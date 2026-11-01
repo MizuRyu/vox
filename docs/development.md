@@ -102,7 +102,11 @@ VOX_ENGINE_REPLAY_AUDIO="$PWD/z-ai/2026-10-28-speech-streaming-check/input.aiff"
 
 診断ログの`haas_prepared`は、再利用の有無と準備時間を記録する。新規起動では`assets_ms`（取得・SHA256検証）/ `vad_ms` / `worker_ms` / `total_ms`、再利用では`total_ms`を出す。`voxlog.py summary`の`prepare_ms`は`analyzer_start_ms - toggle_on_ms`で算出し、保存形式はschema 7のまま変えない。発話開始後の`first_token_ms`とは分けて見る。
 
-取得済みのモデルだけで準備時間を測る場合は、`VOX_HAAS_STARTUP_PROBE=1 swift test --no-parallel --filter HaasWorkerTests/startupTiming`を使う。ワーカーの新規起動・再利用・終了を3回ずつ行い、マイクとVox本体は起動しない。初回のSHA256検証と、同じアプリの起動中にファイルが変わっていない場合の検証再利用を区別する。初回の検証は起動時の事前検証へ移せるが、その処理時間自体がなくなるわけではない。
+取得済みのモデルだけで準備時間を測る場合は、`VOX_HAAS_STARTUP_PROBE=1 swift test --no-parallel --filter HaasWorkerTests/startupTiming`を使う。ワーカーの新規起動・再利用・終了を3回ずつ行い、マイクとVox本体は起動しない。初回のSHA256検証と、同じアプリの起動中にファイルが変わっていない場合の検証再利用を区別する。初回の検証とモデル読み込みは起動時の先読みへ移るが、その処理時間自体がなくなるわけではない。
+
+ホットスタンバイは`VOX_HAAS_STANDBY_PROBE=1 swift test --no-parallel --filter HaasStandbyTests/standbyTiming`で任意に計測する。取得済みモデルを先読みした後、最初の認識準備と確定後61秒待った後の準備時間を測り、ワーカーが解放されていないことも検査する。`OK: standby_probe`の1行に準備時間と、待機前後のワーカーのRSS（KiB）・`ps`の%CPU・累積CPU時間を出す。累積CPU時間の差は待機中のCPU使用量の目安になる。Vox全体のphysical footprint・電力・マイク初期化を含む開始時間は対象外。
+
+`HaasRecognizerTests`は先読みと録音開始の重複防止、完了後の準備表示抑止、中止、Appleへの切り替え・終了時の解放、破棄後の状態分離を検査する。`HaasAssetVerifierTests.cachedPreparationDoesNotDownload`は先読みで未取得ファイルをダウンロードしないことを検査する。
 
 `HaasAssetVerifierTests`は同サイズ・同更新日時に戻したファイルの改変も拒否することを検査する。`PreparationViewTests`は準備の各段階をライト・ダークでオフスクリーン描画する。`VOX_HUD_PREPARATION_OUTPUT`に一時フォルダを指定すると合成した画面例を保存する。`SigilEscapeTests`は`@`の復元、選択範囲、検索中の音声、ショートカットからの検索、ファイルの確定を検査する。
 

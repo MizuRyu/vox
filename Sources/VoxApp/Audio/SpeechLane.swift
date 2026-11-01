@@ -62,7 +62,7 @@ enum SegmentFinalizeReason: String {
 }
 
 /// トグル ON のたびに `start()`、OFF で `finalizeText()`、破棄で `abort()`。
-/// Apple の analyzer は毎回作り直し、Haas はモデルを短時間再利用する。
+/// Apple の analyzer は毎回作り直し、Haas はモデルを常駐させる。
 @MainActor
 final class SpeechLane {
   static let tapBufferSize: AVAudioFrameCount = 4096
@@ -86,10 +86,14 @@ final class SpeechLane {
   private(set) var finalTimings: [TimedText] = []
   private var run: RecognitionRun?
   private var haasRecognizer: HaasSpeechRecognizer?
-  private var assetVerificationTask: Task<Void, Never>?
+  private var standbyTask: Task<Void, Never>?
+  private var standbyGeneration = 0
+  private var isShuttingDown = false
   private var lifecycle = RecognitionLifecycle()
   private var recognitionGeneration: RecognitionGeneration?
   private var interruption = CaptureInterruption()
+
+  init(haasRecognizer: HaasSpeechRecognizer? = nil) { self.haasRecognizer = haasRecognizer }
 
   var automaticPauseCommitCount: Int { haasRecognizer?.pauseCommitCount ?? 0 }
   /// ADR-020。無音で区切る前に、締める淡色があるかを見る。
@@ -97,11 +101,31 @@ final class SpeechLane {
   /// 締めが走っている間は重ねて頼まない（同じ analyzer に finalize を 2 つ入れない。ADR-007）。
   var isSegmentFinalizePending: Bool { run?.recognizer.isSegmentFinalizePending == true }
 
-  func verifyInstalledSpeechFiles(speechEngine: SpeechEngine) {
-    guard assetVerificationTask == nil, speechEngine == .haas else { return }
-    assetVerificationTask = Task.detached(priority: .utility) {
-      try? await HaasAssets.standard.verifyInstalledFiles()
+  func setStandbyEngine(_ speechEngine: SpeechEngine) {
+    guard !isShuttingDown, run == nil else { return }
+    standbyGeneration += 1
+    let generation = standbyGeneration
+    let previous = standbyTask
+    previous?.cancel()
+    standbyTask = Task { [weak self] in
+      await previous?.value
+      guard let self, !Task.isCancelled, !isShuttingDown else { return }
+      defer { if standbyGeneration == generation { standbyTask = nil } }
+      switch speechEngine {
+      case .apple:
+        await haasRecognizer?.abort()
+        haasRecognizer = nil
+      case .haas:
+        let haas = haasRecognizer ?? HaasSpeechRecognizer()
+        haasRecognizer = haas
+        haas.prewarm()
+      }
     }
+  }
+
+  func shutdown() async {
+    isShuttingDown = true
+    await abort()
   }
 
   /// 戻り値は認識の準備ができた時刻（既存の `analyzer_start_ms`）。
@@ -110,6 +134,8 @@ final class SpeechLane {
     voiceProcessingEnabled: Bool = false, microphoneInput: MicrophoneInput = .automatic,
     recordingWriter: RecordingWriter? = nil, keywords: String = "", vocabularyTask: Task<String, Never>? = nil
   ) async throws -> Double {
+    await standbyTask?.value
+    try Task.checkCancellation()
     let generation = lifecycle.begin()
     recognitionGeneration = generation
     finalTimings = []
@@ -374,16 +400,20 @@ final class SpeechLane {
   }
 
   /// esc による破棄。finalize せずに畳む。
-  func abort() async {
-    assetVerificationTask?.cancel()
-    await assetVerificationTask?.value
+  func abort(keepHaasPrepared: Bool = false) async {
+    standbyTask?.cancel()
+    await standbyTask?.value
     let generation = recognitionGeneration
     guard let run else {
-      await haasRecognizer?.abort()
+      if keepHaasPrepared { await haasRecognizer?.discard() } else { await haasRecognizer?.abort() }
       return
     }
     await stopFeeding(run)
-    await run.recognizer.abort()
+    if keepHaasPrepared, let haas = run.recognizer as? HaasSpeechRecognizer {
+      await haas.discard()
+    } else {
+      await run.recognizer.abort()
+    }
     teardown(run)
     if let generation { lifecycle.abort(generation) }
     recognitionGeneration = nil

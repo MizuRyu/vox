@@ -1,6 +1,7 @@
 # ADR-032: Haas Q4 を既定にし、Apple と認識部分を切り替える
 
 - 状態: **承認**（2026-11-01）
+- 一部置換: モデル解放方針は[ADR-034](034-haas-hot-standby.md)に従う
 - 置換: [ADR-018](018-no-engine-switch.md)。利用者が日常利用で試し、必要なら Apple に戻す判断による
 - 関連: [ADR-020](020-pause-triggered-segment-commit.md)、[ADR-026](026-debug-recording-save.md)、[ADR-031](031-body-transcriber-without-fast-results.md)（廃止）
 

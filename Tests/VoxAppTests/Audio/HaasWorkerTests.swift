@@ -16,7 +16,7 @@ struct HaasWorkerTests {
   func reusedWorkerDoesNotReportPreparation() async throws {
     let assets = try fixture(mode: "ok")
     defer { try? FileManager.default.removeItem(at: assets.root) }
-    let worker = HaasWorker(prepareAssets: { progress in
+    let worker = HaasWorker(prepareAssets: { _, progress in
       await progress(.checkingFiles)
       return assets
     }, makeVAD: { _ in nil })
@@ -68,7 +68,7 @@ struct HaasWorkerTests {
   func sessionKeywords() async throws {
     let assets = try fixture(mode: "ok")
     defer { try? FileManager.default.removeItem(at: assets.root) }
-    let worker = HaasWorker(prepareAssets: { _ in assets }, makeVAD: { _ in nil })
+    let worker = HaasWorker(prepareAssets: { _, _ in assets }, makeVAD: { _ in nil })
     try await worker.prepare(keywords: "Haas\nOrca")
     _ = try await worker.transcribe(Data([0, 0]))
     let file = assets.root.appendingPathComponent("request.json")
@@ -77,7 +77,7 @@ struct HaasWorkerTests {
     _ = try await worker.transcribe(Data([0, 0]), isFinal: true)
     let first = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
     #expect(first["keywords"] as? String == "Haas\nOrca")
-    try await worker.prepare()
+    await worker.resetSession()
     _ = try await worker.transcribe(Data([0, 0]), isFinal: true)
     let second = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
     #expect(second["keywords"] == nil)
@@ -96,7 +96,7 @@ struct HaasWorkerTests {
       atPath: try #require(environment["VOX_VAD_LIBRARY"]), toPath: assets.library.path)
     try FileManager.default.linkItem(
       atPath: try #require(environment["VOX_VAD_MODEL"]), toPath: assets.vadModel.path)
-    let worker = HaasWorker(prepareAssets: { _ in assets })
+    let worker = HaasWorker(prepareAssets: { _, _ in assets })
     try await worker.prepare(keywords: "Haas")
     let files = try FileManager.default.contentsOfDirectory(at: audioRoot, includingPropertiesForKeys: nil)
       .filter {
@@ -171,7 +171,7 @@ struct HaasWorkerTests {
   func successfulRequests() async throws {
     let assets = try fixture(mode: "ok")
     defer { try? FileManager.default.removeItem(at: assets.root) }
-    let worker = HaasWorker(prepareAssets: { _ in assets }, makeVAD: { _ in nil })
+    let worker = HaasWorker(prepareAssets: { _, _ in assets }, makeVAD: { _ in nil })
     try await worker.prepare()
     #expect(try await worker.transcribe(Data([0, 0])) == "試験")
     #expect(try await worker.transcribe(Data([0, 0])) == "試験")
@@ -185,7 +185,7 @@ struct HaasWorkerTests {
     let assets = try fixture(mode: mode)
     defer { try? FileManager.default.removeItem(at: assets.root) }
     let worker = HaasWorker(
-      prepareAssets: { _ in assets }, startupTimeout: .seconds(3), requestTimeout: .milliseconds(100), makeVAD: { _ in nil })
+      prepareAssets: { _, _ in assets }, startupTimeout: .seconds(3), requestTimeout: .milliseconds(100), makeVAD: { _ in nil })
     if mode == "protocol" || mode == "startup" {
       await #expect(throws: HaasError.self) { try await worker.prepare() }
     } else {
@@ -200,7 +200,7 @@ struct HaasWorkerTests {
   func cancelledRequest() async throws {
     let assets = try fixture(mode: "hang")
     defer { try? FileManager.default.removeItem(at: assets.root) }
-    let worker = HaasWorker(prepareAssets: { _ in assets }, makeVAD: { _ in nil })
+    let worker = HaasWorker(prepareAssets: { _, _ in assets }, makeVAD: { _ in nil })
     try await worker.prepare()
     let task = Task { try await worker.transcribe(Data([0, 0])) }
     try await Task.sleep(for: .milliseconds(20))
