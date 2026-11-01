@@ -655,3 +655,23 @@
 | **期待結果** | 準備中のEscで録音と貼り付けを行わず閉じる。取得をやり直せる。保存をオンにして確定した回だけ音声を残し、オフの回と破棄した回は残さない |
 
 準備のキャンセルと破棄は自動化済み: `HaasRecognizerTests.cancelledPreparation` / `abortAndRestart`、`RecordingWriterTests.discardRemovesPair`。実際のHUD操作は手動確認する。
+
+### REC-18 Haasの無発話中の手入力と短い返事
+
+| 項目 | 内容 |
+|---|---|
+| **前提** | Haasを選び、静かな場所で録音を開始する |
+| **手順** | 数秒話さずに文字を打つ。次に「はい」「いいえ」「次」を短く話し、小声でも試す。最後に話すのをやめて文字を打ち、確定する |
+| **期待結果** | 無音だけで淡色や空の確定が増えず、手入力が残る。短い返事・小声の語頭が欠けない。話した文と手入力の順序を保つ。声に近い息や周囲の声が残る場合は、その条件を記録する |
+
+合成音声の検出と空のHUD確定の抑止は自動化済み: `HaasWorkerTests.realSpeechGate`（任意実行）/ `HaasRecognizerTests.noSpeechDoesNotUpdateHUD` / `SpeechGateTests`。実機マイクと同時の手入力は手動確認する。
+
+### REC-19 セッション用語の範囲と確定時の補正
+
+| 項目 | 内容 |
+|---|---|
+| **前提** | Haasを選び、Orca / Zed / ターミナルで同じフォルダのClaudeまたはCodexセッションが1つだけ直近15分以内に更新されている |
+| **手順** | 会話に現れた名称を話して確定する。別フォルダでも録音する。同じフォルダで複数セッションを更新した状態でも試す |
+| **期待結果** | 会話の用語は同じフォルダの録音の確定時だけヒントになる。途中表示を待たせず、別フォルダ・並行セッションへ語を混ぜない。辞書ファイルは変わらない。ヒントは正しい表記を保証するものではない |
+
+抽出・フォルダ・期限・並行セッション・確定時限定は自動化済み: `SpeechVocabularyTests` / `SessionVocabularyTests` / `HaasWorkerTests.sessionKeywords` / `HaasRecognizerTests.keywordCorrectionAtCommit`。アプリからの入力先解決と実際の表記は手動確認する。

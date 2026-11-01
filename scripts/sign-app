@@ -28,6 +28,10 @@ security find-identity -v -p codesigning | grep -F -- "\"$identity\"" >/dev/null
 staging="$(mktemp -d "${TMPDIR:-/tmp}/vox-sign.XXXXXX")"
 trap 'rm -rf "$staging"' EXIT
 cp -R "$input" "$staging/Vox.app"
+for library in "$staging/Vox.app/Contents/Frameworks/"*.dylib; do
+  [[ -f "$library" ]] || continue
+  codesign --sign "$identity" --force --options runtime --timestamp "$library"
+done
 codesign --sign "$identity" --force --options runtime --timestamp \
   --entitlements "$project_root/Resources/App/Vox.entitlements" "$staging/Vox.app"
 codesign --verify --deep --strict --verbose=2 "$staging/Vox.app"

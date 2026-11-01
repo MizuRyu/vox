@@ -10,7 +10,7 @@
 - システムの Swift 6.2 以上（`Package.swift` の tools version は 6.2）
 - 任意で `nix develop`：Python の評価環境、FFmpeg、just、Gitleaks、Semgrep、Lefthook、SwiftLint、ShellCheck などを用意する
 
-Swift と Apple の SDK は Nix で管理しません。devShell でも `xcode-select` で選択した Xcode の SDK と Apple の `xcrun` を使います。`Tests/Tooling/nix-sdk-check.sh` で SDK 選択と manifest を検査できます。`.xcodeproj` も作りません（[ADR-006](adr/006-swiftpm-only-nix-devshell.md)）。本体の `Package.swift` は外部依存を持ちません。FluidAudio 0.15.0 に依存するのは M0 の比較ハーネスだけで、`benchmarks/Package.resolved` で固定しています。本体の認識は既定で Haas Q4、設定で Apple を使います。Haas の固定版ワーカーと重みは初回に取得します（ADR-032）。
+Swift と Apple の SDK は Nix で管理しません。devShell でも `xcode-select` で選択した Xcode の SDK と Apple の `xcrun` を使います。`Tests/Tooling/nix-sdk-check.sh` で SDK 選択と manifest を検査できます。`.xcodeproj` も作りません（[ADR-006](adr/006-swiftpm-only-nix-devshell.md)）。本体の `Package.swift` は外部依存を持ちません。FluidAudio 0.15.0 に依存するのは M0 の比較ハーネスだけで、`benchmarks/Package.resolved` で固定しています。本体の認識は既定で Haas Q4、設定で Apple を使います。Haas の固定版ワーカーと認識・VADの重みは初回に取得します（ADR-032）。VAD用のspeech.cppライブラリはビルド時に固定アーカイブ・SHA256で取得し、アプリと同じ署名で同梱します。`scripts/prepare-speech-library.swift`は検証済みファイルを`.build/speech-runtime/`にキャッシュします。`--binary`を使う診断用bundleは`--speech-library PATH`でライブラリを指定でき、Developer ID公開用の検証済みビルドには使えません。
 
 ```sh
 nix develop
@@ -95,6 +95,12 @@ VOX_ENGINE_REPLAY_AUDIO="$PWD/z-ai/2026-10-28-speech-streaming-check/input.aiff"
 
 `OK: engine_replay engine=... first_ms=... max_gap_ms=... finalize_ms=... updates=...` の1行で、表示が変わった初出・最大空白・入力終了後の確定待ちを報告します。wav のフレーム数と JSON のモデル名も検査し、一時録音は削除します。認識本文を出力しません。Haas の `segments` は確定した音声窓の区間なので、Apple の語ごとの時刻と同じ粒度としては比較しません。
 
+### VADとセッション用語
+
+`SpeechGateTests` / `SpeechVocabularyTests` / `SessionVocabularyTests`は発話区間の再認識抑止、会話本文だけからの抽出、フォルダ・期限・並行セッション・読み取り上限を検査する。`HaasWorkerTests.sessionKeywords`と`HaasRecognizerTests.keywordCorrectionAtCommit`は、ヒントを確定時だけ使い、次の録音へ持ち越さないことを検査する。
+
+`HaasWorkerTests.realSpeechGate`は任意実行。`VOX_VAD_AUDIO_ROOT`に16kHz・Int16・monoの合成wavのフォルダ、`VOX_VAD_LIBRARY`に固定版ライブラリ、`VOX_VAD_MODEL`にSilero重みを指定する。雑音28本を`noise-*.wav`、発話を`haas.wav` / `house.wav` / `transcriber.wav` / `api.wav` / `ledger.wav`、小声を`*-quiet.wav`、短い返事を`short-*.wav`として置く。発話検出は実モデル、認識器の応答は合成の固定値にして、雑音で認識要求が出ないことを検査する。マイク・本体・実際の発話は使わず、`OK: vad_stream noise=... speech=...`の1行で件数を出す。
+
 ## 静的解析と pre-commit
 
 フックは `scripts/security --staged` と `scripts/lint --staged` を実行し、実際の index の内容を検査します。自動修正・自動 stage・Swift ビルド・モデル取得はしません。
@@ -130,7 +136,7 @@ swift run Vox
 
 | データ | 既定の保存先 |
 |---|---|
-| Haas のモデルとワーカー | `~/Library/Application Support/vox/models/haas-v1-q4/`（固定版、SHA256 検証。録音の回収とは別） |
+| Haas のモデルとワーカー | `~/Library/Application Support/vox/models/haas-v1-q4/`（固定版の認識・VAD重みとワーカー、SHA256検証。録音の回収とは別） |
 | ホットキー設定 | `~/Library/Application Support/vox/settings.json`（schema 1、ファイル権限 0600） |
 | 確定テキストの履歴 | `~/Library/Application Support/vox/history.jsonl` |
 | 最近使った検索フォルダ | `~/Library/Application Support/vox/folders.json`（schema 1、上限 20 件、ファイル権限 0600） |

@@ -6,34 +6,50 @@ import VoxCore
 
 private actor StubHaasWorker: HaasTranscribing {
   var requests: [Data] = []
+  var finalRequests: [Bool] = []
   var stopped = false
   let fails: Bool
   let delay: Duration
   let prepareDelay: Duration
+  let emptyResult: Bool
 
-  init(fails: Bool = false, delay: Duration = .zero, prepareDelay: Duration = .zero) {
+  init(fails: Bool = false, delay: Duration = .zero, prepareDelay: Duration = .zero, emptyResult: Bool = false) {
     self.fails = fails
     self.delay = delay
     self.prepareDelay = prepareDelay
+    self.emptyResult = emptyResult
   }
 
-  func prepare() async throws {
+  func prepare(keywords: String) async throws {
     try await Task.sleep(for: prepareDelay)
     stopped = false
   }
   func shutdown() { stopped = true }
 
-  func transcribe(_ pcm: Data) async throws -> String {
+  func transcribe(_ pcm: Data, windowStartFrame: Int, isFinal: Bool) async throws -> String {
     requests.append(pcm)
+    finalRequests.append(isFinal)
     if fails { throw HaasError.recognitionFailed }
     try await Task.sleep(for: delay)
-    return "音声\(pcm.count / 2)"
+    return emptyResult ? "" : "音声\(pcm.count / 2)"
   }
 }
 
 @Suite("Haas: 認識のライフサイクル", .serialized)
 @MainActor
 struct HaasRecognizerTests {
+  @Test("発話のない音声ではHUDへ空の確定を送らない")
+  func noSpeechDoesNotUpdateHUD() async throws {
+    let recognizer = HaasSpeechRecognizer(worker: StubHaasWorker(emptyResult: true))
+    var updates: [RecognitionUpdate] = []
+    recognizer.onUpdate = { updates.append($0) }
+    let format = try await recognizer.start(onAssetInstallStarted: nil)
+    try recognizer.append(audio(16000, format: format))
+    try await recognizer.finish()
+    #expect(updates.isEmpty)
+    await recognizer.abort()
+  }
+
   @Test("モデル準備中もキャンセルでき、録音を開始したことにしない")
   func cancelledPreparation() async throws {
     let worker = StubHaasWorker(prepareDelay: .seconds(1))
@@ -104,6 +120,25 @@ struct HaasRecognizerTests {
     try await recognizer.finish()
     #expect(updates.map(\.isFinal) == [false, true])
     #expect(await worker.requests.count == 1)
+    await recognizer.abort()
+  }
+
+  @Test("用語ヒントがある回は、同じ音声でも確定時だけ補正する")
+  func keywordCorrectionAtCommit() async throws {
+    let worker = StubHaasWorker()
+    let recognizer = HaasSpeechRecognizer(worker: worker)
+    recognizer.keywords = "Haas"
+    var updates: [RecognitionUpdate] = []
+    recognizer.onUpdate = { updates.append($0) }
+    let format = try await recognizer.start(onAssetInstallStarted: nil)
+    try await Task.sleep(for: .milliseconds(510))
+    try recognizer.append(audio(8000, format: format))
+    await VoxPoll.wait(
+      until: { !updates.isEmpty }, deadline: voxNowMilliseconds() + 1000,
+      step: .milliseconds(5), now: voxNowMilliseconds)
+    try await recognizer.finish()
+    #expect(await worker.finalRequests == [false, true])
+    #expect(updates.map(\.isFinal) == [false, true])
     await recognizer.abort()
   }
 

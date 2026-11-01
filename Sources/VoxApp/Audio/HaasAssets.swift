@@ -30,6 +30,11 @@ struct HaasAssets: Sendable {
   static let modelSHA256 = "d24d53f29b75214a933ff482b0de1217e0a800f4118cca39ad6cf03609a89d6f"
   static let runtimeSHA256 = "f344cf59d72b5f91f5838df68c37cae739f80ae0b4f141bc553a81ffde9547bd"
   static let archiveSHA256 = "4f48ac4aefe65a00e2724e94749f01f7993de6190998c49bb347662f96f7af6d"
+  static let librarySHA256 = "e3fac058886bc215cb237a6745fced4d1555263808569998a42478fc889d85b6"
+  static let vadSHA256 = "2fc312514e5fc4fa4ffd02b25c76a4853fa4130e8fb9777d01502183b01238cb"
+  static let vadName = "silero-vad-309K-v6.2-F32.gguf"
+  static let vadURL = URL(
+    string: "https://huggingface.co/sakasegawa/silero-vad-GGUF/resolve/7fcb7aa2a70c312f8579fc987b3e1cdecf9321ca/silero-vad-309K-v6.2-F32.gguf")!
   static let revision = "6b965d5007ba780585de51549d57a8c1c0d67c7e"
   static let runtimeURL = URL(
     string: "https://github.com/nyosegawa/speech.cpp/releases/download/v0.10.0/speech-0.10.0-macos-arm64-metal.zip")!
@@ -39,6 +44,12 @@ struct HaasAssets: Sendable {
   let root: URL
   var executable: URL { root.appendingPathComponent("speech-0.10.0") }
   var model: URL { root.appendingPathComponent(Self.modelName) }
+  var vadModel: URL { root.appendingPathComponent(Self.vadName) }
+  private var bundledLibrary: URL? {
+    guard Bundle.main.bundleURL.pathExtension == "app" else { return nil }
+    return Bundle.main.bundleURL.appendingPathComponent("Contents/Frameworks/libspeech.4.dylib")
+  }
+  var library: URL { bundledLibrary ?? root.appendingPathComponent("libspeech.4.dylib") }
 
   static var standard: Self {
     Self(root: RecordingStore.standard.root.deletingLastPathComponent().appendingPathComponent("models/haas-v1-q4"))
@@ -47,9 +58,15 @@ struct HaasAssets: Sendable {
   func prepare() async throws {
     try FileManager.default.createDirectory(
       at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-    if try !Self.matches(executable, sha256: Self.runtimeSHA256) { try await installRuntime() }
+    let runtimeMissing = try !Self.matches(executable, sha256: Self.runtimeSHA256)
+    let libraryMissing = try bundledLibrary == nil && !Self.matches(library, sha256: Self.librarySHA256)
+    if runtimeMissing || libraryMissing { try await installRuntime() }
+    guard FileManager.default.fileExists(atPath: library.path) else { throw HaasError.invalidAsset }
     if try !Self.matches(model, sha256: Self.modelSHA256) {
       try await download(Self.modelURL, to: model, sha256: Self.modelSHA256)
+    }
+    if try !Self.matches(vadModel, sha256: Self.vadSHA256) {
+      try await download(Self.vadURL, to: vadModel, sha256: Self.vadSHA256)
     }
     try Task.checkCancellation()
   }
@@ -73,15 +90,21 @@ struct HaasAssets: Sendable {
     defer { try? FileManager.default.removeItem(at: staging) }
     let archive = staging.appendingPathComponent("runtime.zip")
     try await download(Self.runtimeURL, to: archive, sha256: Self.archiveSHA256)
-    // v0.10.0 の speech は自己完結した実行ファイル。不要な dylib とリンクは展開しない。
+    // .app のライブラリは本体と同じ署名で同梱する。非 bundle 実行時だけキャッシュへ展開する。
+    let files = bundledLibrary == nil ? ["speech", "libspeech.4.dylib"] : ["speech"]
     let result = ProcessRunner.run(
-      executable: "/usr/bin/unzip", arguments: ["-j", "-qq", archive.path, "speech", "-d", staging.path],
+      executable: "/usr/bin/unzip", arguments: ["-j", "-qq", archive.path] + files + ["-d", staging.path],
       timeout: .seconds(30), outputLimit: 4096)
     guard result.termination == .exited(0) else { throw HaasError.invalidAsset }
     let binary = staging.appendingPathComponent("speech")
     guard try Self.matches(binary, sha256: Self.runtimeSHA256) else { throw HaasError.invalidAsset }
     try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: binary.path)
     try replace(binary, at: executable)
+    if bundledLibrary == nil {
+      let downloadedLibrary = staging.appendingPathComponent("libspeech.4.dylib")
+      guard try Self.matches(downloadedLibrary, sha256: Self.librarySHA256) else { throw HaasError.invalidAsset }
+      try replace(downloadedLibrary, at: library)
+    }
   }
 
   private func download(_ url: URL, to destination: URL, sha256: String) async throws {

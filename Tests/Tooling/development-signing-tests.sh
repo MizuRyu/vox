@@ -10,7 +10,7 @@ fixture_root="$temporary_root/project"
 mkdir -p "$fixture_root/scripts" "$fixture_root/Resources/App" "$temporary_root/bin"
 cp "$project_root/scripts/bundle-app" "$project_root/scripts/make-app-icon" \
   "$project_root/scripts/validate-app" "$fixture_root/scripts/"
-cp "$project_root/Resources/App/Info.plist" "$project_root/Resources/App/Vox.entitlements" \
+cp "$project_root/Resources/App/Info.plist" "$project_root/Resources/App/Vox.entitlements" "$project_root/Resources/App/ThirdPartyNotices.txt" \
   "$fixture_root/Resources/App/"
 printf '1.0.0\n' >"$fixture_root/VERSION"
 git -C "$fixture_root" init -q
@@ -18,6 +18,8 @@ git -C "$fixture_root" add .
 git -C "$fixture_root" -c user.name=Fixture -c user.email=fixture@example.invalid commit -qm fixture
 
 cc "$project_root/Tests/Tooling/sleeper.c" -o "$temporary_root/Vox"
+printf 'int speech_api_version_major(void) { return 4; }\n' >"$temporary_root/speech.c"
+cc -dynamiclib "$temporary_root/speech.c" -o "$temporary_root/libspeech.4.dylib"
 sips -c 1024 1024 "$project_root/images/settings.png" \
   --out "$temporary_root/AppIcon.png" >/dev/null
 
@@ -68,7 +70,7 @@ run_bundle() {
     VOX_TEST_SIGNING_FAILURE="${VOX_TEST_SIGNING_FAILURE:-}" \
     VOX_TEST_INCOMPATIBLE_DR="${VOX_TEST_INCOMPATIBLE_DR:-}" \
     VOX_TEST_REQUIREMENT_PREFIX="${VOX_TEST_REQUIREMENT_PREFIX:-}" \
-    "$fixture_root/scripts/bundle-app" --development --binary "$temporary_root/Vox" \
+    "$fixture_root/scripts/bundle-app" --development --binary "$temporary_root/Vox" --speech-library "$temporary_root/libspeech.4.dylib" \
       --icon "$temporary_root/AppIcon.png" --allow-dirty "$@"
 }
 
@@ -76,7 +78,7 @@ run_entrypoint() {
   PATH="$temporary_root/bin:$PATH" \
     VOX_DEVELOPMENT_SIGNING_CONFIG="$temporary_root/missing-entrypoint-identity" \
     VOX_TEST_FINGERPRINT="$fingerprint" VOX_TEST_SIGNING_LOG="$signing_log" \
-    "$fixture_root/scripts/bundle-app" --binary "$temporary_root/Vox" \
+    "$fixture_root/scripts/bundle-app" --binary "$temporary_root/Vox" --speech-library "$temporary_root/libspeech.4.dylib" \
       --icon "$temporary_root/AppIcon.png" --allow-dirty "$@"
 }
 
@@ -121,8 +123,8 @@ grep -Fqx 'candidate: local-development' "$development_app/Contents/Resources/BU
   || fail 'development candidate metadata is missing'
 grep -Fqx "signing certificate sha1: $fingerprint" \
   "$development_app/Contents/Resources/BUILD-INFO.txt" || fail 'signing fingerprint metadata is missing'
-[[ "$(grep -Fc -- "--sign $fingerprint" "$signing_log")" == '2' ]] \
-  || fail 'configured identity was not forwarded to both signature passes'
+[[ "$(grep -Fc -- "--sign $fingerprint" "$signing_log")" == '4' ]] \
+  || fail 'configured identity was not forwarded to the app and nested library signature passes'
 
 requirement_dump="$(/usr/bin/codesign -d -r- "$development_app" 2>&1)"
 printf '%s\n' "$requirement_dump" \

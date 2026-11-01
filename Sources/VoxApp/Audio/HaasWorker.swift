@@ -2,8 +2,8 @@ import Darwin
 import Foundation
 
 protocol HaasTranscribing: Sendable {
-  func prepare() async throws
-  func transcribe(_ pcm: Data) async throws -> String
+  func prepare(keywords: String) async throws
+  func transcribe(_ pcm: Data, windowStartFrame: Int, isFinal: Bool) async throws -> String
   func shutdown() async
 }
 
@@ -12,6 +12,11 @@ actor HaasWorker: HaasTranscribing {
   private let prepareAssets: @Sendable () async throws -> HaasAssets
   private let startupTimeout: Duration
   private let requestTimeout: Duration
+  private let makeVAD: @Sendable (HaasAssets) throws -> HaasVAD?
+  private var vad: HaasVAD?
+  private var previousText = ""
+  private var previousAudio: Data?
+  private var keywords = ""
   private var process: Process?
   private var input: FileHandle?
   private var output: FileHandle?
@@ -24,17 +29,29 @@ actor HaasWorker: HaasTranscribing {
       try await assets.prepare()
       return assets
     },
-    startupTimeout: Duration = .seconds(60), requestTimeout: Duration = .seconds(5)
+    startupTimeout: Duration = .seconds(60), requestTimeout: Duration = .seconds(5),
+    makeVAD: @escaping @Sendable (HaasAssets) throws -> HaasVAD? = {
+      try HaasVAD(library: $0.library, model: $0.vadModel)
+    }
   ) {
     self.prepareAssets = prepareAssets
     self.startupTimeout = startupTimeout
     self.requestTimeout = requestTimeout
+    self.makeVAD = makeVAD
   }
 
-  func prepare() async throws {
-    if process?.isRunning == true { return }
+  func prepare(keywords: String = "") async throws {
+    if process?.isRunning == true {
+      vad?.reset()
+      previousText = ""
+      previousAudio = nil
+      self.keywords = keywords
+      return
+    }
     shutdown()
+    self.keywords = keywords
     let assets = try await prepareAssets()
+    vad = try makeVAD(assets)
     try Task.checkCancellation()
     let child = Process()
     let stdin = Pipe()
@@ -68,15 +85,18 @@ actor HaasWorker: HaasTranscribing {
     }
   }
 
-  func transcribe(_ pcm: Data) throws -> String {
+  func transcribe(_ pcm: Data, windowStartFrame: Int = 0, isFinal: Bool = false) throws -> String {
     guard process?.isRunning == true, !pcm.isEmpty else { throw HaasError.workerUnavailable }
-    sequence += 1
-    let id = String(sequence)
     let deadline = ContinuousClock.now.advanced(by: requestTimeout)
     do {
-      let chunk = Chunk(id: id, pcm: pcm.base64EncodedString())
+      let hints = isFinal && !keywords.isEmpty ? keywords : nil
+      guard let audio = try recognitionAudio(pcm, windowStartFrame: windowStartFrame, reuseSpeech: hints != nil)
+      else { return previousText }
+      sequence += 1
+      let id = String(sequence)
+      let chunk = Chunk(id: id, pcm: audio.base64EncodedString())
       try writeLine(JSONEncoder().encode(chunk), deadline: deadline)
-      try writeLine(JSONEncoder().encode(Request(id: id)), deadline: deadline)
+      try writeLine(JSONEncoder().encode(Request(id: id, keywords: hints)), deadline: deadline)
       while true {
         let response = try readMessage(deadline: deadline)
         guard response.id == id else { throw HaasError.invalidResponse }
@@ -84,12 +104,28 @@ actor HaasWorker: HaasTranscribing {
         guard response.type == "end", response.stop == "complete", let text = response.text else {
           throw HaasError.recognitionFailed
         }
+        previousText = text
         return text
       }
     } catch {
       shutdown()
       throw error
     }
+  }
+
+  private func recognitionAudio(_ pcm: Data, windowStartFrame: Int, reuseSpeech: Bool) throws -> Data? {
+    guard let vad else { return pcm }
+    if vad.windowStartFrame != windowStartFrame {
+      try vad.begin(windowStartFrame: windowStartFrame)
+      previousText = ""
+      previousAudio = nil
+    }
+    if let speech = try vad.audioToRecognize(pcm) {
+      previousAudio = speech
+      return speech
+    }
+    // 同じ音声の確定だけは、途中結果で使わなかった用語ヒントを適用する。
+    return reuseSpeech ? previousAudio : nil
   }
 
   func shutdown() {
@@ -106,6 +142,10 @@ actor HaasWorker: HaasTranscribing {
       for _ in 0..<100 where process.isRunning { usleep(2_000) }
     }
     process = nil
+    vad = nil
+    previousText = ""
+    previousAudio = nil
+    keywords = ""
     received.removeAll(keepingCapacity: false)
   }
 
@@ -169,9 +209,10 @@ actor HaasWorker: HaasTranscribing {
     let type = "transcribe"
     let id: String
     let sampleRate = 16000
+    let keywords: String?
 
     enum CodingKeys: String, CodingKey {
-      case type, id
+      case type, id, keywords
       case sampleRate = "sample_rate"
     }
   }

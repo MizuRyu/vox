@@ -16,13 +16,17 @@ trap cleanup EXIT
 fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 
 cc "$project_root/Tests/Tooling/sleeper.c" -o "$temporary_root/Vox"
+printf 'int speech_api_version_major(void) { return 4; }\n' >"$temporary_root/speech.c"
+cc -dynamiclib "$temporary_root/speech.c" -o "$temporary_root/libspeech.4.dylib"
 source_png="$project_root/images/settings.png"
 sips -c 1024 1024 "$source_png" --out "$temporary_root/AppIcon.png" >/dev/null
 
 app="$temporary_root/Vox-local-adhoc.app"
-"$project_root/scripts/bundle-app" --adhoc --binary "$temporary_root/Vox" --icon "$temporary_root/AppIcon.png" \
+"$project_root/scripts/bundle-app" --adhoc --binary "$temporary_root/Vox" --speech-library "$temporary_root/libspeech.4.dylib" --icon "$temporary_root/AppIcon.png" \
   --output "$app" --allow-dirty
 "$project_root/scripts/validate-app" "$app"
+[[ -f "$app/Contents/Frameworks/libspeech.4.dylib" ]] || fail 'speech library is missing'
+[[ -f "$app/Contents/Resources/ThirdPartyNotices.txt" ]] || fail 'runtime notices are missing'
 [[ "$(plutil -extract LSUIElement raw "$app/Contents/Info.plist")" == 'false' ]] \
   || fail 'packaged app is hidden from the Dock'
 accessory_app="$temporary_root/legacy-accessory.app"
@@ -73,7 +77,7 @@ codesign --remove-signature "$temporary_root/unsigned-Vox"
 binary_digest="$(shasum -a 256 "$temporary_root/unsigned-Vox" | awk '{print $1}')"
 grep -Fq "binary unsigned sha256: $binary_digest" "$app/Contents/Resources/BUILD-INFO.txt" \
   || fail 'bundled binary digest is missing or incorrect'
-if "$project_root/scripts/bundle-app" --adhoc --binary "$temporary_root/Vox" --icon "$temporary_root/AppIcon.png" \
+if "$project_root/scripts/bundle-app" --adhoc --binary "$temporary_root/Vox" --speech-library "$temporary_root/libspeech.4.dylib" --icon "$temporary_root/AppIcon.png" \
   --output "$app" --allow-dirty >"$temporary_root/overwrite.out" 2>&1; then
   fail 'existing app was overwritten'
 fi
@@ -84,13 +88,13 @@ fixture_root="$temporary_root/project"
 mkdir -p "$fixture_root/scripts" "$fixture_root/Resources/App"
 cp "$project_root/scripts/bundle-app" "$project_root/scripts/make-app-icon" \
   "$project_root/scripts/make-dmg" "$project_root/scripts/validate-app" "$fixture_root/scripts/"
-cp "$project_root/Resources/App/Info.plist" "$project_root/Resources/App/Vox.entitlements" \
+cp "$project_root/Resources/App/Info.plist" "$project_root/Resources/App/Vox.entitlements" "$project_root/Resources/App/ThirdPartyNotices.txt" \
   "$fixture_root/Resources/App/"
 printf '1.0.0\n' >"$fixture_root/VERSION"
 git -C "$fixture_root" init -q
 git -C "$fixture_root" add .
 git -C "$fixture_root" -c user.name=Fixture -c user.email=fixture@example.invalid commit -qm fixture
-"$fixture_root/scripts/bundle-app" --adhoc --binary "$temporary_root/Vox" \
+"$fixture_root/scripts/bundle-app" --adhoc --binary "$temporary_root/Vox" --speech-library "$temporary_root/libspeech.4.dylib" \
   --icon "$temporary_root/AppIcon.png" --allow-dirty
 stable_app="$fixture_root/dist/Vox-1.0.0.app"
 [[ -d "$stable_app" ]] || fail 'stable default app output is missing'
@@ -101,12 +105,12 @@ if "$fixture_root/scripts/validate-app" "$stable_app" >"$temporary_root/build5-d
   fail 'build5-style accessory app passed strict validation'
 fi
 "$fixture_root/scripts/validate-app" --allow-accessory "$stable_app"
-"$fixture_root/scripts/bundle-app" --adhoc --binary "$temporary_root/Vox" \
+"$fixture_root/scripts/bundle-app" --adhoc --binary "$temporary_root/Vox" --speech-library "$temporary_root/libspeech.4.dylib" \
   --icon "$temporary_root/AppIcon.png" --allow-dirty
 [[ "$(plutil -extract LSUIElement raw "$stable_app/Contents/Info.plist")" == 'false' ]] \
   || fail 'build5-style accessory app was not replaced by a Dock-visible candidate'
 stable_digest="$(shasum -a 256 "$stable_app/Contents/Resources/BUILD-INFO.txt" | awk '{print $1}')"
-if "$fixture_root/scripts/bundle-app" --adhoc --binary "$temporary_root/missing-Vox" \
+if "$fixture_root/scripts/bundle-app" --adhoc --binary "$temporary_root/missing-Vox" --speech-library "$temporary_root/libspeech.4.dylib" \
   --icon "$temporary_root/AppIcon.png" --allow-dirty >"$temporary_root/app-failure.out" 2>&1; then
   fail 'missing candidate executable was accepted'
 fi
@@ -117,7 +121,7 @@ saved_stable_app="$temporary_root/saved-stable.app"
 mv "$stable_app" "$saved_stable_app"
 mkdir "$stable_app"
 printf 'unrelated\n' >"$stable_app/README"
-if "$fixture_root/scripts/bundle-app" --adhoc --binary "$temporary_root/Vox" \
+if "$fixture_root/scripts/bundle-app" --adhoc --binary "$temporary_root/Vox" --speech-library "$temporary_root/libspeech.4.dylib" \
   --icon "$temporary_root/AppIcon.png" --allow-dirty >"$temporary_root/unrelated-app.out" 2>&1; then
   fail 'unrelated default output directory was overwritten'
 fi
@@ -129,7 +133,7 @@ cp -R "$stable_app" "$saved_stable_app"
 plutil -replace CFBundleShortVersionString -string 9.9.9 "$stable_app/Contents/Info.plist"
 codesign --sign - --force --options runtime \
   --entitlements "$fixture_root/Resources/App/Vox.entitlements" "$stable_app" >/dev/null
-if "$fixture_root/scripts/bundle-app" --adhoc --binary "$temporary_root/Vox" \
+if "$fixture_root/scripts/bundle-app" --adhoc --binary "$temporary_root/Vox" --speech-library "$temporary_root/libspeech.4.dylib" \
   --icon "$temporary_root/AppIcon.png" --allow-dirty >"$temporary_root/wrong-version-app.out" 2>&1; then
   fail 'existing app with the wrong version was overwritten'
 fi
@@ -144,7 +148,7 @@ sed 's/^Developer ID signed: no$/Developer ID signed: yes/' \
 cp "$temporary_root/signed-build-info" "$stable_app/Contents/Resources/BUILD-INFO.txt"
 codesign --sign - --force --options runtime \
   --entitlements "$fixture_root/Resources/App/Vox.entitlements" "$stable_app" >/dev/null
-if "$fixture_root/scripts/bundle-app" --adhoc --binary "$temporary_root/Vox" \
+if "$fixture_root/scripts/bundle-app" --adhoc --binary "$temporary_root/Vox" --speech-library "$temporary_root/libspeech.4.dylib" \
   --icon "$temporary_root/AppIcon.png" --allow-dirty >"$temporary_root/signed-local-app.out" 2>&1; then
   fail 'Developer ID marker at the stable local path was overwritten'
 fi
@@ -155,7 +159,7 @@ mv "$saved_stable_app" "$stable_app"
 
 "$stable_app/Contents/MacOS/Vox" &
 sleeper_pid="$!"
-if "$fixture_root/scripts/bundle-app" --adhoc --binary "$temporary_root/Vox" \
+if "$fixture_root/scripts/bundle-app" --adhoc --binary "$temporary_root/Vox" --speech-library "$temporary_root/libspeech.4.dylib" \
   --icon "$temporary_root/AppIcon.png" --allow-dirty >"$temporary_root/running-app.out" 2>&1; then
   fail 'running default app executable was overwritten'
 fi
@@ -169,7 +173,7 @@ fake_ps="$temporary_root/failing-ps"
 mkdir "$fake_ps"
 printf '#!/usr/bin/env bash\nexit 42\n' >"$fake_ps/ps"
 chmod +x "$fake_ps/ps"
-if PATH="$fake_ps:$PATH" "$fixture_root/scripts/bundle-app" --adhoc --binary "$temporary_root/Vox" \
+if PATH="$fake_ps:$PATH" "$fixture_root/scripts/bundle-app" --adhoc --binary "$temporary_root/Vox" --speech-library "$temporary_root/libspeech.4.dylib" \
   --icon "$temporary_root/AppIcon.png" --allow-dirty >"$temporary_root/process-inspection.out" 2>&1; then
   fail 'default app replacement proceeded after process inspection failed'
 fi
@@ -178,7 +182,7 @@ fi
 
 mv "$fixture_root/dist" "$fixture_root/real-dist"
 ln -s "$fixture_root/real-dist" "$fixture_root/dist"
-if "$fixture_root/scripts/bundle-app" --adhoc --binary "$temporary_root/Vox" \
+if "$fixture_root/scripts/bundle-app" --adhoc --binary "$temporary_root/Vox" --speech-library "$temporary_root/libspeech.4.dylib" \
   --icon "$temporary_root/AppIcon.png" --allow-dirty >"$temporary_root/dist-symlink.out" 2>&1; then
   fail 'symbolic-link default output directory was accepted'
 fi
@@ -323,7 +327,7 @@ fi
 grep -Fq 'Developer ID Application identity' "$temporary_root/identity.out" \
   || fail 'arbitrary signing identity rejection was not diagnosed'
 ln -s "$temporary_root/missing-output" "$temporary_root/dangling.app"
-if "$project_root/scripts/bundle-app" --adhoc --binary "$temporary_root/Vox" \
+if "$project_root/scripts/bundle-app" --adhoc --binary "$temporary_root/Vox" --speech-library "$temporary_root/libspeech.4.dylib" \
   --icon "$temporary_root/AppIcon.png" --output "$temporary_root/dangling.app" --allow-dirty \
   >"$temporary_root/dangling.out" 2>&1; then
   fail 'dangling app output symlink was overwritten'

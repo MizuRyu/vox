@@ -17,6 +17,7 @@ private final class HaasRecognitionRun {
 @MainActor
 final class HaasSpeechRecognizer: SpeechRecognizer {
   var onUpdate: ((RecognitionUpdate) -> Void)?
+  var keywords = ""
   private let worker: any HaasTranscribing
   private var run: HaasRecognitionRun?
   private var idleTask: Task<Void, Never>?
@@ -32,7 +33,7 @@ final class HaasSpeechRecognizer: SpeechRecognizer {
     await idleTask?.value
     idleTask = nil
     onAssetInstallStarted?()
-    try await worker.prepare()
+    try await worker.prepare(keywords: keywords)
     try Task.checkCancellation()
     guard let format = AVAudioFormat(
       commonFormat: .pcmFormatInt16, sampleRate: Double(HaasAudioWindow.sampleRate), channels: 1, interleaved: false)
@@ -124,20 +125,23 @@ final class HaasSpeechRecognizer: SpeechRecognizer {
       let start = run.audio.startFrame
       let end = start + count
       let text: String
-      if end == run.previewEndFrame {
+      if end == run.previewEndFrame && (!isFinal || keywords.isEmpty) {
         text = run.previewText
       } else {
-        text = try await worker.transcribe(run.audio.prefix(frames: count))
+        text = try await worker.transcribe(run.audio.prefix(frames: count), windowStartFrame: start, isFinal: isFinal)
       }
       guard self.run === run else { return }
       if isFinal {
+        let hadPreview = !run.previewText.isEmpty
         run.audio.consume(frames: count)
         run.previewEndFrame = run.audio.startFrame
         run.previewText = ""
-        onUpdate?(RecognitionUpdate(text: text, isFinal: true, timings: [
-          TimedText(
-            text: text, startSeconds: Double(start) / 16000, endSeconds: Double(end) / 16000)
-        ]))
+        if !text.isEmpty || hadPreview {
+          onUpdate?(RecognitionUpdate(text: text, isFinal: true, timings: [
+            TimedText(
+              text: text, startSeconds: Double(start) / 16000, endSeconds: Double(end) / 16000)
+          ]))
+        }
       } else {
         let changed = text != run.previewText
         run.previewEndFrame = end

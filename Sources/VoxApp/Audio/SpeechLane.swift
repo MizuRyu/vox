@@ -99,7 +99,7 @@ final class SpeechLane {
   func start(
     speechEngine: SpeechEngine = .haas,
     voiceProcessingEnabled: Bool = false, microphoneInput: MicrophoneInput = .automatic,
-    recordingWriter: RecordingWriter? = nil
+    recordingWriter: RecordingWriter? = nil, keywords: String = ""
   ) async throws -> Double {
     let generation = lifecycle.begin()
     recognitionGeneration = generation
@@ -112,6 +112,7 @@ final class SpeechLane {
       recognizer = AppleSpeechRecognizer()
     case .haas:
       let haas = haasRecognizer ?? HaasSpeechRecognizer()
+      haas.keywords = keywords
       haasRecognizer = haas
       recognizer = haas
     }

@@ -41,7 +41,7 @@ cp "$binary" "$unsigned_binary"
 codesign --remove-signature "$unsigned_binary"
 actual_digest="$(shasum -a 256 "$unsigned_binary" | awk '{print $1}')"
 [[ "$stored_digest" == "$actual_digest" ]] || die 'binary digest does not match payload'
-codesign --verify --strict "$app"
+codesign --verify --deep --strict "$app"
 entitlements="$validation_tmp/entitlements.plist"
 codesign --display --entitlements :- "$app" >"$entitlements" 2>/dev/null
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.device.audio-input' "$entitlements")" == 'true' ]] \

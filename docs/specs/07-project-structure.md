@@ -20,7 +20,7 @@ Sources/
     Process/             子プロセス実行、単調時計
   VoxApp/                macOS 層。AppKit / SwiftUI / AVFoundation / Speech / CoreGraphics を使う唯一の場所
     Session/             録音セッションの接続点（App.swift）。開始・確定・破棄の流れ
-    Audio/               SpeechLane の共通入力・変換・保存、Apple / Haas の認識、Haas の取得と worker、入力専用 AUHAL、音声診断
+    Audio/               SpeechLane の共通入力・変換・保存、Apple / Haas の認識、Haas の取得と worker・VAD・セッション用語の取得、入力専用 AUHAL、音声診断
     Input/               ホットキー監視、貼り付け、入力欄の読み取り
     Hud/                 HUD パネルと本文エディタ
     Palette/             パレットのパネル・ビュー、対象フォルダの解決と切り替え、索引の取得、常駐索引と FSEvents の監視
@@ -43,7 +43,7 @@ benchmarks/
   m0/                    manifest.example.tsv（音声・モデル・結果は Git 対象外）
   prosody/               韻律の試作ツール（Python・uv）。声・ラベル・重みはリポジトリの外（ADR-029）
 scripts/                 配布と検査だけ: bundle-app, sign-app, make-dmg, notarize-dmg, validate-app, make-app-icon,
-                         install.sh, lint, security, setup, render-palette-example.py
+                         install.sh, prepare-speech-library.swift, lint, security, setup, render-palette-example.py
 Resources/               Info.plist, entitlements, アイコン
 docs/                    adr/ specs/ usage.md development.md MANUAL-VERIFICATION.md KNOWN-ISSUES.md
 images/                  README の画面例（合成データ）と再生成の手順
@@ -80,7 +80,7 @@ images/                  README の画面例（合成データ）と再生成の
 
 | 目標 | 現在のファイル |
 |---|---|
-| Audio/ | AudioTransport, MicrophoneInput（MicrophoneDevice / MicrophoneOutput を含む）, HaasAudioWindow |
+| Audio/ | AudioTransport, MicrophoneInput（MicrophoneDevice / MicrophoneOutput を含む）, HaasAudioWindow, SpeechGate, SpeechVocabulary |
 | Attachments/ | AttachmentPaste, AttachmentImageKind, AttachmentFileName, AttachmentRetention |
 | Transcript/ | TranscriptBuffer, TranscriptCaret, FillerPass, DictionaryPass, DictionaryDocument, DictionaryRows, SigilTrigger, AnalyzerFinalizePoint, SpeechAssetReadiness, HandsFreePolicy, PauseCommitPolicy, HudEditCommand |
 | Injection/ | InjectionSafety, AutoEnter, TerminalAutoEnter, ActivationPolicy |

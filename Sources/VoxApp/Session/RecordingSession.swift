@@ -42,6 +42,11 @@ final class RecordingSession {
   /// この回の非同期処理（開始・確定・破棄）。次の段階に進むたびに置き換わる。
   var task: Task<Void, Never>?
 
+  func speechKeywords() async -> String {
+    guard speechEngine == .haas else { return "" }
+    return await SessionVocabulary.resolve(bundleIdentifier: target?.bundleIdentifier, processID: target?.processIdentifier)
+  }
+
   init(
     toggleOnMilliseconds: Double, settings: SettingsCoordinator, dictionary: DictionaryTable,
     target: NSRunningApplication?, handsFree: HandsFreePolicy? = nil
