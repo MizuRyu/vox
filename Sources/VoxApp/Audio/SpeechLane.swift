@@ -1,23 +1,6 @@
-// 速報レーン。Sources/VoxM0LiveProbe/main.swift の動作確認済みの給餌経路をそのまま使う。
-// アセット導入のゲートは Sources/VoxM0/main.swift の AppleEngine.prepare を写している。
-
 import AVFoundation
-import CoreMedia
 import Foundation
-import Speech
 import VoxCore
-
-extension AssetInventory.Status {
-  fileprivate var speechAssetModuleStatus: SpeechAssetModuleStatus {
-    switch self {
-    case .unsupported: .unsupported
-    case .supported: .supported
-    case .downloading: .downloading
-    case .installed: .installed
-    @unknown default: .unknown
-    }
-  }
-}
 
 enum SpeechLaneError: Error, CustomStringConvertible {
   case transcriberUnavailable
@@ -54,29 +37,20 @@ enum SpeechLaneError: Error, CustomStringConvertible {
 /// `start()` から `finalizeText()` / `abort()` までの 1 回分。SpeechLane は現在の 1 つだけを持つ。
 @MainActor
 private final class RecognitionRun {
+  let recognizer: any SpeechRecognizer
   var isRunning = false
   var committed = ""
   var tentative = ""
   var resultCount = 0
   var firstResultReported = false
-  var resultsFinished = false
-
-  var analyzer: SpeechAnalyzer?
   var engine: AVAudioEngine?
   var halCapture: HALInputCapture?
   var configurationObserver: (any NSObjectProtocol)?
-  var inputBuilder: AsyncStream<AnalyzerInput>.Continuation?
   var bufferBuilder: AsyncStream<BufferBox>.Continuation?
   var feedTask: Task<Void, Never>?
-  var resultTask: Task<Void, Never>?
-
-  /// analyzer へ yield 済みのフレーム数と、その形式のサンプルレート。
-  /// `finalize(through:)` に渡す位置の計算に使う（`through: nil` は入力終端まで待つので使えない）。
   var fedFrameCount: Int64 = 0
-  var sampleRate = 0.0
 
-  /// 走っている締めの数。上限つきで待つのに使う（drainResults と同じ手）。
-  var segmentFinalize = SegmentFinalizeState()
+  init(recognizer: any SpeechRecognizer) { self.recognizer = recognizer }
 }
 
 /// 締めを頼んだ側。診断ログの `reason=` に出す。
@@ -117,9 +91,9 @@ final class SpeechLane {
   /// ADR-020。無音で区切る前に、締める淡色があるかを見る。
   var hasTentativeText: Bool { run?.tentative.isEmpty == false }
   /// 締めが走っている間は重ねて頼まない（同じ analyzer に finalize を 2 つ入れない。ADR-007）。
-  var isSegmentFinalizePending: Bool { run?.segmentFinalize.hasPending == true }
+  var isSegmentFinalizePending: Bool { run?.recognizer.isSegmentFinalizePending == true }
 
-  /// 戻り値は `analyzer_start_ms`（`SpeechAnalyzer.start` が返った時刻）。
+  /// 戻り値は認識の準備ができた時刻（既存の `analyzer_start_ms`）。
   func start(
     voiceProcessingEnabled: Bool = false, microphoneInput: MicrophoneInput = .automatic,
     recordingWriter: RecordingWriter? = nil
@@ -127,40 +101,14 @@ final class SpeechLane {
     let generation = lifecycle.begin()
     recognitionGeneration = generation
     finalTimings = []
-    let run = RecognitionRun()
+    let run = RecognitionRun(recognizer: AppleSpeechRecognizer())
     self.run = run
     levels.reset()
-
-    guard SpeechTranscriber.isAvailable else { throw SpeechLaneError.transcriberUnavailable }
-    guard
-      let locale = await SpeechTranscriber.supportedLocale(
-        equivalentTo: Locale(identifier: "ja_JP"))
-    else {
-      throw SpeechLaneError.japaneseUnavailable
+    run.recognizer.onUpdate = { [weak self, weak run] result in
+      guard let self, let run, self.lifecycle.accepts(generation) else { return }
+      self.accept(result: result, into: run)
     }
-
-    let (transcriber, analyzer) = Self.makeRecognizer(locale: locale)
-    let modules: [any SpeechModule] = [transcriber]
-
-    try await ensureAssets(for: transcriber, locale: locale, modules: modules)
-    try Task.checkCancellation()
-
-    guard let analyzerFormat = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: modules)
-    else {
-      throw SpeechLaneError.noCompatibleAudioFormat
-    }
-
-    run.sampleRate = analyzerFormat.sampleRate
-
-    run.analyzer = analyzer
-
-    let (inputSequence, inputBuilder) = AsyncStream<AnalyzerInput>.makeStream()
-    run.inputBuilder = inputBuilder
-
-    // results Task は start より先に立てる（プローブと同じ）。
-    startResultTask(run, transcriber: transcriber, generation: generation)
-
-    try await analyzer.start(inputSequence: inputSequence)
+    let analyzerFormat = try await run.recognizer.start(onAssetInstallStarted: onAssetInstallStarted)
     let analyzerStartMilliseconds = voxNowMilliseconds()
     voxLog("analyzer_started at_ms=\(analyzerStartMilliseconds)")
 
@@ -173,40 +121,9 @@ final class SpeechLane {
       : try startHALCapture(
         run, device: device, selection: microphoneInput, analyzerFormat: analyzerFormat, generation: generation)
     startFeedTask(
-      run, bufferStream: bufferStream, inputBuilder: inputBuilder,
-      analyzerFormat: analyzerFormat, recordingWriter: recordingWriter)
-
+      run, bufferStream: bufferStream, analyzerFormat: analyzerFormat, recordingWriter: recordingWriter)
     run.isRunning = true
     return analyzerStartMilliseconds
-  }
-
-  static func makeRecognizer(locale: Locale) -> (SpeechTranscriber, SpeechAnalyzer) {
-    let transcriber = SpeechTranscriber(
-      locale: locale,
-      transcriptionOptions: [],
-      reportingOptions: [.volatileResults, .fastResults],
-      attributeOptions: [.audioTimeRange]
-    )
-    // プローブと同じ。options は渡さず、prepareToAnalyze も呼ばない。
-    return (transcriber, SpeechAnalyzer(modules: [transcriber]))
-  }
-
-  private func startResultTask(
-    _ run: RecognitionRun, transcriber: SpeechTranscriber, generation: RecognitionGeneration
-  ) {
-    run.resultTask = Task { @MainActor in
-      do {
-        for try await result in transcriber.results {
-          guard self.lifecycle.accepts(generation) else { break }
-          self.accept(result: result, into: run)
-        }
-      } catch is CancellationError {
-        // 破棄（esc）でループを畳んだときに来る。異常ではない。
-      } catch {
-        voxLog("result_error \(String(describing: error))")
-      }
-      run.resultsFinished = true
-    }
   }
 
   /// 通常の録音。選んだ機器だけを入力専用 AUHAL で開く（ADR-016）。戻り値は AUHAL が流す音声。
@@ -339,7 +256,7 @@ final class SpeechLane {
 
   private func startFeedTask(
     _ run: RecognitionRun,
-    bufferStream: AsyncStream<BufferBox>, inputBuilder: AsyncStream<AnalyzerInput>.Continuation,
+    bufferStream: AsyncStream<BufferBox>,
     analyzerFormat: AVAudioFormat, recordingWriter: RecordingWriter?
   ) {
     let converter = BufferConverter()
@@ -363,7 +280,7 @@ final class SpeechLane {
             diagnosticCount += 1
           }
           let converted = try converter.convertBuffer(box.buffer, to: analyzerFormat)
-          inputBuilder.yield(AnalyzerInput(buffer: converted))
+          try run.recognizer.append(converted)
           recordingWriter?.append(converted)
           // finalize(through:) に渡す「給餌済み位置」。yield した分だけ進める。
           run.fedFrameCount += Int64(converted.frameLength)
@@ -399,81 +316,24 @@ final class SpeechLane {
     }
   }
 
-  // MARK: M3 パレット / ADR-020 無音
-
-  /// パレットを開くとき（仕様 04）と発話の後の無音（ADR-020）で、そこまでの tentative を final として締める。
-  /// T22 で供給を止めるのをやめた（パレット表示中も喋り続けられる）ので、締めるだけになった。
-  /// 締める目的は差し込む位置を固定すること。
-  ///
-  /// 制約は 2 つ。どちらも M0 の実測（docs/m0-results.md 追記 04:10）が根拠。
-  ///   1. **給餌ループとは別のタスクから呼ぶ**。同じタスクからは自己デッドロックする（ADR-007）
-  ///   2. **`through:` に給餌済みの位置を明示する**。`nil` は入力の終端まで確定する指定で、
-  ///      入力が終わるまで返らない
-  ///
-  /// 保険として 1000ms で待つのをやめる。そのとき tentative は残したままにする
-  /// （後から final が来て順序が入れ替わりうるが、ハングよりまし）。
-  /// `finalize(through:)` は入力列を閉じないので、この後もそのまま給餌を続けられる。
   func finalizeSegment(reason: SegmentFinalizeReason) async {
-    guard let run, run.isRunning, let analyzer = run.analyzer else { return }
-    // 無音とパレットの締めが重なった回。前の締めが返ってから給餌済みの位置を取る（ADR-007 / ADR-020）。
-    await awaitSegmentFinalize(run)
-    guard run.isRunning, self.run === run else { return }
-    guard
-      let throughSeconds = AnalyzerFinalizePoint.throughSeconds(
-        fedFrameCount: run.fedFrameCount, sampleRate: run.sampleRate)
-    else {
-      // 給餌がまだマージンに届いていない。締める区間が無いので呼ばない。
-      voxLog(
-        "segment_finalize_skipped reason=\(reason.rawValue) fed_frames=\(run.fedFrameCount) "
-          + "rate=\(run.sampleRate)")
-      return
-    }
-    let through = CMTime(seconds: throughSeconds, preferredTimescale: 1_000)
-    run.segmentFinalize.begin()
-
-    // 打ち切っても取り消さない（取り消すと analyzer が途中で畳まれる）。走らせたまま先へ進む。
-    Task { @MainActor in
-      do {
-        try await analyzer.finalize(through: through)
-        voxLog(
-          "segment_finalized reason=\(reason.rawValue) at_ms=\(voxNowMilliseconds()) "
-            + "through_s=\(throughSeconds) committed_length=\(run.committed.count)")
-      } catch {
-        voxLog("segment_finalize_error reason=\(reason.rawValue) \(String(describing: error))")
-      }
-      run.segmentFinalize.complete()
-    }
-
-    await awaitSegmentFinalize(run)
-    if run.segmentFinalize.hasPending {
-      voxLog("segment_finalize_timeout reason=\(reason.rawValue) through_s=\(throughSeconds)")
-    }
-  }
-
-  /// 締めが返るのを上限つきで待つ。返らなくても取り消さない（走ったままにする）。
-  private func awaitSegmentFinalize(_ run: RecognitionRun) async {
-    guard run.segmentFinalize.hasPending else { return }
-    await VoxPoll.wait(
-      until: { !run.segmentFinalize.hasPending },
-      deadline: voxNowMilliseconds() + Self.segmentFinalizeTimeoutMilliseconds,
-      step: .milliseconds(5), now: voxNowMilliseconds)
+    guard let run, run.isRunning else { return }
+    await run.recognizer.finalizeSegment(reason: reason)
   }
 
   /// 戻り値は `finalized_ms` と確定テキスト。
   func finalizeText() async throws -> (finalizedMilliseconds: Double, text: String) {
-    guard let run, run.isRunning, let analyzer = run.analyzer else {
+    guard let run, run.isRunning else {
       throw SpeechLaneError.notRunning
     }
     guard let generation = recognitionGeneration else { throw SpeechLaneError.notRunning }
     // 締めが走ったままだと同じ analyzer に finalize が 2 つ入る。時間切れの回もここでもう一度待つ。
-    await awaitSegmentFinalize(run)
     await stopFeeding(run)
 
     // 給餌と同じタスクから呼ぶと自己デッドロックする（ADR-007）。ここは別タスク。
-    try await analyzer.finalizeAndFinishThroughEndOfInput()
+    try await run.recognizer.finish()
     let finalizedMilliseconds = voxNowMilliseconds()
 
-    await drainResults(run)
     let text = run.committed + run.tentative
     teardown(run)
     lifecycle.finish(generation)
@@ -487,9 +347,7 @@ final class SpeechLane {
     let generation = recognitionGeneration
     guard let run else { return }
     await stopFeeding(run)
-    if let analyzer = run.analyzer {
-      await analyzer.cancelAndFinishNow()
-    }
+    await run.recognizer.abort()
     teardown(run)
     if let generation { lifecycle.abort(generation) }
     recognitionGeneration = nil
@@ -509,8 +367,6 @@ final class SpeechLane {
     run.bufferBuilder = nil
     await run.feedTask?.value
     run.feedTask = nil
-    run.inputBuilder?.finish()
-    run.inputBuilder = nil
   }
 
   /// 締めと破棄で共通の後半。1 回分を捨てる。analyzer の畳み方だけが呼び出し側で違う。
@@ -520,22 +376,12 @@ final class SpeechLane {
         observer, name: .AVAudioEngineConfigurationChange, object: nil)
       run.configurationObserver = nil
     }
-    run.analyzer = nil
-    run.resultTask?.cancel()
-    run.resultTask = nil
+    run.recognizer.onUpdate = nil
     self.run = nil
   }
 
-  /// 結果ループが finalize 後の残りを処理し終えるのを待つ。上限つきのポーリング。
-  private func drainResults(_ run: RecognitionRun) async {
-    await VoxPoll.wait(
-      until: { run.resultsFinished },
-      deadline: voxNowMilliseconds() + Double(Self.resultDrainMilliseconds),
-      step: .milliseconds(5), now: voxNowMilliseconds)
-  }
-
-  private func accept(result: SpeechTranscriber.Result, into run: RecognitionRun) {
-    let text = String(result.text.characters)
+  private func accept(result: RecognitionUpdate, into run: RecognitionRun) {
+    let text = result.text
     if !run.firstResultReported {
       run.firstResultReported = true
       onFirstResult?(voxNowMilliseconds())
@@ -543,7 +389,7 @@ final class SpeechLane {
     if result.isFinal {
       run.committed += text
       run.tentative = ""
-      finalTimings += Self.timings(of: result.text)
+      finalTimings += result.timings
     } else {
       run.tentative = text
     }
@@ -552,78 +398,6 @@ final class SpeechLane {
       "result index=\(run.resultCount) at_ms=\(voxNowMilliseconds()) is_final=\(result.isFinal) "
         + "committed_length=\(run.committed.count) tentative_length=\(run.tentative.count)")
     onTextUpdate?(run.committed, run.tentative)
-  }
-
-  /// 語ごとの区間（秒）。時刻は analyzer の時間軸で、保存する wav の先頭が 0。
-  private static func timings(of text: AttributedString) -> [TimedText] {
-    text.runs.map { run in
-      let range = run.audioTimeRange
-      return TimedText(
-        text: String(text[run.range].characters),
-        startSeconds: range.map { $0.start.seconds }, endSeconds: range.map { $0.end.seconds })
-    }
-  }
-
-  private func ensureAssets(
-    for transcriber: SpeechTranscriber, locale: Locale, modules: [any SpeechModule]
-  ) async throws {
-    let supported = await SpeechTranscriber.supportedLocales
-    guard supported.map({ $0.identifier(.bcp47) }).contains(locale.identifier(.bcp47)) else {
-      throw SpeechLaneError.localeNotSupported(locale.identifier(.bcp47))
-    }
-
-    let localeIdentifier = locale.identifier(.bcp47)
-    let installedLocaleIdentifiers = Set(
-      await SpeechTranscriber.installedLocales.map { $0.identifier(.bcp47) })
-    if SpeechAssetReadiness.isReady(
-      localeIdentifier: localeIdentifier,
-      installedLocaleIdentifiers: installedLocaleIdentifiers,
-      moduleStatus: .unknown) {
-      return
-    }
-
-    let status = await AssetInventory.status(forModules: modules)
-    if SpeechAssetReadiness.isReady(
-      localeIdentifier: localeIdentifier,
-      installedLocaleIdentifiers: installedLocaleIdentifiers,
-      moduleStatus: status.speechAssetModuleStatus) {
-      return
-    }
-    switch status {
-    case .installed:
-      return
-    case .supported:
-      onAssetInstallStarted?()
-      voxLog("assets status=downloading")
-      guard let request = try await AssetInventory.assetInstallationRequest(supporting: modules)
-      else {
-        throw SpeechLaneError.assetInstallationRequestUnavailable(String(describing: status))
-      }
-      try await request.downloadAndInstall()
-      let installedLocaleIdentifiers = Set(
-        await SpeechTranscriber.installedLocales.map { $0.identifier(.bcp47) })
-      if !SpeechAssetReadiness.isReady(
-        localeIdentifier: localeIdentifier,
-        installedLocaleIdentifiers: installedLocaleIdentifiers,
-        moduleStatus: .unknown) {
-        let installedStatus = await AssetInventory.status(forModules: modules)
-        guard
-          SpeechAssetReadiness.isReady(
-            localeIdentifier: localeIdentifier,
-            installedLocaleIdentifiers: installedLocaleIdentifiers,
-            moduleStatus: installedStatus.speechAssetModuleStatus)
-        else {
-          throw SpeechLaneError.assetNotInstalled(String(describing: installedStatus))
-        }
-      }
-      voxLog("assets status=installed")
-    case .downloading:
-      throw SpeechLaneError.assetDownloadInProgress
-    case .unsupported:
-      throw SpeechLaneError.assetsUnavailable(String(describing: status))
-    @unknown default:
-      throw SpeechLaneError.assetsUnavailable(String(describing: status))
-    }
   }
 
   /// tap ブロックはオーディオスレッドから呼ばれる。`@MainActor` の関数内で作ると

@@ -18,7 +18,7 @@ struct SpeechStreamingTests {
     let installed = await SpeechTranscriber.installedLocales
     try #require(installed.contains { $0.identifier == locale.identifier }, "日本語の認識モデルが必要")
 
-    let (transcriber, analyzer) = SpeechLane.makeRecognizer(locale: locale)
+    let (transcriber, analyzer) = AppleSpeechRecognizer.makeRecognizer(locale: locale)
     let format = try #require(await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber]))
     let audio = try AVAudioFile(
       forReading: URL(fileURLWithPath: path), commonFormat: format.commonFormat,
