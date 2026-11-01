@@ -61,8 +61,8 @@ LOG
 python3 -c 'import sys; open(sys.argv[1], "a", encoding="utf-8", newline="").write("final_text 公開\u2028秘密の続き\rCR の後\n")' \
   "$data/logs/vox.log"
 cat >"$data/metrics.jsonl" <<'JSONL'
-{"axis_a_ms":100,"error":null,"first_token_ms":50,"pause_commit_count":0,"target_app":"com.example.editor"}
-{"axis_a_ms":600,"error":null,"first_token_ms":70,"pause_commit_count":2,"target_app":"com.example.terminal"}
+{"toggle_on_ms":10,"analyzer_start_ms":810,"axis_a_ms":100,"error":null,"first_token_ms":50,"pause_commit_count":0,"target_app":"com.example.editor"}
+{"toggle_on_ms":1000,"analyzer_start_ms":1040,"axis_a_ms":600,"error":null,"first_token_ms":70,"pause_commit_count":2,"target_app":"com.example.terminal"}
 not json
 {"axis_a_ms":200,"error":"paste_receipt_timeout","first_token_ms":null,"pause_commit_count":1,"target_app":"com.example.editor"}
 JSONL
@@ -119,6 +119,7 @@ pass
 
 # summary: 中央値と最大。壊れた行は数えない。
 out="$(python3 "$script" summary --dir "$data")"
+contains "$out" '| prepare_ms | 2 | 420 | 800 |' 'summary preparation before input'
 contains "$out" '| axis_a_ms | 3 | 200 | 600 |' 'summary axis_a'
 contains "$out" '| first_token_ms | 2 | 60 | 70 |' 'summary first_token'
 contains "$out" '| pause_commit_count | 3 | 1 | 2 |' 'summary pause_commit_count'

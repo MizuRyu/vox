@@ -89,6 +89,8 @@ Haasの無音対策は自動。Silero VADが発話と判定した区間だけを
 
 入力先のOrca / Zed / ターミナルから解決したフォルダに、15分以内のClaude / Codexセッションが1つだけあると、直近12発言から最大12語を確定時だけヒントに使う。並行セッションやログ形式不明では供給しない。追加学習・LLM・辞書への書き込み・外部送信はない。読み取り対象はClaudeのプロジェクトJSONLとCodexのstate索引・rolloutの末尾最大256KiB。索引は読み取り専用で開く。
 
+VADはCPUだけを初期化する。モデル読み込み中だけMetalの登録を止め、元の環境へ戻してからHaasのGPUワーカーを起動する。ライブラリとVADモデル単独のphysical footprint増分は約4MiBの実測で、Vox全体の使用量ではない。準備時間は診断ログの`haas_prepared`に記録する。`reused=false`は`assets_ms`（取得・検証）/ `vad_ms` / `worker_ms` / `total_ms`、再利用時は`reused=true total_ms`。遅延の切り分けは`vox-debug`の`summary`で`prepare_ms`も見る。
+
 VAD用の `libspeech.4.dylib` は `.app/Contents/Frameworks/` に本体と同じ署名で同梱する。SwiftPMの直接実行ではモデルのフォルダからSHA256検証済みのライブラリを読む。ライブラリ検証を無効にするentitlementは足さない。
 
 保存先は `~/Library/Application Support/vox/models/haas-v1-q4/`（モデルと speech.cpp v0.10.0）。取得し直すときは Vox を終了してこのフォルダを退避する。録音は `recordings/` にモデルを問わず録音全体として残り、JSON の `speech_model` にモデル名を記録する。Haas の `segments` は語ではなく音声窓の時刻。録音の7日・500MiBの回収はモデルには適用しない。

@@ -117,6 +117,8 @@ HUD の展開時の高さは、本文と同じ書体の TextKit で測り、画�
 
 ## 実装上の落とし穴（M0 で踏んだもの。本実装で再発する）
 
+- speech.cpp v0.10.0はCPU指定でもGPUを列挙し、VADだけで不要なMetalシェーダーを準備する。VADのモデル読み込み中だけ、ロック内で`GGML_METAL_DEVICES=0`を指定する。成否にかかわらず元の環境へ戻してから、GPUを使うHaas子プロセスを起動する。撤去条件と検査は`HaasVAD.loadOnCPU`に記す。
+
 - AVAudioEngine が組み上げた入力 Audio Unit の CurrentDevice や EnableIO を後から書き換えない。engine が構成変更を通知して録音が止まる。機器を選ぶ録音は Vox が作る AUHAL で、初期化前に設定する。VoiceProcessingIO の CurrentDevice は入力が element 1、通常の AUHAL は element 0。engine が所有する Audio Unit を独自に初期化・終了しない。
 - AUHAL の入力コールバックは IO スレッドで呼ばれる。MainActor の型の中で作らず、`HALInputCapture` のような非隔離の型に置く。
 - **`AVAudioEngine` の tap クロージャを `@MainActor` の関数内に直書きすると main actor 隔離を継承し、

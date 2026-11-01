@@ -42,7 +42,7 @@ description: >
    ```sh
    voxlog.py last [N]      # 直近 N 回（既定 1）の録音。result 行は 1 行にまとめる
    voxlog.py errors [N]    # 直近 N 回（既定 5）の error 名と *_error / *_failed / *_timeout の行
-   voxlog.py summary [N]   # 直近 N 回（既定 20）の axis_a_ms・first_token_ms・pause_commit_count の中央値と最大、error と target_app の件数
+   voxlog.py summary [N]   # 直近 N 回（既定 20）の prepare_ms・axis_a_ms・first_token_ms・pause_commit_count の中央値と最大、error と target_app の件数
    ```
 
    症状ごとに見る行（意味は `docs/development.md` の `error` 表と `vox-setup` の「よくあるトラブル」。ここに重複させない）
@@ -54,6 +54,7 @@ description: >
    | 音が途切れる | `audio_input`、`audio_input_verified`、`audio_configuration_changed`（メニューの「音声の診断を記録」をオンにした回は `audio_capture_*`） |
    | パレットの対象が違う | `palette_target source=`（`root=` は伏せてある。`source` と計測の `palette_target_source` で判断） |
    | HUD にキーが届かない | `hud_key state=` / `since_key_ms=`、`hud_key_equivalent` |
+   | モデルの準備が遅い | `haas_prepared reused=`、`assets_ms` / `vad_ms` / `worker_ms` / `total_ms`、`summary`の`prepare_ms`（録音キーから認識開始まで。保存済みの時刻差から算出） |
    | 確定が遅い | `segment_finalized reason=`、`segment_finalize_timeout`、`summary` の `axis_a_ms` と `pause_commit_count` |
 
    権限は録音の外（起動時）の行にある: `rg -N '^permissions ' ~/Library/Application\ Support/vox/logs/vox.log | tail -n 1`

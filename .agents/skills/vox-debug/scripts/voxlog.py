@@ -156,12 +156,17 @@ def cmd_summary(arguments):
         if isinstance(row, dict):
             rows.append(row)
     rows = rows[-arguments.count:]
+    for row in rows:
+        row.pop("prepare_ms", None)
+        start, toggle = row.get("analyzer_start_ms"), row.get("toggle_on_ms")
+        if isinstance(start, (int, float)) and isinstance(toggle, (int, float)) and start >= toggle:
+            row["prepare_ms"] = start - toggle
     print("対象: 直近 {} 回".format(len(rows)))
     print()
     # axis_a_ms は toggle_off → paste_received の差（MetricsSession.record）。
     print("| 指標 | 件数 | 中央値 | 最大 |")
     print("|---|---|---|---|")
-    for key in ("axis_a_ms", "first_token_ms", "pause_commit_count"):
+    for key in ("prepare_ms", "axis_a_ms", "first_token_ms", "pause_commit_count"):
         values = [row[key] for row in rows if isinstance(row.get(key), (int, float))]
         if values:
             print("| {} | {} | {} | {} |".format(

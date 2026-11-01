@@ -4,6 +4,7 @@ import VoxCore
 
 /// speech.cpp 4 の C ABI。CPU 1 スレッドで新着音声だけを判定する。
 final class HaasVAD {
+  private static let initializationLock = NSLock()
   private typealias Pointer = OpaquePointer
   private typealias Create = @convention(c) (UnsafeMutablePointer<Pointer?>) -> Int32
   private typealias Free = @convention(c) (Pointer?) -> Void
@@ -66,7 +67,22 @@ final class HaasVAD {
     defer { paramsFree(params) }
     try Self.check(threads(params, 1))
     try Self.check(device(params, "CPU"))
-    try Self.check(load(modelURL.path, params, &model))
+    try Self.loadOnCPU(load, modelURL: modelURL, params: params, model: &model)
+  }
+
+  private static func loadOnCPU(_ load: Load, modelURL: URL, params: Pointer?, model: inout Pointer?) throws {
+    try initializationLock.withLock {
+      // CPU指定でもGPUを列挙するため。Haas子プロセスの起動前に環境を戻す。
+      // 撤去条件: CPU指定でMetalを登録しない版への更新後、この制限なしで次の検査が通ること。
+      // 確認: VADの検査用環境変数を指定して swift test --filter HaasWorkerTests/cpuOnlyVADStartup
+      let key = "GGML_METAL_DEVICES"
+      let previous = getenv(key).map { String(cString: $0) }
+      guard setenv(key, "0", 1) == 0 else { throw HaasError.recognitionFailed }
+      defer {
+        if let previous { setenv(key, previous, 1) } else { unsetenv(key) }
+      }
+      try check(load(modelURL.path, params, &model))
+    }
   }
 
   deinit {

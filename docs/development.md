@@ -97,6 +97,10 @@ VOX_ENGINE_REPLAY_AUDIO="$PWD/z-ai/2026-10-28-speech-streaming-check/input.aiff"
 
 ### VADとセッション用語
 
+`HaasWorkerTests.cpuOnlyVADStartup`は`VOX_VAD_LIBRARY`と`VOX_VAD_MODEL`を指定して任意実行する。実ライブラリの登録デバイスがCPUの1つだけであることと、モデル読み込みの成功・失敗の両方でMetalの環境設定が戻ることを検査する。実行例: `swift test --filter HaasWorkerTests/cpuOnlyVADStartup`。別プロセスのHaas認識はMetalを使う。
+
+診断ログの`haas_prepared`は、再利用の有無と準備時間を記録する。新規起動では`assets_ms`（取得・SHA256検証）/ `vad_ms` / `worker_ms` / `total_ms`、再利用では`total_ms`を出す。`voxlog.py summary`の`prepare_ms`は`analyzer_start_ms - toggle_on_ms`で算出し、保存形式はschema 7のまま変えない。発話開始後の`first_token_ms`とは分けて見る。
+
 `SpeechGateTests` / `SpeechVocabularyTests` / `SessionVocabularyTests`は発話区間の再認識抑止、会話本文だけからの抽出、フォルダ・期限・並行セッション・読み取り上限を検査する。`HaasWorkerTests.sessionKeywords`と`HaasRecognizerTests.keywordCorrectionAtCommit`は、ヒントを確定時だけ使い、次の録音へ持ち越さないことを検査する。
 
 `HaasWorkerTests.realSpeechGate`は任意実行。`VOX_VAD_AUDIO_ROOT`に16kHz・Int16・monoの合成wavのフォルダ、`VOX_VAD_LIBRARY`に固定版ライブラリ、`VOX_VAD_MODEL`にSilero重みを指定する。雑音28本を`noise-*.wav`、発話を`haas.wav` / `house.wav` / `transcriber.wav` / `api.wav` / `ledger.wav`、小声を`*-quiet.wav`、短い返事を`short-*.wav`として置く。発話検出は実モデル、認識器の応答は合成の固定値にして、雑音で認識要求が出ないことを検査する。マイク・本体・実際の発話は使わず、`OK: vad_stream noise=... speech=...`の1行で件数を出す。

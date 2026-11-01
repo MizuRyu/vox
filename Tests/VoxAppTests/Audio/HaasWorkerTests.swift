@@ -6,6 +6,26 @@ import Testing
 
 @Suite("Haas: worker protocol", .serialized)
 struct HaasWorkerTests {
+  @Test("CPU用VADはGPUを初期化せず、Metalの環境設定を戻す",
+    .enabled(if: ProcessInfo.processInfo.environment["VOX_VAD_LIBRARY"] != nil))
+  func cpuOnlyVADStartup() throws {
+    let environment = ProcessInfo.processInfo.environment
+    let library = URL(fileURLWithPath: try #require(environment["VOX_VAD_LIBRARY"]))
+    let model = URL(fileURLWithPath: try #require(environment["VOX_VAD_MODEL"]))
+    let previous = getenv("GGML_METAL_DEVICES").map { String(cString: $0) }
+    let vad = try HaasVAD(library: library, model: model)
+    let handle = try #require(dlopen(library.path, RTLD_NOW | RTLD_LOCAL))
+    defer { dlclose(handle) }
+    let symbol = try #require(dlsym(handle, "speech_device_count"))
+    let count = unsafeBitCast(symbol, to: (@convention(c) () -> Int).self)
+    withExtendedLifetime(vad) { #expect(count() == 1, "CPUのVADでGPUの登録・シェーダー準備をしない") }
+    #expect(getenv("GGML_METAL_DEVICES").map { String(cString: $0) } == previous)
+    #expect(throws: HaasError.self) {
+      _ = try HaasVAD(library: library, model: model.deletingLastPathComponent().appendingPathComponent("missing-model.gguf"))
+    }
+    #expect(getenv("GGML_METAL_DEVICES").map { String(cString: $0) } == previous)
+  }
+
   @Test("用語は認識要求へ渡し、再利用したワーカーでも次の録音へ持ち越さない")
   func sessionKeywords() async throws {
     let assets = try fixture(mode: "ok")

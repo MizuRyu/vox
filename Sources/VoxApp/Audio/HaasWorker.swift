@@ -41,17 +41,22 @@ actor HaasWorker: HaasTranscribing {
   }
 
   func prepare(keywords: String = "") async throws {
+    let started = voxNowMilliseconds()
     if process?.isRunning == true {
       vad?.reset()
       previousText = ""
       previousAudio = nil
       self.keywords = keywords
+      voxLog("haas_prepared reused=true total_ms=\(Int(voxNowMilliseconds() - started))")
       return
     }
     shutdown()
     self.keywords = keywords
+    let assetsStarted = voxNowMilliseconds()
     let assets = try await prepareAssets()
+    let assetsReady = voxNowMilliseconds()
     vad = try makeVAD(assets)
+    let vadReady = voxNowMilliseconds()
     try Task.checkCancellation()
     let child = Process()
     let stdin = Pipe()
@@ -79,6 +84,9 @@ actor HaasWorker: HaasTranscribing {
       guard ready.type == "ready", ready.protocolVersion == 4, ready.version == "0.10.0" else {
         throw HaasError.workerUnavailable
       }
+      voxLog("haas_prepared reused=false assets_ms=\(Int(assetsReady - assetsStarted)) "
+        + "vad_ms=\(Int(vadReady - assetsReady)) worker_ms=\(Int(voxNowMilliseconds() - vadReady)) "
+        + "total_ms=\(Int(voxNowMilliseconds() - started))")
     } catch {
       shutdown()
       throw error
