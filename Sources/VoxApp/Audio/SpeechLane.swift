@@ -73,8 +73,8 @@ final class SpeechLane {
 
   let levels = AudioLevelTracker()
 
-  /// (committed, tentative)。committed は追記専用（ADR-002 のテキスト契約）。
-  var onTextUpdate: (@MainActor (String, String) -> Void)?
+  /// committed / tentative と、文末の約物を補ってよいか。committed は追記専用（ADR-002）。
+  var onTextUpdate: (@MainActor (String, String, Bool) -> Void)?
   /// 最初の結果（volatile 含む）を受け取った時刻。
   var onFirstResult: (@MainActor (Double) -> Void)?
   /// 認識モデルを準備するとき。初回は取得が必要になる。
@@ -90,6 +90,7 @@ final class SpeechLane {
   private var recognitionGeneration: RecognitionGeneration?
   private var interruption = CaptureInterruption()
 
+  var automaticPauseCommitCount: Int { haasRecognizer?.pauseCommitCount ?? 0 }
   /// ADR-020。無音で区切る前に、締める淡色があるかを見る。
   var hasTentativeText: Bool { run?.tentative.isEmpty == false }
   /// 締めが走っている間は重ねて頼まない（同じ analyzer に finalize を 2 つ入れない。ADR-007）。
@@ -99,7 +100,7 @@ final class SpeechLane {
   func start(
     speechEngine: SpeechEngine = .haas,
     voiceProcessingEnabled: Bool = false, microphoneInput: MicrophoneInput = .automatic,
-    recordingWriter: RecordingWriter? = nil, keywords: String = ""
+    recordingWriter: RecordingWriter? = nil, keywords: String = "", vocabularyTask: Task<String, Never>? = nil
   ) async throws -> Double {
     let generation = lifecycle.begin()
     recognitionGeneration = generation
@@ -113,6 +114,7 @@ final class SpeechLane {
     case .haas:
       let haas = haasRecognizer ?? HaasSpeechRecognizer()
       haas.keywords = keywords
+      haas.vocabularyTask = vocabularyTask
       haasRecognizer = haas
       recognizer = haas
     }
@@ -417,7 +419,7 @@ final class SpeechLane {
     voxLog(
       "result index=\(run.resultCount) at_ms=\(voxNowMilliseconds()) is_final=\(result.isFinal) "
         + "committed_length=\(run.committed.count) tentative_length=\(run.tentative.count)")
-    onTextUpdate?(run.committed, run.tentative)
+    onTextUpdate?(run.committed, run.tentative, result.completesSentence)
   }
 
   /// tap ブロックはオーディオスレッドから呼ばれる。`@MainActor` の関数内で作ると

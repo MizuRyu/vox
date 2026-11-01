@@ -37,6 +37,7 @@ final class HaasVAD {
   private var model: Pointer?
   private var detection: Pointer?
   private var gate = SpeechGate()
+  private(set) var lastSpeechFrame: Int?
   var windowStartFrame: Int? { gate.windowStartFrame }
 
   init(library url: URL, model modelURL: URL) throws {
@@ -94,6 +95,7 @@ final class HaasVAD {
     detectionFree(detection)
     detection = nil
     gate = SpeechGate()
+    lastSpeechFrame = nil
   }
 
   func begin(windowStartFrame: Int) throws {
@@ -130,6 +132,9 @@ final class HaasVAD {
     var start = 0.0
     var kept: Int32 = 0
     let active = speaking(detection, &start, &kept) != 0 && kept != 0
+    if let startFrame = gate.windowStartFrame, let end = active ? frames : regions.last?.upperBound {
+      lastSpeechFrame = startFrame + min(end, frames)
+    }
     guard let ranges = gate.recognitionRanges(
       regions: regions, speakingFrom: active ? frame(start) : nil, availableFrames: frames)
     else { return nil }

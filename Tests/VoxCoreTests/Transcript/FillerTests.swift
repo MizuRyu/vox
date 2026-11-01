@@ -8,6 +8,25 @@ import VoxCore
 
 @Suite("Transcript: フィラー除去")
 struct FillerTests {
+  @Test("読点のない長いフィラーとカタカナ表記を除去し、名称とAIの読みは守る")
+  func unpunctuatedFillers() {
+    expect(FillerPass.remove(from: "これはえっと台帳を更新します。"), "これは台帳を更新します。", 1)
+    expect(FillerPass.remove(from: "エット、台帳を更新します。"), "台帳を更新します。", 1)
+    expect(FillerPass.remove(from: "えと、台帳を更新します。"), "台帳を更新します。", 1)
+    expect(FillerPass.remove(from: "ダイエットを始めます。"), "ダイエットを始めます。", 0)
+    expect(FillerPass.remove(from: "エットという名前です。"), "エットという名前です。", 0)
+    expect(FillerPass.remove(from: "えーあいを使います。"), "えーあいを使います。", 0)
+    expect(FillerPass.remove(from: "「えっと」を残してください。"), "「えっと」を残してください。", 0)
+  }
+
+  @Test("ためらいだけの入力は戻さず、短い返事はそのまま残す")
+  func hesitationWithoutReply() {
+    expect(FillerPass.remove(from: "えっと。"), "", 1)
+    expect(FillerPass.remove(from: "あー。"), "", 1)
+    expect(FillerPass.remove(from: "はい。"), "はい。", 0)
+    expect(FillerPass.remove(from: "うん"), "うん", 0)
+  }
+
   // MARK: 単独フィラー（左が読点・句点・空白・文頭。あの / その / まあ は両側を要求する）
 
   @Test("Solo filler at sentence start is removed")
@@ -95,11 +114,10 @@ struct FillerTests {
     expect(FillerPass.remove(from: "終わりです。あ、そうだ"), "終わりです。そうだ", 1)
   }
 
-  /// ADR-012 の例「あ、そうそう、」→ 空は規則としては当たる（removedCount 2）。
-  /// B-6 以降、全部が除去対象だった発話は挿入するものが無くならないよう原文を返す。
+  /// 相づちだけの発話は原文を返し、実際に削除しなかった分は数えない。
   @Test("Interjection only utterance keeps its text")
   func interjectionOnlyUtteranceKeepsItsText() throws {
-    expect(FillerPass.remove(from: "あ、そうそう、"), "あ、そうそう、", 2)
+    expect(FillerPass.remove(from: "あ、そうそう、"), "あ、そうそう、", 0)
   }
 
   @Test("Interjection without following comma is kept")
@@ -164,17 +182,17 @@ struct FillerTests {
 
   @Test("A backchannel only utterance keeps its text")
   func backchannelOnlyUtteranceKeepsItsText() throws {
-    expect(FillerPass.remove(from: "はい"), "はい", 1)
+    expect(FillerPass.remove(from: "はい"), "はい", 0)
   }
 
   @Test("Repeated backchannels keep their text")
   func repeatedBackchannelsKeepTheirText() throws {
-    expect(FillerPass.remove(from: "はい はい"), "はい はい", 2)
+    expect(FillerPass.remove(from: "はい はい"), "はい はい", 0)
   }
 
-  @Test("An utterance of only fillers keeps its text")
+  @Test("An utterance of only hesitation fillers is empty")
   func fillerOnlyUtteranceKeepsItsText() throws {
-    expect(FillerPass.remove(from: "えっと、あの、うーん"), "えっと、あの、うーん", 3)
+    expect(FillerPass.remove(from: "えっと、あの、うーん"), "", 3)
   }
 
   // MARK: フラグ `--no-filler-removal`（R18）

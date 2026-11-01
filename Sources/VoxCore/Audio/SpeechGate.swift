@@ -34,6 +34,7 @@ public struct SpeechGate: Sendable {
     }
     guard !ranges.isEmpty, ranges != recognizedRanges else { return nil }
     recognizedRanges = ranges
-    return ranges
+    // 文中の間は句読点の手がかりになる。前後の無発話だけを除く。
+    return [ranges[0].lowerBound..<ranges[ranges.count - 1].upperBound]
   }
 }

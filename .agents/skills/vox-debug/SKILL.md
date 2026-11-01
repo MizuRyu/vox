@@ -55,6 +55,9 @@ description: >
    | パレットの対象が違う | `palette_target source=`（`root=` は伏せてある。`source` と計測の `palette_target_source` で判断） |
    | HUD にキーが届かない | `hud_key state=` / `since_key_ms=`、`hud_key_equivalent` |
    | モデルの準備が遅い | `haas_prepared reused=`、`assets_ms` / `vad_ms` / `worker_ms` / `total_ms`、`summary`の`prepare_ms`（録音キーから認識開始まで。保存済みの時刻差から算出） |
+   | 淡色の最後が残り続ける | Haasは`segment_finalized reason=pause engine=haas`を見る。Silero終端からの無音で確定する。Appleは音量床と`pause_commit_count`を見る |
+   | 会話の用語が効かない | `speech_vocabulary status=` / `count=` / `elapsed_ms=`。意味と取得上限はvox-setupを参照。語・本文・パスは出さない |
+   | フィラー・句読点が残る | 淡色は後処理前。確定後の規則と除去対象はspecs/05、除去数は`filler_removed_count`。音声・本文の比較は別途依頼を受け、履歴本文を開いて調べない |
    | 確定が遅い | `segment_finalized reason=`、`segment_finalize_timeout`、`summary` の `axis_a_ms` と `pause_commit_count` |
 
    権限は録音の外（起動時）の行にある: `rg -N '^permissions ' ~/Library/Application\ Support/vox/logs/vox.log | tail -n 1`

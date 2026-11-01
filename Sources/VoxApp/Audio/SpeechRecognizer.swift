@@ -5,6 +5,7 @@ struct RecognitionUpdate {
   let text: String
   let isFinal: Bool
   var timings: [TimedText] = []
+  var completesSentence = false
 }
 
 /// マイク・HUD・録音保存は SpeechLane が持ち、ここには認識に必要な音声だけを渡す。

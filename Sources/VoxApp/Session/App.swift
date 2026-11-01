@@ -61,8 +61,8 @@ final class VoxController {
   func start(enableHotkeys: Bool = true) throws {
     settings.connect()
 
-    lane.onTextUpdate = { [weak self] committed, tentative in
-      self?.acceptText(committed: committed, tentative: tentative)
+    lane.onTextUpdate = { [weak self] committed, tentative, completesSentence in
+      self?.acceptText(committed: committed, tentative: tentative, completesSentence: completesSentence)
     }
     lane.onFirstResult = { [weak self] at in
       guard let self else { return }
@@ -279,13 +279,13 @@ final class VoxController {
   /// 速報レーンは raw な committed / tentative を全文で返す。committed は追記専用なので差分だけ取り、
   /// **committed に足す前に**辞書を当ててフィラーを除去する（ADR-019 / ADR-012。tentative には掛けない）。
   /// 編集モード中でもここは追記なので、ユーザーが打った内容を壊さない。
-  private func acceptText(committed: String, tentative: String) {
+  private func acceptText(committed: String, tentative: String, completesSentence: Bool) {
     guard let recording else { return }
     if let delta = TranscriptDelta.appended(
       previous: recording.rawCommitted, current: committed) {
       if !delta.isEmpty {
         // T21。`head` の末尾に足すだけ。打った文字（tail）は動かさない。
-        hud.model.commitFinal(clean(delta, into: recording))
+        hud.model.commitFinal(clean(delta, into: recording, completesSentence: completesSentence))
       }
     } else {
       // 追記専用の契約が破れた場合（想定外）。全文を作り直す。
@@ -309,10 +309,10 @@ final class VoxController {
     }
   }
 
-  private func clean(_ text: String, into recording: RecordingSession) -> String {
+  private func clean(_ text: String, into recording: RecordingSession, completesSentence: Bool = false) -> String {
     let removal = CommittedText.clean(
       text, dictionary: recording.dictionary,
-      fillerRemovalEnabled: VoxConfig.fillerRemovalEnabled)
+      fillerRemovalEnabled: VoxConfig.fillerRemovalEnabled, completingSentence: completesSentence)
     recording.metrics?.fillerRemovedCount += removal.removedCount
     return removal.text
   }
@@ -340,7 +340,6 @@ final class VoxController {
     hud.reset(status: "準備中")
     hud.show()
     voxLog("target_app fixed=\(target?.bundleIdentifier ?? "-")")
-
     recording.task = Task { @MainActor in
       do {
         guard await ensureMicrophoneAccess() else {
@@ -351,10 +350,10 @@ final class VoxController {
           return
         }
         guard proceed(recording) else { close(); return }
-        let keywords = await recording.speechKeywords()
-        guard proceed(recording) else { close(); return }
+        let vocabularyTask = recording.speechVocabularyTask()
+        defer { vocabularyTask?.cancel() }
         let analyzerStart = try await lane.start(speechEngine: recording.speechEngine, voiceProcessingEnabled: recording.voiceProcessingEnabled,
-          microphoneInput: recording.microphoneInput, recordingWriter: recording.recordingWriter, keywords: keywords)
+          microphoneInput: recording.microphoneInput, recordingWriter: recording.recordingWriter, vocabularyTask: vocabularyTask)
         recording.metrics?.analyzerStartMilliseconds = analyzerStart
         if recording.captureInterrupted {
           await lane.abort()
@@ -415,6 +414,7 @@ final class VoxController {
 
   private func flushMetrics(_ recording: RecordingSession) {
     guard var metricsSession = recording.metrics else { return }
+    metricsSession.pauseCommitCount += lane.automaticPauseCommitCount
     metricsSession.speechOnsetMilliseconds = lane.levels.onsetMilliseconds
     let record = metricsSession.record
     metrics.append(record)
@@ -488,7 +488,7 @@ final class VoxController {
 
   /// ADR-020。発話の後に黙ったら、そこまでを確定する。締めが走っている間は判定しない。
   private func commitAfterPauseIfNeeded() {
-    guard let recording, !lane.isSegmentFinalizePending,
+    guard let recording, recording.speechEngine == .apple, !lane.isSegmentFinalizePending,
       recording.pauseCommit.shouldCommit(
         lastSpeechMilliseconds: lane.levels.lastSpeechMilliseconds, now: voxNowMilliseconds(),
         hasTentativeText: lane.hasTentativeText)

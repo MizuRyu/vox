@@ -25,19 +25,22 @@ public enum FillerPass {
     /// M2 の実測で Apple の出力が「消したいっす。えっとデータ層。」のように読点を挟まないことが
     /// 分かったため（ADR-012「初版。M2 の実測で調整する」）。
     case solo
+    /// 読点がなくても拾う長い言いよどみ。引用の中には適用しない。
+    case hesitation
     /// 連体詞・副詞の用法があるフィラー（あの・その・まあ）。
     /// 「あのファイルを開いて」を壊さないため、**両側**が境界のときだけ除去する。
     case soloAmbiguous
     /// 相槌。文頭、または読点に挟まれた場合のみ。
     case aizuchi
-    /// 感動詞。文頭で直後に読点がある場合のみ。
+    /// 感動詞。文頭で直後に境界がある場合のみ。
     case interjection
   }
 
   /// ADR-012 の表。**「なんか」「なんだっけ」「じゃなくて」は入れない**（誤除去のコストが高い）。
   private static let vocabulary: [(word: [Character], category: Category)] = {
     let entries: [(String, Category)] = [
-      ("えっと", .solo), ("えーっと", .solo), ("えーと", .solo), ("えー", .solo),
+      ("えっと", .hesitation), ("えーっと", .hesitation), ("えーと", .hesitation), ("えー", .soloAmbiguous),
+      ("えと", .soloAmbiguous), ("エット", .soloAmbiguous),
       ("あのー", .solo), ("うーん", .solo), ("んー", .solo),
       ("あの", .soloAmbiguous), ("その", .soloAmbiguous), ("まあ", .soloAmbiguous),
       ("そうそう", .aizuchi), ("うん", .aizuchi), ("はい", .aizuchi),
@@ -47,6 +50,7 @@ public enum FillerPass {
     return entries.map { (Array($0.0), $0.1) }.sorted { $0.0.count > $1.0.count }
   }()
 
+  private static let quotePairs: [Character: Character] = ["「": "」", "『": "』", "`": "`", "\"": "\""]
   private static let commas: Set<Character> = ["、", "，"]
   private static let terminators: Set<Character> = ["。", "！", "？", "．"]
   private static let spaces: Set<Character> = [" ", "\u{3000}", "\t", "\n"]
@@ -63,12 +67,21 @@ public enum FillerPass {
     let source = Array(text)
     var kept: [Character] = []
     var removed = 0
+    var hadReply = false
+    var quotes: [Character] = []
     var index = 0
 
     while index < source.count {
-      if let length = matchLength(in: source, at: index, kept: kept) {
+      let character = source[index]
+      if let closing = quotePairs[character], quotes.last != character {
+        quotes.append(closing)
+      } else if quotes.last == character {
+        quotes.removeLast()
+      }
+      if quotes.isEmpty, let match = match(in: source, at: index, kept: kept) {
         removed += 1
-        index += length
+        hadReply = hadReply || match.isReply
+        index += match.length
         continue
       }
       kept.append(source[index])
@@ -76,9 +89,9 @@ public enum FillerPass {
     }
 
     let cleaned = collapse(kept)
-    // 全部がフィラーだった発話（「はい」だけ等）は原文を返す。空にすると挿入するものが無くなる。
+    // 短い返事は残す。ためらい声だけなら空にし、実際に適用した除去数を返す。
     guard cleaned.contains(where: { !$0.isWhitespace }) else {
-      return FillerRemoval(text: text, removedCount: removed)
+      return hadReply ? FillerRemoval(text: text, removedCount: 0) : FillerRemoval(text: "", removedCount: removed)
     }
     return FillerRemoval(text: cleaned, removedCount: removed)
   }
@@ -86,7 +99,7 @@ public enum FillerPass {
   /// `index` から始まるフィラーを 1 つ探し、除去してよければその長さを返す。
   /// 左の文脈は「ここまでに残した文字列 `kept`」で見る。先行するフィラーを消した結果として
   /// 文頭・読点隣接になった語も、その場で除去できる（「あ、そうそう、」→ 空）。
-  private static func matchLength(in source: [Character], at index: Int, kept: [Character]) -> Int? {
+  private static func match(in source: [Character], at index: Int, kept: [Character]) -> (length: Int, isReply: Bool)? {
     for entry in vocabulary {
       let word = entry.word
       guard index + word.count <= source.count else { continue }
@@ -95,6 +108,8 @@ public enum FillerPass {
       let next = index + word.count
       let allowed: Bool
       switch entry.category {
+      case .hesitation:
+        allowed = true
       case .solo:
         allowed = isBoundary(kept.last)
       case .soloAmbiguous:
@@ -105,9 +120,9 @@ public enum FillerPass {
           && isBoundary(character(source, at: next))
       case .interjection:
         allowed =
-          isSentenceStart(kept) && character(source, at: next).map(commas.contains) == true
+          isSentenceStart(kept) && isBoundary(character(source, at: next))
       }
-      if allowed { return word.count }
+      if allowed { return (word.count, entry.category == .aizuchi) }
     }
     return nil
   }

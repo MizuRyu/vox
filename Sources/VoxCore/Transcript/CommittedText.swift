@@ -7,11 +7,12 @@ public enum CommittedText {
   /// 始まる誤認識（「えーあい」）の頭が先に削られ、利用者が履歴の raw_text で見た左辺が残らない。
   /// 疑問符（ADR-028）は最後。フィラーを消した後の文末を見る。
   public static func clean(
-    _ delta: String, dictionary: DictionaryTable, fillerRemovalEnabled: Bool
+    _ delta: String, dictionary: DictionaryTable, fillerRemovalEnabled: Bool, completingSentence: Bool = false
   ) -> FillerRemoval {
     let removal = FillerPass.remove(
       from: DictionaryPass.apply(to: delta, table: dictionary), enabled: fillerRemovalEnabled)
-    return FillerRemoval(
-      text: QuestionMarkPass.apply(to: removal.text), removedCount: removal.removedCount)
+    let marked = QuestionMarkPass.apply(to: removal.text, completingSentence: completingSentence)
+    let text = completingSentence ? SentencePunctuationPass.apply(to: marked) : marked
+    return FillerRemoval(text: text, removedCount: removal.removedCount)
   }
 }

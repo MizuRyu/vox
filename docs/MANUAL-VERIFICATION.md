@@ -685,3 +685,33 @@
 | **期待結果** | 新規起動の`haas_prepared`でVADが不要なGPU初期化に数秒を費やさず、再利用時は`reused=true`になる。モデル解放後は再度読み込む。短い発話・小声・無音時の手入力はREC-18と同じ。全体の準備時間はファイル検証・Haas読み込み・Macの負荷によって変わる |
 
 CPUだけの登録と環境設定の復元は自動化済み: `HaasWorkerTests.cpuOnlyVADStartup`（任意実行）。HUDの待ち時間と実機マイクは手動確認する。
+
+### REC-21 Haasの発話後に淡色を確定する
+
+| 項目 | 内容 |
+|---|---|
+| **前提** | Haasのモデルを取得済み。普段使うマイクを選ぶ |
+| **手順** | 開始直後から話して無音を置く。小声、一定の背景音がある場合、短い返事でも試す。確定の後に手入力し、再び話す |
+| **期待結果** | VADの発話終端からの無音で淡色を確定し、末尾が残り続けない。更新周期と推論の遅れはある。手入力と次の発話の順序を保つ。Appleに戻した場合は従来の音量判定を使う |
+
+自動化済み: `HaasRecognizerTests.speechEndpointCommitsPreview` / `boundedWindowsCoverAllFrames`。実マイクと表示は手動確認する。
+
+### REC-22 Haasの句読点とフィラーの補完
+
+| 項目 | 内容 |
+|---|---|
+| **前提** | Haasを選ぶ |
+| **手順** | 「えっと、台帳を更新します」「これでいいですか」「例えば内容を確認します」を話す。「その台帳を」で一旦止め、続けて話す。「はい」だけ、ためらい声だけ、引用した語も試す |
+| **期待結果** | 確定した言い切り・疑問・一部接続表現を補完し、既存の約物を重ねない。節の途中や12秒上限だけでは句点を補わない。ためらいだけは残さず、短い返事・引用・手入力を保つ。認識器が語自体を誤った場合は補完で直ったと扱わない |
+
+自動化済み: `QuestionMarkTests.missingSentenceMarks` / `incompleteBoundary`、`FillerTests.unpunctuatedFillers` / `hesitationWithoutReply`、`SectionTests.hesitationKeepsTypedTail`。
+
+### REC-23 会話用語の供給と準備中の中止
+
+| 項目 | 内容 |
+|---|---|
+| **前提** | Haasを選び、入力先と同じフォルダの直近15分のClaude / Codexセッションが1つだけある |
+| **手順** | Orca / Zed / ターミナルから録音を始め、会話の名称を話して確定する。複数セッションの場合も試す。モデルを解放した後、準備中にEscを押す |
+| **期待結果** | 用語とモデルを並行で準備し、取得上限で無制限に待たない。ログは成功時readyと件数、複数ならambiguous、対象取得失敗ならtarget_unavailableを出す。本文・用語をログに出さない。Escで両方を中止し、録音・貼り付けを始めない |
+
+自動化済み: `HaasRecognizerTests.parallelVocabularyPreparation` / `cancelVocabularyPreparation`、`SessionVocabularyTests`。入力先の実際のフォルダ取得は手動確認する。

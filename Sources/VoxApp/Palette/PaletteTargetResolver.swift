@@ -5,7 +5,7 @@
 //   ターミナル → 子孫プロセスの tty → その tty の最前景プロセス → cwd → git のルート
 //   それ以外   → `--repo` → 最近使ったフォルダ → カレントディレクトリ
 //
-// アダプタはパレットを開いた瞬間に非同期で走らせ、500ms 以内に返らなければフォールバックする。
+// パレットは500ms以内でフォールバック。録音開始の用語取得は別の上限を指定する。
 // 解釈（JSON / ps / DB の行）は VoxCore 側でテストしている。
 
 import Darwin
@@ -20,9 +20,9 @@ enum PaletteTargetResolver {
   /// 対象を 1 つも作れなかったときだけ nil（ヘッダに「対象を特定できず」を出す側の判断材料）。
   static func resolve(
     bundleIdentifier: String?, processID: Int32?, fallbackRepositories: [String],
-    recentFolder: String?
+    recentFolder: String?, budgetMilliseconds: Int = timeoutMilliseconds
   ) async -> PaletteTarget? {
-    let deadline = ContinuousClock.now.advanced(by: .milliseconds(timeoutMilliseconds))
+    let deadline = ContinuousClock.now.advanced(by: .milliseconds(budgetMilliseconds))
     let target =
       frontmostAppTarget(
         bundleIdentifier: bundleIdentifier, processID: processID, deadline: deadline)

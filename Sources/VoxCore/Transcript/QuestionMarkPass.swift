@@ -6,11 +6,11 @@ import Foundation
 public enum QuestionMarkPass {
   /// 丁寧語とくだけた形の疑問（「ですか」「ませんか」「でしょうかね」「いいっすか」）、思い出しの「っけ」、
   /// 同意を求める「よくね」「なくね」「方が良くない」、頼みの「てくれん」。
-  public static func apply(to text: String) -> String {
-    text.replacing(
-      #/((?:です|ます|でした|ました|ません|でしょう|[っい]す)か(?:ね)?|っけ|(?:よく|良く|なく)ね|てくれん|方が(?:よく|良く)ない)[ 　]*。/#
-    ) {
-      "\($0.output.1)？"
-    }
+  private static let ending = #"(?:です|ます|でした|ました|ません|でしょう|[っい]す)か(?:ね)?|っけ|(?:よく|良く|なく)ね|てくれん|方が(?:よく|良く)ない"#
+
+  public static func apply(to text: String, completingSentence: Bool = false) -> String {
+    let marked = text.replacingOccurrences(of: "(\(ending))[ 　]*。", with: "$1？", options: .regularExpression)
+    guard completingSentence else { return marked }
+    return marked.replacingOccurrences(of: "(\(ending))[ 　]*$", with: "$1？", options: .regularExpression)
   }
 }

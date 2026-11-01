@@ -6,6 +6,18 @@ import VoxCore
 
 @Suite("Transcript: head / tentative / tail")
 struct SectionTests {
+  @Test("ためらいだけを除去しても、淡色の後ろへ打った文字を残す")
+  func hesitationKeepsTypedTail() {
+    var buffer = TranscriptBuffer(head: "前の文。", tentative: "えっと。", tail: "手入力")
+    let cleaned = CommittedText.clean("えっと。", dictionary: DictionaryTable(contents: ""),
+      fillerRemovalEnabled: true, completingSentence: true)
+    buffer.commitFinal(cleaned.text)
+    buffer.applyTentative("")
+    #expect(buffer.text == "前の文。手入力")
+    #expect(buffer.tentative.isEmpty)
+    #expect(buffer.tail == "手入力")
+  }
+
   // MARK: T21 3 区画（head / tentative / tail）
 
   /// T21。全体の末尾（淡色の後ろ）への挿入は `tail` に入る。

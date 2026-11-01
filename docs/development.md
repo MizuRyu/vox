@@ -103,6 +103,10 @@ VOX_ENGINE_REPLAY_AUDIO="$PWD/z-ai/2026-10-28-speech-streaming-check/input.aiff"
 
 `SpeechGateTests` / `SpeechVocabularyTests` / `SessionVocabularyTests`は発話区間の再認識抑止、会話本文だけからの抽出、フォルダ・期限・並行セッション・読み取り上限を検査する。`HaasWorkerTests.sessionKeywords`と`HaasRecognizerTests.keywordCorrectionAtCommit`は、ヒントを確定時だけ使い、次の録音へ持ち越さないことを検査する。
 
+`HaasRecognizerTests.speechEndpointCommitsPreview`は音量床を待たないVAD終端の確定、`parallelVocabularyPreparation` / `cancelVocabularyPreparation`はモデルと用語の並行準備・中止を検査する。`boundedWindowsCoverAllFrames`は12秒区切りの音声と時刻を保ち、途中を文末扱いしないことも確認する。`QuestionMarkTests`はHaasの文末補完と既存約物・途中の節の保護、`FillerTests` / `SectionTests.hesitationKeepsTypedTail`は表記・引用・返事・除去後の手入力を検査する。
+
+診断ログ`speech_vocabulary`には供給のstatus / count / elapsed_msだけを出す。`pause_commit_count`にはHaas自身のVADによる確定も加える。録音時刻のschemaは変えない。
+
 `HaasWorkerTests.realSpeechGate`は任意実行。`VOX_VAD_AUDIO_ROOT`に16kHz・Int16・monoの合成wavのフォルダ、`VOX_VAD_LIBRARY`に固定版ライブラリ、`VOX_VAD_MODEL`にSilero重みを指定する。雑音28本を`noise-*.wav`、発話を`haas.wav` / `house.wav` / `transcriber.wav` / `api.wav` / `ledger.wav`、小声を`*-quiet.wav`、短い返事を`short-*.wav`として置く。発話検出は実モデル、認識器の応答は合成の固定値にして、雑音で認識要求が出ないことを検査する。マイク・本体・実際の発話は使わず、`OK: vad_stream noise=... speech=...`の1行で件数を出す。
 
 ## 静的解析と pre-commit

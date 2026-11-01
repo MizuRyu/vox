@@ -8,16 +8,22 @@ private actor StubHaasWorker: HaasTranscribing {
   var requests: [Data] = []
   var finalRequests: [Bool] = []
   var stopped = false
+  var currentKeywords = ""
   let fails: Bool
   let delay: Duration
   let prepareDelay: Duration
   let emptyResult: Bool
+  let speechEnd: Int?
 
-  init(fails: Bool = false, delay: Duration = .zero, prepareDelay: Duration = .zero, emptyResult: Bool = false) {
+  init(
+    fails: Bool = false, delay: Duration = .zero, prepareDelay: Duration = .zero, emptyResult: Bool = false,
+    speechEnd: Int? = nil
+  ) {
     self.fails = fails
     self.delay = delay
     self.prepareDelay = prepareDelay
     self.emptyResult = emptyResult
+    self.speechEnd = speechEnd
   }
 
   func prepare(keywords: String) async throws {
@@ -25,6 +31,8 @@ private actor StubHaasWorker: HaasTranscribing {
     stopped = false
   }
   func shutdown() { stopped = true }
+  func speechEndFrame() -> Int? { speechEnd }
+  func setKeywords(_ keywords: String) { currentKeywords = keywords }
 
   func transcribe(_ pcm: Data, windowStartFrame: Int, isFinal: Bool) async throws -> String {
     requests.append(pcm)
@@ -38,6 +46,62 @@ private actor StubHaasWorker: HaasTranscribing {
 @Suite("Haas: 認識のライフサイクル", .serialized)
 @MainActor
 struct HaasRecognizerTests {
+  @Test("音量床の判定を待たず、VADが示す発話後の無音で淡色を確定する")
+  func speechEndpointCommitsPreview() async throws {
+    let worker = StubHaasWorker(speechEnd: 8000)
+    let recognizer = HaasSpeechRecognizer(worker: worker)
+    var updates: [RecognitionUpdate] = []
+    recognizer.onUpdate = { updates.append($0) }
+    let format = try await recognizer.start(onAssetInstallStarted: nil)
+    try await Task.sleep(for: .milliseconds(510))
+    try recognizer.append(audio(32000, format: format))
+    await VoxPoll.wait(until: { updates.last?.isFinal == true }, deadline: voxNowMilliseconds() + 800,
+      step: .milliseconds(5), now: voxNowMilliseconds)
+    #expect(updates.last?.isFinal == true)
+    #expect(updates.last?.completesSentence == true)
+    #expect(recognizer.pauseCommitCount == 1)
+    #expect(await worker.requests.count == 1)
+    await recognizer.abort()
+  }
+
+  @Test("用語取得とモデル準備を並行し、用語を次の録音へ持ち越さない")
+  func parallelVocabularyPreparation() async throws {
+    let worker = StubHaasWorker(prepareDelay: .milliseconds(200))
+    let recognizer = HaasSpeechRecognizer(worker: worker)
+    recognizer.vocabularyTask = Task.detached {
+      try? await Task.sleep(for: .milliseconds(200))
+      return "Haas"
+    }
+    let started = ContinuousClock.now
+    _ = try await recognizer.start(onAssetInstallStarted: nil)
+    #expect(started.duration(to: .now) < .milliseconds(350))
+    #expect(await worker.currentKeywords == "Haas")
+    await recognizer.abort()
+    recognizer.keywords = ""
+    _ = try await recognizer.start(onAssetInstallStarted: nil)
+    #expect(await worker.currentKeywords.isEmpty)
+    await recognizer.abort()
+  }
+
+  @Test("準備の中止は用語取得も取り消し、取得上限まで待たない")
+  func cancelVocabularyPreparation() async throws {
+    let worker = StubHaasWorker(prepareDelay: .seconds(3))
+    let recognizer = HaasSpeechRecognizer(worker: worker)
+    let vocabulary = Task.detached {
+      try? await Task.sleep(for: .seconds(3))
+      return "Haas"
+    }
+    recognizer.vocabularyTask = vocabulary
+    let preparation = Task { try await recognizer.start(onAssetInstallStarted: nil) }
+    try await Task.sleep(for: .milliseconds(20))
+    let cancelled = ContinuousClock.now
+    preparation.cancel()
+    await #expect(throws: CancellationError.self) { _ = try await preparation.value }
+    #expect(cancelled.duration(to: .now) < .milliseconds(500))
+    #expect(vocabulary.isCancelled)
+    await recognizer.abort()
+  }
+
   @Test("発話のない音声ではHUDへ空の確定を送らない")
   func noSpeechDoesNotUpdateHUD() async throws {
     let recognizer = HaasSpeechRecognizer(worker: StubHaasWorker(emptyResult: true))
@@ -158,6 +222,8 @@ struct HaasRecognizerTests {
     #expect(requests.allSatisfy { $0.count <= 12 * 32000 })
     #expect(updates.allSatisfy { $0.isFinal })
     #expect(updates.first?.timings.first?.startSeconds == 0)
+    #expect(updates.first?.completesSentence == false)
+    #expect(updates.last?.completesSentence == true)
     #expect(updates.last?.timings.last?.endSeconds == 16)
     #expect(updates.first?.timings.last?.endSeconds == updates.last?.timings.first?.startSeconds)
     await recognizer.abort()

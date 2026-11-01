@@ -5,6 +5,8 @@ protocol HaasTranscribing: Sendable {
   func prepare(keywords: String) async throws
   func transcribe(_ pcm: Data, windowStartFrame: Int, isFinal: Bool) async throws -> String
   func shutdown() async
+  func speechEndFrame() async -> Int?
+  func setKeywords(_ keywords: String) async
 }
 
 /// 固定版 speech.cpp の JSONL。推論・パイプ I/O・モデルの検証は MainActor の外。
@@ -135,6 +137,10 @@ actor HaasWorker: HaasTranscribing {
     // 同じ音声の確定だけは、途中結果で使わなかった用語ヒントを適用する。
     return reuseSpeech ? previousAudio : nil
   }
+
+  func speechEndFrame() -> Int? { vad?.lastSpeechFrame }
+
+  func setKeywords(_ keywords: String) { self.keywords = keywords }
 
   func shutdown() {
     try? input?.close()

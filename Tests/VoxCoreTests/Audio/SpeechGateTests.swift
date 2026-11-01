@@ -12,7 +12,7 @@ struct SpeechGateTests {
     #expect(gate.recognitionRanges(regions: [3200..<15000], speakingFrom: nil, availableFrames: 32000) == [3200..<15000])
     #expect(gate.recognitionRanges(regions: [3200..<15000], speakingFrom: nil, availableFrames: 48000) == nil)
     #expect(gate.recognitionRanges(
-      regions: [3200..<15000], speakingFrom: 50000, availableFrames: 64000) == [3200..<15000, 50000..<64000])
+      regions: [3200..<15000], speakingFrom: 50000, availableFrames: 64000) == [3200..<64000])
   }
 
   @Test("次の窓と次の録音へ発話判定を持ち越さない")

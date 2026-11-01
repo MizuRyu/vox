@@ -6,11 +6,19 @@ import VoxCore
 /// 入力先と同じフォルダの直近セッションが1つだけのとき、用語を録音開始時に固定する。
 enum SessionVocabulary {
   static func resolve(bundleIdentifier: String?, processID: Int32?) async -> String {
-    guard PaletteTargetAdapter.forBundleIdentifier(bundleIdentifier) != .none,
-      let target = await PaletteTargetResolver.resolve(
-        bundleIdentifier: bundleIdentifier, processID: processID, fallbackRepositories: [], recentFolder: nil),
-      target.source.resolvedFromFrontmostApp
-    else { return "" }
+    let started = voxNowMilliseconds()
+    defer { voxLog("speech_vocabulary elapsed_ms=\(Int(voxNowMilliseconds() - started))") }
+    guard PaletteTargetAdapter.forBundleIdentifier(bundleIdentifier) != .none else {
+      voxLog("speech_vocabulary status=unsupported count=0")
+      return ""
+    }
+    guard let target = await PaletteTargetResolver.resolve(
+      bundleIdentifier: bundleIdentifier, processID: processID, fallbackRepositories: [], recentFolder: nil,
+      budgetMilliseconds: 1500), target.source.resolvedFromFrontmostApp
+    else {
+      voxLog("speech_vocabulary status=target_unavailable count=0")
+      return ""
+    }
     return keywords(root: target.root, home: FileManager.default.homeDirectoryForCurrentUser, now: Date())
   }
 
@@ -21,10 +29,18 @@ enum SessionVocabulary {
     let codex = codexCandidates(root: root, home: home, since: since, deadline: deadline)
     let candidates = claude + codex
     // 同じリポジトリの並行セッションを、更新時刻だけで選ばない。
-    guard candidates.count == 1, let file = candidates.first, ContinuousClock.now < deadline,
-      let lines = tail(file)
-    else { return "" }
-    return SpeechVocabulary.keywords(jsonLines: lines)
+    guard ContinuousClock.now < deadline else {
+      voxLog("speech_vocabulary status=timeout count=0")
+      return ""
+    }
+    guard candidates.count == 1, let file = candidates.first, let lines = tail(file) else {
+      voxLog("speech_vocabulary status=\(candidates.count > 1 ? "ambiguous" : "no_session") count=0")
+      return ""
+    }
+    let terms = SpeechVocabulary.keywords(jsonLines: lines)
+    let count = terms.split(separator: "\n").count
+    voxLog("speech_vocabulary status=\(terms.isEmpty ? "no_terms" : "ready") count=\(count)")
+    return terms
   }
 
   private static func claudeCandidates(

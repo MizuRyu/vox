@@ -12,12 +12,15 @@ private final class HaasRecognitionRun {
   var failure: (any Error)?
   var previewEndFrame = 0
   var previewText = ""
+  var requestedReason: SegmentFinalizeReason?
 }
 
 @MainActor
 final class HaasSpeechRecognizer: SpeechRecognizer {
   var onUpdate: ((RecognitionUpdate) -> Void)?
   var keywords = ""
+  var vocabularyTask: Task<String, Never>?
+  private(set) var pauseCommitCount = 0
   private let worker: any HaasTranscribing
   private var run: HaasRecognitionRun?
   private var idleTask: Task<Void, Never>?
@@ -33,7 +36,16 @@ final class HaasSpeechRecognizer: SpeechRecognizer {
     await idleTask?.value
     idleTask = nil
     onAssetInstallStarted?()
-    try await worker.prepare(keywords: keywords)
+    pauseCommitCount = 0
+    let vocabulary = vocabularyTask
+    vocabularyTask = nil
+    try await withTaskCancellationHandler {
+      async let prepared: Void = worker.prepare(keywords: keywords)
+      if let vocabulary { keywords = await vocabulary.value }
+      try Task.checkCancellation()
+      try await prepared
+      await worker.setKeywords(keywords)
+    } onCancel: { vocabulary?.cancel() }
     try Task.checkCancellation()
     guard let format = AVAudioFormat(
       commonFormat: .pcmFormatInt16, sampleRate: Double(HaasAudioWindow.sampleRate), channels: 1, interleaved: false)
@@ -58,6 +70,7 @@ final class HaasSpeechRecognizer: SpeechRecognizer {
   func finalizeSegment(reason: SegmentFinalizeReason) async {
     guard let run, run.acceptingAudio, run.failure == nil else { return }
     run.commitThrough = run.audio.endFrame
+    run.requestedReason = reason
     schedule(run, force: true)
     // パレットを待たせるのは既存と同じ上限。推論は止めず、同時に 2 件送らない。
     await VoxPoll.wait(
@@ -117,18 +130,32 @@ final class HaasSpeechRecognizer: SpeechRecognizer {
       try Task.checkCancellation()
       let requested = max(0, run.commitThrough - run.audio.startFrame)
       let capped = run.audio.frameCount >= HaasAudioWindow.maximumFrames
-      let isFinal = requested > 0 || capped
+      var isFinal = requested > 0 || capped
       // 表示した音声を区切りの後へ戻すと、途中で打った文字との順序が逆になる。
       let minimum = run.previewEndFrame - run.audio.startFrame
       let count = capped ? min(requested > 0 ? requested : Int.max, run.audio.quietCutFrames(minimumFrames: minimum))
         : (requested > 0 ? requested : run.audio.frameCount)
       let start = run.audio.startFrame
       let end = start + count
-      let text: String
+      var text: String
       if end == run.previewEndFrame && (!isFinal || keywords.isEmpty) {
         text = run.previewText
       } else {
         text = try await worker.transcribe(run.audio.prefix(frames: count), windowStartFrame: start, isFinal: isFinal)
+      }
+      guard self.run === run else { return }
+      let speechEnd = await worker.speechEndFrame()
+      guard self.run === run else { return }
+      let paused = !isFinal && speechEnd.map {
+        end - $0 >= Int(PauseCommitPolicy.silenceMilliseconds * 16)
+      } == true && (!text.isEmpty || !run.previewText.isEmpty)
+      if paused {
+        isFinal = true
+        if !keywords.isEmpty {
+          text = try await worker.transcribe(run.audio.prefix(frames: count), windowStartFrame: start, isFinal: true)
+        }
+        pauseCommitCount += 1
+        voxLog("segment_finalized reason=pause engine=haas pending=false")
       }
       guard self.run === run else { return }
       if isFinal {
@@ -140,7 +167,8 @@ final class HaasSpeechRecognizer: SpeechRecognizer {
           onUpdate?(RecognitionUpdate(text: text, isFinal: true, timings: [
             TimedText(
               text: text, startSeconds: Double(start) / 16000, endSeconds: Double(end) / 16000)
-          ]))
+          ], completesSentence: paused || (requested > 0 && end >= run.commitThrough
+            && (!run.acceptingAudio || run.requestedReason == .pause))))
         }
       } else {
         let changed = text != run.previewText

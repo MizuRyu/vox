@@ -6,11 +6,11 @@
 
 **native Swift/SwiftUI の本体**。Haas 選択時だけ speech.cpp の認識ワーカーを子プロセスとして使います。Python と WebView は使いません。
 
-現在の経路は `SpeechLane`（入力・変換・保存）→ `SpeechRecognizer`（`HaasSpeechRecognizer` / `AppleSpeechRecognizer`）→ `SpeechLane`（確定追記・世代管理）→ `VoxController`（辞書の表記置換 → フィラー除去。`CommittedText.clean`）→ HUD → `Injector`。
+現在の経路は `SpeechLane`（入力・変換・保存）→ `SpeechRecognizer`（`HaasSpeechRecognizer` / `AppleSpeechRecognizer`）→ `SpeechLane`（確定追記・世代管理）→ `VoxController`（辞書の表記置換 → フィラー除去 → 句読点。`CommittedText.clean`）→ HUD → `Injector`。
 録音セッションと認識実行は 1 回分の値として生成・破棄します（`RecordingSession` と `RecognitionRun`）。
 長寿命の `VoxController` / `SpeechLane` は現在の録音を1つだけ持ち、開始で作って終了で捨てます。Haas のワーカーは確定後60秒まで再利用し、未使用・Apple への切り替え・破棄・終了で解放します。
-以下の図は確定レーンを含む将来構成であり、RingBuffer・VAD・ConfirmLane は現在の本体には未実装です。
-辞書は認識後の表記置換（[ADR-019](../adr/019-dictionary-surface-replacement.md)）だけが入っており、デコード段の語彙バイアスと読み一致は未実装です。
+以下の図は確定レーンを含む将来構成であり、RingBuffer・ConfirmLaneは現在の本体には未実装です。現在のSilero VADはHaasWorker内で動きます。
+辞書は認識後の表記置換（[ADR-019](../adr/019-dictionary-surface-replacement.md)）だけが入っており、辞書からのデコード段の語彙バイアスと読み一致は未実装です。会話由来の用語ヒントは辞書とは別にHaasへ渡します。
 
 ```
 ┌─ AudioTap ────────── 入力専用 AUHAL（通話向け処理は AVAudioEngine）, 16kHz mono
@@ -155,10 +155,10 @@ HUD 本文は **`head + tentative + tail`** の 3 区画。
 編集位置は全文の UTF-16 オフセットで管理し、`tentative` 内部は直接編集しない。
 
 Apple の音声確定は `SpeechTranscriber` が `isFinal` を返した時に起きる。Apple の自発的な区切りは 11〜25 秒間隔なので、本体も区切る（[ADR-020](../adr/020-pause-triggered-segment-commit.md)）。
-発話の後に無音が 700 ms 続き、前回の区切りから 1,500 ms 以上経ち、未確定の本文があれば、`SpeechLane.finalizeSegment(reason: .pause)` で給餌済みの位置まで確定する。
+Appleでは発話の後に無音が 700 ms 続き、前回の区切りから 1,500 ms 以上経ち、未確定の本文があれば、`SpeechLane.finalizeSegment(reason: .pause)` で給餌済みの位置まで確定する。
 無音はノイズ床 × 4（発話開始と同じしきい値）を下回った状態。判定は VoxCore の `PauseCommitPolicy` が持ち、締めが走っている間は判定しない。
 
-Haas は500ms間隔の再認識を淡色に出し、無音・ファイル検索・終了で確定する。連続発話が12秒に達したら直前2秒の静かな位置を選ぶが、すでに表示した音声より前へ境界を戻さない。途中で打った文字との順序を保つためである。終了時は次の更新周期を待たない。推論とパイプ待ちは MainActor の外で行う。HaasWorker内のストリーミングVADが新着音声を判定し、発話区間が増えない間は認識とHUD更新を止める。保存はVADの前で行う。セッション用語は開始時に固定し、確定時だけ認識へ渡す。無発話の窓から空の確定イベントをHUDへ送らない。
+Haas は500ms間隔の再認識を淡色に出し、無音・ファイル検索・終了で確定する。連続発話が12秒に達したら直前2秒の静かな位置を選ぶが、すでに表示した音声より前へ境界を戻さない。途中で打った文字との順序を保つためである。終了時は次の更新周期を待たない。推論とパイプ待ちは MainActor の外で行う。HaasWorker内のストリーミングVADが新着音声を判定し、発話区間が増えない間は認識とHUD更新を止める。文中の間は残す。発話の終端はSileroから取得し、その終端から700ms以上の無音を認識更新時に検出すると確定する。初期のRMSノイズ床に声が混ざり発話時刻が取れない場合も、Haasの確定はRMSを待たない。更新周期500msと推論時間の分だけ判定に遅れがある。保存はVADの前で行う。セッション用語は開始時に固定し、確定時だけ認識へ渡す。無発話の窓から空の確定イベントをHUDへ送らない。文末として区切った無音・終了の確定には`completesSentence`を付け、Haasの句読点補完へ渡す。12秒上限とパレットの区切りには付けず、節の途中を文末扱いしない。会話用語の取得はモデル準備と並行する。
 
 以下の `StreamTextEvent` は初期のイベント契約案。現在の HUD の型・編集モデルを表すものではありません。
 

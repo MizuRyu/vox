@@ -7,6 +7,37 @@ import VoxCore
 
 @Suite("Transcript: 疑問符")
 struct QuestionMarkTests {
+  @Test("Haasの文末だけ記号を補い、疑問・途中の節・既存の約物を区別する",
+    arguments: [
+      ("これでいいですか", "これでいいですか？"),
+      ("えっと、これでいいですかね", "これでいいですかね？"),
+      ("台帳を更新します", "台帳を更新します。"),
+      ("その台帳を", "その台帳を"),
+      ("反映したいけど", "反映したいけど"),
+      ("台帳を更新します。", "台帳を更新します。"),
+      ("できますか？", "できますか？"),
+      ("メモ.txt", "メモ.txt"),
+      ("API", "API"),
+      ("えっと。", ""),
+      ("ちなみにこれでいいですか", "ちなみに、これでいいですか？"),
+      ("確認します次に反映します", "確認します。次に反映します。"),
+      ("例えば台帳を開きます", "例えば、台帳を開きます。"),
+      ("例えば、台帳を開きます。", "例えば、台帳を開きます。"),
+      ("まずいです", "まずいです。"),
+      ("例えばという語を残してください", "例えばという語を残してください。")
+    ])
+  func missingSentenceMarks(input: String, expected: String) {
+    let result = CommittedText.clean(input, dictionary: DictionaryTable(contents: ""),
+      fillerRemovalEnabled: true, completingSentence: true)
+    #expect(result.text == expected)
+  }
+
+  @Test("12秒の上限とパレットで切っただけの区間に句点を補わない")
+  func incompleteBoundary() {
+    let text = "台帳を更新します"
+    #expect(CommittedText.clean(text, dictionary: DictionaryTable(contents: ""), fillerRemovalEnabled: true).text == text)
+  }
+
   @Test(
     "Polite questions and recall endings get a question mark",
     arguments: [
