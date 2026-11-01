@@ -37,6 +37,14 @@ check: security lint tooling-test
 
 verify: check build test
 
+# 合成データだけで日本語版・英語版の紹介動画とREADME用GIFを作る。
+movie locale="all":
+    uv run --no-project python Tools/ProductMovie/build.py --locale "{{locale}}"
+
+# 保存済みの動画・GIFを検査する。本体は起動しない。
+movie-check:
+    uv run --no-project python Tools/ProductMovie/build.py --check
+
 # dist/Vox-{{version}}.app と .dmg（+ .sha256）を作る。署名は環境で決まる。
 bundle:
     #!/usr/bin/env bash

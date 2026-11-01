@@ -1,7 +1,7 @@
 # 07 プロジェクト構成
 
 リポジトリの目標構成と、各ディレクトリの責務。理由は [ADR-013](../adr/013-library-app-and-test-targets.md)。
-最終確認日: 2026-09-23。状態: **移行完了**（`Tools/DocImages` だけ未実施。現状は末尾）。
+最終確認日: 2026-11-01。状態: **移行完了**（`Tools/DocImages` だけ未実施。現状は末尾）。
 
 ## 目標
 
@@ -35,6 +35,7 @@ Tests/
   Tooling/               scripts/ の隔離テスト（shell）
 Tools/
   DocImages/             README 画像の生成（VoxApp を import する executable）
+  ProductMovie/          合成データの紹介動画。日英の文言、場面描画、BGM、MP4・GIFの生成と検査
 benchmarks/
   Package.swift          M0 ハーネス。FluidAudio はここだけが依存する
   Sources/               M0HarnessCore, VoxM0, VoxM0FactCheck, VoxM0LiveProbe
@@ -107,5 +108,7 @@ images/                  README の画面例（合成データ）と再生成の
 - 検査の入口は `just test` = `Tests/Tooling/nix-sdk-check.sh` + `swift test --no-parallel` の 2 本
 - `VoxApp` に `@_spi(Testing)` は無い（testTarget の `@testable import` で足りる）
 - `Tools/` はまだ作っていない。`VoxDocImages` は `Sources/VoxDocImages` のまま
+
+紹介動画の生成は独立したSwiftPMパッケージとして`Tools/ProductMovie/`に置く。`VoxDocImages`は`Sources/VoxDocImages`のままで、本体のターゲット構成には追加しない。生成したMP4・GIF・静止画は`images/`、中間ファイルとログは`z-ai/`に置く。
 
 移行は [ADR-013](../adr/013-library-app-and-test-targets.md) の段階 1〜3 で行い、各段階で `just verify` を通した。

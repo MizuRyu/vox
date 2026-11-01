@@ -11,6 +11,10 @@ Speak, clean it up, paste it as is. A local Japanese voice-input HUD for macOS.
 
 日本語版: [README.md](README.md)
 
+[![Combine Japanese dictation, typed edits, file search and pasting into the original app](images/vox-demo-en.gif)](images/vox-demo-en.mp4)
+
+*Illustrative UI with synthetic data. Click to open the 25-second video with music. Japanese dictation and app labels are shown in Japanese.*
+
 ## Features
 
 - **Real-time display** — what you say appears immediately in a HUD at the bottom of the screen; nothing reaches the target app until you commit

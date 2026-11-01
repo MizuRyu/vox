@@ -228,6 +228,8 @@ Apple / Nemotron / Parakeet を比較します。入力形式は [manifest の�
 
 README の画像を更新する場合は `swift run vox-doc-images` で合成データから再生成します。本体や録音を起動せず、個人の設定を読まずに描画します。
 
+紹介動画は`just movie`で日本語版・英語版のMP4、GIF、静止画を生成し、`just movie-check`で保存済み素材を検査します。生成ツールは独立したSwiftPMパッケージです。文言・場面・BGMの編集と別のOSSで使う手順は[Tools/ProductMovie](../Tools/ProductMovie/README.md)を参照してください。
+
 ## コードの配置
 
 | 場所 | 役割 |
@@ -237,6 +239,7 @@ README の画像を更新する場合は `swift run vox-doc-images` で合成デ
 | `Sources/VoxCore/` | UI に依存しない文字列・検索・履歴・計測のロジック |
 | `Tests/` | 設定・コア・オフスクリーン検査・検査ツールのテスト |
 | `scripts/` | ビルドと配布 |
+| `Tools/ProductMovie/` | 合成データの紹介動画を作る独立したSwiftPMパッケージと、日英の書き出し・検査 |
 | `benchmarks/` | M0 ベンチの別 package。ハーネス本体、検査、音声準備・データ取得・結果集計のスクリプト |
 
 ## 依存の更新
