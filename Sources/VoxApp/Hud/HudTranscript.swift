@@ -9,9 +9,18 @@ public final class HudModel: ObservableObject {
   @Published public var head = ""
   /// いま出ている淡色。並びは `head` と `tail` の**間**（T21）。
   @Published public private(set) var tentative = ""
-  /// T21。淡色が**出た後に**打った文字（`trailing` から改名し、意味も淡色の前から後ろへ反転した）。
-  /// 次の淡色が始まるときに `head` へ合流する（`applyTentative`）。final では動かない。
+  /// 淡色より後ろの確定本文。途中への音声挿入で残した文と、淡色の後ろに打った文字。
   @Published public var tail = ""
+  private var caret: Int?
+  private enum DeferredUpdate {
+    case tentative(String)
+    case final(String)
+    case insertion(PaletteInsertionPlan)
+  }
+  private var deferredUpdates: [DeferredUpdate] = []
+  var hasDeferredUpdates: Bool { !deferredUpdates.isEmpty }
+  var onFinishEditing: (() -> Void)?
+  var onTranscriptChange: (() -> Void)?
   /// 中段をテキストの代わりに占める通知（挿入確認の失敗など）。
   @Published public var notice: String?
   /// ADR-017。画像を保存できなかったときの 1 行。キーヒントの行に出す
@@ -60,7 +69,7 @@ public final class HudModel: ObservableObject {
 
   /// 3 区画をこの並びで組むのはここだけ。並びの規則は `TranscriptBuffer` が持つ（T21）。
   public var transcript: TranscriptBuffer {
-    TranscriptBuffer(head: head, tentative: tentative, tail: tail)
+    TranscriptBuffer(head: head, tentative: tentative, tail: tail, caret: caret)
   }
 
   /// T18。右上のボタン。展開状態を反転して覚え、パネル側に高さの引き直しを頼む。
@@ -70,26 +79,74 @@ public final class HudModel: ObservableObject {
     onExpandedChange?()
   }
 
-  /// T21。音声の final。`head` の末尾に足すだけで、`tail`（打った文字）は動かさない。
+  /// 音声のfinal。表示中の淡色を確定し、新しい区間ならカーソル位置へ入れる。
   /// 区画の決め方は `TranscriptBuffer` に任せる（ビューは差分の当て方だけを見る）。
   public func commitFinal(_ suffix: String) {
     guard !suffix.isEmpty else { return }
+    guard !deferWhileComposing(.final(suffix)) else { return }
     var buffer = transcript
-    buffer.commitFinal(suffix)
-    head = buffer.head
-    tail = buffer.tail
-    // 淡色はその場で通常色の final に置き換わる（`head` に入った）。
-    tentative = buffer.tentative
+    buffer.commitFinal(suffix, at: buffer.caret)
+    adopt(buffer)
+    onTranscriptChange?()
   }
 
-  /// T21。淡色の更新。空 → 非空になるときだけ `tail` を `head` に合流させる
-  /// （打った文字は「その後に喋った音声」より前に確定する）。直接代入せずここを通す。
+  /// 新しい淡色はカーソル位置から始め、更新中はその挿入位置を保つ。
   public func applyTentative(_ text: String) {
+    guard !deferWhileComposing(.tentative(text)) else { return }
     var buffer = transcript
-    buffer.applyTentative(text)
+    buffer.applyTentative(text, at: buffer.caret)
+    adopt(buffer)
+    onTranscriptChange?()
+  }
+
+  private func adopt(_ buffer: TranscriptBuffer) {
     head = buffer.head
     tail = buffer.tail
     tentative = buffer.tentative
+    caret = buffer.caret
+  }
+
+  func setCaret(_ location: Int) {
+    caret = transcript.clampCaret(location)
+  }
+
+  /// IMEの本文を反映してから、変換中に保留した音声とパスを順に適用する。
+  func acceptEdit(_ buffer: TranscriptBuffer) {
+    let previous = transcript.text
+    adopt(buffer)
+    var updates = deferredUpdates
+    deferredUpdates = []
+    rebaseInsertions(&updates, after: 0, from: previous, to: buffer.text)
+    for index in updates.indices {
+      let previous = transcript.text
+      switch updates[index] {
+      case .tentative(let text): applyTentative(text)
+      case .final(let text): commitFinal(text)
+      case .insertion(let plan): requestInsertion(plan)
+      }
+      rebaseInsertions(&updates, after: index + 1, from: previous, to: transcript.text)
+    }
+  }
+
+  private func rebaseInsertions(_ updates: inout [DeferredUpdate], after index: Int, from previous: String, to current: String) {
+    guard index < updates.count, let change = TranscriptCaret.replacement(current: previous, desired: current) else { return }
+    for position in index..<updates.count {
+      guard case .insertion(let plan) = updates[position] else { continue }
+      let location = transcript.clampCaret(TranscriptCaret.rebased(plan.location, by: change))
+      let text = (current as NSString).replacingCharacters(in: NSRange(location: location, length: 0), with: plan.inserted)
+      updates[position] = .insertion(PaletteInsertionPlan(text: text, inserted: plan.inserted,
+        location: location, caret: location + (plan.inserted as NSString).length))
+    }
+  }
+
+  private func deferWhileComposing(_ update: DeferredUpdate) -> Bool {
+    guard isComposing else { return false }
+    if case .tentative = update, case .tentative = deferredUpdates.last {
+      deferredUpdates[deferredUpdates.count - 1] = update
+    } else {
+      deferredUpdates.append(update)
+    }
+    return true
   }
 
   /// 3 区画をまとめて空にする（HUD を出し直すとき。前の回の本文を持ち越さない）。
@@ -97,6 +154,8 @@ public final class HudModel: ObservableObject {
     head = ""
     tentative = ""
     tail = ""
+    caret = nil
+    deferredUpdates = []
   }
 
   // MARK: ADR-017 画像の添付
@@ -149,13 +208,14 @@ public final class HudModel: ObservableObject {
   /// どの区画に入るかは `TranscriptBuffer` の規則に任せ、ビューには差分の当て方を渡す。
   public func requestInsertion(_ plan: PaletteInsertionPlan) {
     guard !plan.inserted.isEmpty else { return }
+    guard !deferWhileComposing(.insertion(plan)) else { return }
     var buffer = transcript
     guard buffer.insertTyped(plan.inserted, at: plan.location) else { return }
     hadInput = true
     pendingInsertion = plan
-    head = buffer.head
-    tail = buffer.tail
+    adopt(buffer)
     insertionToken += 1
+    onTranscriptChange?()
   }
 }
 
@@ -165,8 +225,8 @@ public final class HudModel: ObservableObject {
 /// モデルの値でビューを全置換するとユーザーが打った文字が消える。
 /// 差分だけを textStorage に当てる:
 /// - final: 淡色域 `[headEnd, tentativeEnd)` を通常色の final で差し替える（`tail` は動かない）
-/// - tentative: 古い淡色を消し、新しい淡色を `headEnd` に入れる（合流した回は `tail` の後ろになる）
-/// - tail: 淡色の後ろに通常色で残る（ユーザーが打った分。打鍵以外では触らない）
+/// - tentative: 発話を始めた位置の淡色だけを差し替える
+/// - tail: 挿入位置より後ろの本文と手入力を通常色で残す
 /// どちらもユーザー起点の変更ではないので `shouldChangeTextIn` を通さない。caret は保存して戻す。
 public struct TranscriptEditor: NSViewRepresentable {
   let model: HudModel
@@ -234,6 +294,15 @@ public struct TranscriptEditor: NSViewRepresentable {
     textView.isAutomaticDashSubstitutionEnabled = false
     // ⌘Z 用。HUD では VoxPanel が undo: を直接送る（HudEditCommand）。
     textView.allowsUndo = true
+    coordinator.model.onFinishEditing = { [weak coordinator, weak textView] in
+      guard let coordinator, let textView else { return }
+      coordinator.finishEditing(textView)
+    }
+    // SwiftUIの再描画を待つ間の打鍵が、まだ表示していない音声を上書きしないようにする。
+    coordinator.model.onTranscriptChange = { [weak coordinator, weak textView] in
+      guard let coordinator, let textView else { return }
+      coordinator.sync(textView)
+    }
     coordinator.sync(textView)
     return scrollView
   }
@@ -281,7 +350,6 @@ public struct TranscriptEditor: NSViewRepresentable {
     /// T15。IME の変換中か。`model.isComposing` の元。sync / delegate で写す。
     private var isComposing = false
     private var resetToken = -1
-    private var insertionToken = 0
     var focusAttempts = 0
     var focusToken = -1
 
@@ -293,79 +361,54 @@ public struct TranscriptEditor: NSViewRepresentable {
 
     public func sync(_ textView: NSTextView) {
       guard let storage = textView.textStorage else { return }
-      // T15。IME の変換中は何も当てない。未確定文字列は committed 末尾に置かれるので、
-      // その直後の淡色域を差し替えると変換中の文字列と選択が壊れる。保留分はモデルに溜まっており、
-      // 変換が終わった次の sync（波形更新で毎秒 15 回来る）で一括で当たる。
+      // 変換中の文字列と選択を守る。認識結果はモデルで保留し、変換確定後に適用する。
       guard !textView.hasMarkedText() else {
         setComposing(true)
         return
       }
+      if isComposing || model.hasDeferredUpdates {
+        textDidChange(Notification(name: NSText.didChangeNotification, object: textView))
+      }
       setComposing(false)
 
+      let desired = model.transcript
       if resetToken != model.resetToken {
         resetToken = model.resetToken
-        insertionToken = model.insertionToken
-        buffer = model.transcript
+        buffer = desired
         storage.setAttributedString(rendered(buffer))
         setSelection(textView, to: NSRange(location: buffer.caret, length: 0))
         return
       }
 
-      var changed = false
-      // T13 パレットの差し込み。全文のオフセットに入るので音声の final の追記とは別に当てる。
-      // final より先に当てる（final はこの後、淡色域を置き換えて入る）。
-      if insertionToken != model.insertionToken {
-        insertionToken = model.insertionToken
-        if let plan = model.pendingInsertion {
-          // ビューが追いついていない場合に備えて編集可能域に丸める（淡色の内部なら全体の末尾に寄る）。
-          let location = buffer.clampCaret(plan.location)
-          buffer.replace(range: NSRange(location: location, length: 0), with: plan.inserted)
-          storage.replaceCharacters(
-            in: NSRange(location: location, length: 0),
-            with: attributed(plan.inserted, TranscriptEditor.committedAttributes))
-          changed = true
-        }
+      let change = TranscriptCaret.replacement(current: buffer.text, desired: desired.text)
+      guard change != nil || buffer.headEnd != desired.headEnd || buffer.tentativeEnd != desired.tentativeEnd else { return }
+      let previous = buffer
+      if let change {
+        storage.replaceCharacters(in: change.range,
+          with: attributed(change.text, TranscriptEditor.committedAttributes))
       }
-
-      if let suffix = TranscriptCaret.pendingSuffix(current: buffer.head, desired: model.head) {
-        // T21。final は淡色域をそのまま置き換える（`tail` は動かない）。
-        // ただしモデル側で `tail` が `head` に合流していることがある（新しい淡色が始まった回）。
-        // 合流はモデルでは final の**後**に起きる（`head += final` → `head += tail`）ので、
-        // 合流した回の suffix は「final + tail」で終わりが `tail`。その分を落とす。
-        let merged =
-          !buffer.tail.isEmpty && model.tail.isEmpty && suffix.hasSuffix(buffer.tail)
-        let voice = merged ? String(suffix.dropLast(buffer.tail.count)) : suffix
-        if !voice.isEmpty {
-          let dim = NSRange(
-            location: buffer.headEnd, length: (buffer.tentative as NSString).length)
-          buffer.commitFinal(voice)
-          storage.replaceCharacters(
-            in: dim, with: attributed(voice, TranscriptEditor.committedAttributes))
-          changed = true
-        }
-        // `tail` の合流そのものはビューでは文字が動かない（この後の淡色の更新で buffer も合流する）。
+      // 同じ文字が淡色から通常色へ変わる場合も、該当する区画だけを塗り直す。
+      let start = min(previous.headEnd, desired.headEnd)
+      let end = min(storage.length, max(previous.tentativeEnd + desired.length - previous.length, desired.tentativeEnd))
+      if end > start {
+        storage.setAttributes(TranscriptEditor.committedAttributes, range: NSRange(location: start, length: end - start))
       }
-      // 分岐している（ユーザーが途中を編集した）ときはビューに触らない。
-
-      if model.tentative != buffer.tentative {
-        // 古い淡色を消してから、新しい淡色を `headEnd` に入れる。合流した回は `headEnd` が
-        // `tail` の後ろまで進んでいるので、この 2 段でしか正しい位置に置けない。
-        let previous = NSRange(
-          location: buffer.headEnd, length: (buffer.tentative as NSString).length)
-        buffer.applyTentative(model.tentative)
-        storage.replaceCharacters(in: previous, with: "")
-        storage.replaceCharacters(
-          in: NSRange(location: buffer.headEnd, length: 0),
-          with: attributed(model.tentative, TranscriptEditor.tentativeAttributes))
-        changed = true
+      if !desired.tentative.isEmpty {
+        storage.setAttributes(TranscriptEditor.tentativeAttributes,
+          range: NSRange(location: desired.headEnd, length: desired.tentativeEnd - desired.headEnd))
       }
-
-      guard changed else { return }
+      buffer = desired
       setSelection(textView, to: NSRange(location: buffer.caret, length: 0))
-      // caret が淡色の直前なら流れ込む先を、途中を打っているならその手元を見せる。
-      let visible = buffer.caret == buffer.headEnd ? buffer.length : buffer.caret
-      textView.scrollRangeToVisible(NSRange(location: visible, length: 0))
+      textView.scrollRangeToVisible(NSRange(location: buffer.caret, length: 0))
       debugTrace(textView, storage: storage)
+    }
+
+    func finishEditing(_ textView: NSTextView) {
+      if textView.hasMarkedText() { textView.unmarkText() }
+      if isComposing || model.hasDeferredUpdates || !buffer.text.utf16.elementsEqual(textView.string.utf16) {
+        textDidChange(Notification(name: NSText.didChangeNotification, object: textView))
+      }
+      sync(textView)
     }
 
     /// 実機診断 (T12)。VOX_HUD_DEBUG=1 のとき、同期後のテキストビューの状態を stderr に出す。
@@ -432,7 +475,6 @@ public struct TranscriptEditor: NSViewRepresentable {
         return
       }
 
-      let before = buffer.head
       let beforeTyped = buffer.head.count + buffer.tail.count
       // 受理した編集を buffer に当てた回だけ、並びの食い違いを直す（想定外の経路の保険）。
       var appliedEdit = false
@@ -455,17 +497,7 @@ public struct TranscriptEditor: NSViewRepresentable {
           model.hadInput = true
         }
       }
-      // T15。変換中はモデルにだけ音声の final が溜まる（sync を止めているので view には無い）。
-      // 打った文字でモデルを上書きすると溜まった分が消えるので、head 末尾に付いた分は残す。
-      // 次の sync が pendingSuffix としてビューに当てる。
-      let pendingVoice =
-        model.head.hasPrefix(before) ? String(model.head.dropFirst(before.count)) : ""
-      model.head = buffer.head + pendingVoice
-      // T21。溜まった分の末尾には、新しい淡色が始まって `head` に合流した `tail` が入っている
-      // （モデルは `head += final` → `head += tail` の順で積む）。その分を落としてから書き戻す
-      // （そのまま書き戻すと同じ文字が `head` と `tail` に二重に載る）。
-      let mergedTyped = pendingVoice.hasSuffix(buffer.tail) && !buffer.tail.isEmpty
-      model.tail = mergedTyped ? "" : buffer.tail
+      model.acceptEdit(buffer)
       textView.typingAttributes = TranscriptEditor.committedAttributes
       // ビューの並びが buffer とずれたら buffer を正として描き直す（3 区画の順を戻す）。
       if appliedEdit, textView.string != buffer.text, let storage = textView.textStorage {
@@ -493,6 +525,7 @@ public struct TranscriptEditor: NSViewRepresentable {
         setSelection(textView, to: clamped)
       }
       buffer.setCaret(textView.selectedRange().location)
+      model.setCaret(buffer.caret)
       textView.typingAttributes = TranscriptEditor.committedAttributes
     }
 

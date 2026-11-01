@@ -1,6 +1,10 @@
-// T11 / T17 / T18 / T20 / T21。HUD の本文は 1 本のテキストで、3 つの区画が**時間順**に並ぶ。
+// T11 / T17 / T18 / T20 / T21。HUD の本文は 1 本のテキストで、3 つの区画が並ぶ。
 //
 //   head（通常色・編集可） + tentative（淡色・読み取り専用） + tail（通常色・編集可）
+//
+// ADR-033。挿入位置を指定した新しい発話は、確定本文を前後へ分けてその間に置く。
+// 表示中の発話は位置を固定する。tailには既存の後続文も残る。
+// 以下の時間順の合流は、位置指定のない末尾入力の規則。
 //
 // T21 の裁定。鍵となる観察は「淡色が出ている時に打ったなら、その音声は打鍵より前に発話されている」。
 // だから合流時に音声を打った文字の**前**に入れるのが時間順であり、そうすれば
@@ -26,7 +30,7 @@ public struct TranscriptBuffer: Equatable, Sendable {
   public private(set) var head: String
   /// いま出ている淡色。区画の真ん中にある（T20 までは末尾だった）。
   public private(set) var tentative: String
-  /// 淡色が**出た後に**打った文字（T21 で `trailing` から改名。意味も「淡色の前」から反転した）。
+  /// 淡色の後ろにある確定本文と手入力（T21で`trailing`から改名）。
   public private(set) var tail: String
   public private(set) var caret: Int
 
@@ -62,11 +66,16 @@ public struct TranscriptBuffer: Equatable, Sendable {
   /// - 全体の末尾なら新しい末尾（淡色の後ろ。次に打つ位置）
   /// - `tail` 内なら同じ文字の上（淡色の伸び縮み分だけずらす）
   /// - `head` 内なら動かさない
-  public mutating func applyTentative(_ text: String) {
+  /// `at`は新しい発話の挿入位置。表示中の淡色があれば位置を変えない。
+  public mutating func applyTentative(_ text: String, at location: Int? = nil) {
     let wasAtTail = caret >= length
-    if tentative.isEmpty, !text.isEmpty, !tail.isEmpty {
-      head += tail
-      tail = ""
+    if tentative.isEmpty, !text.isEmpty {
+      if let location {
+        beginSpeech(at: location)
+      } else if !tail.isEmpty {
+        head += tail
+        tail = ""
+      }
     }
     let previousEnd = tentativeEnd
     let delta = (text as NSString).length - (tentative as NSString).length
@@ -85,8 +94,10 @@ public struct TranscriptBuffer: Equatable, Sendable {
   /// - `head` の途中なら動かさない
   /// - 淡色の直前（`headEnd`）なら新しい `headEnd`（= 確定した音声の後ろ。意味を保つ）
   /// - `tail` 側なら同じ文字の上（淡色が final に置き換わった分だけずらす）
-  public mutating func commitFinal(_ suffix: String) {
+  /// `at`は淡色を経ない新しい発話の挿入位置。
+  public mutating func commitFinal(_ suffix: String, at location: Int? = nil) {
     guard !suffix.isEmpty else { return }
+    if tentative.isEmpty, let location { beginSpeech(at: location) }
     let wasBeforeTentative = caret == headEnd
     let previousEnd = tentativeEnd
     let delta = (suffix as NSString).length - (tentative as NSString).length
@@ -159,6 +170,14 @@ public struct TranscriptBuffer: Equatable, Sendable {
 
   public mutating func setCaret(_ location: Int) {
     caret = clampCaret(location)
+  }
+
+  /// 新しい発話だけを指定位置へ置く。認識途中の発話は表示位置を変えない。
+  private mutating func beginSpeech(at location: Int) {
+    let location = clampCaret(location)
+    let committed = (head + tail) as NSString
+    head = committed.substring(to: location)
+    tail = committed.substring(from: location)
   }
 
   /// caret を編集可能域に丸める。淡色域の内部を指したら**全体の末尾**に寄せる

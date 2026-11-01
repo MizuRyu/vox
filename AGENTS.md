@@ -21,7 +21,7 @@ Haas Q4（既定）または Apple `SpeechTranscriber` でローカル認識し�
 ## 処理の流れ（鍵になる型）
 
 1. 録音キー（`HotkeyMonitor`、CGEventTap）→ 前面アプリを固定し、`SpeechLane` が選んだ `SpeechRecognizer` を起動。Apple の results Task は analyzer.start より先に立てる
-2. 認識結果は `TranscriptBuffer`（VoxCore）に時間順の 3 区画（確定 / 未確定 / 手入力）で入り、`HudPanel` が表示する。手入力はカーソル位置、音声は末尾
+2. 認識結果は `TranscriptBuffer`（VoxCore）の3区画（淡色の前 / 未確定 / 淡色の後）に入り、`HudPanel` が表示する。新しい音声はカーソル位置に入り、認識途中は挿入位置を保つ（ADR-033）
 3. `⌃P` / `@` で `PalettePanel` が開く。対象は `PaletteTargetResolver`（Orca → `orca worktree ps`、Terminal.app → tty → cwd → git root、それ以外 → `--repo`）。索引は `FileIndexer` → `FileIndex`（VoxCore）
 4. 録音キー再押下で確定。`FillerPass` が規則でフィラーを落とし、`Injector` が入力先を再確認（`InjectionSafety`）してから ⌘V で貼り付け、任意で `AutoEnter`
 5. 履歴は `HistoryRecord`、計測は `MetricsRecord` として JSONL に書く。設定は `HotkeySettings` を `SettingsStore` が読み書きする

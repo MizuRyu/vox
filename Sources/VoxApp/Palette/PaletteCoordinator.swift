@@ -83,8 +83,8 @@ final class PaletteCoordinator {
     openedAtMilliseconds = atMilliseconds
     onMetric(.opened)
     // 末尾で打った場合は位置で固定しない（この後に喋った分の後ろ、閉じる時点の末尾が正しい）。
-    let headEnd = (hud.model.head as NSString).length
-    insertLocation = typedAt.flatMap { $0 >= headEnd ? nil : $0 }
+    let length = hud.model.transcript.length
+    insertLocation = typedAt.flatMap { $0 >= length ? nil : $0 }
 
     // 開いた時点の tentative を final として締める（淡色を残したまま閉じないため）。
     // T22。供給は止めないので、締めた後に届く final も通常どおり `head` に追記される。

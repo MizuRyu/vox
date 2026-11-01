@@ -4,6 +4,7 @@ import AppKit
 import Foundation
 import SwiftUI
 import Testing
+import VoxCore
 @testable import VoxApp
 
 @MainActor
@@ -186,6 +187,163 @@ struct TranscriptEditorTests {
     let usedRect = layout.usedRect(for: container)
     #expect(textView.string == model.tentative, "SwiftUI の更新が届いていない")
     #expect(usedRect.width > 0 && usedRect.height > 0, "更新後の本文が描かれていない")
+  }
+
+  @Test("確定本文の途中を手で編集したあと、音声もその位置に入る")
+  func speechFollowsAnEditInsideCommittedText() throws {
+    let (model, coordinator, textView, _) = try editor()
+    model.head = "前半後半"
+    coordinator.sync(textView)
+    textView.setSelectedRange(NSRange(location: 2, length: 0))
+    coordinator.textViewDidChangeSelection(Notification(name: NSTextView.didChangeSelectionNotification, object: textView))
+    textView.insertText("手", replacementRange: textView.selectedRange())
+    coordinator.sync(textView)
+    #expect(textView.string == "前半手後半")
+    model.applyTentative("音声")
+    coordinator.sync(textView)
+    #expect(textView.string == "前半手音声後半")
+    model.commitFinal("音声。")
+    coordinator.sync(textView)
+    #expect(textView.string == "前半手音声。後半")
+    #expect(textView.selectedRange().location == 6)
+    #expect(model.transcript.text == textView.string)
+    expectNoVisibleWindows()
+  }
+
+  @Test("淡色を経ない確定も、絵文字の後のカーソル位置へ入る")
+  func finalOnlySpeechUsesTheCaretAfterAnEmoji() throws {
+    let (model, coordinator, textView, _) = try editor()
+    model.head = "前🙂後"
+    coordinator.sync(textView)
+    textView.setSelectedRange(NSRange(location: 3, length: 0))
+    coordinator.textViewDidChangeSelection(Notification(name: NSTextView.didChangeSelectionNotification, object: textView))
+    model.commitFinal("音声")
+    coordinator.sync(textView)
+    #expect(textView.string == "前🙂音声後")
+    #expect(textView.selectedRange().location == 5)
+  }
+
+  @Test("途中の淡色は更新位置を保ち、確定後の次の音声は移動したカーソルへ入る")
+  func activeSpeechStaysAnchoredUntilTheNextSegment() throws {
+    let (model, coordinator, textView, _) = try editor()
+    model.head = "左右"
+    coordinator.sync(textView)
+    textView.setSelectedRange(NSRange(location: 1, length: 0))
+    coordinator.textViewDidChangeSelection(Notification(name: NSTextView.didChangeSelectionNotification, object: textView))
+    model.applyTentative("候補")
+    coordinator.sync(textView)
+    textView.setSelectedRange(NSRange(location: 0, length: 0))
+    coordinator.textViewDidChangeSelection(Notification(name: NSTextView.didChangeSelectionNotification, object: textView))
+    model.applyTentative("音声候補")
+    coordinator.sync(textView)
+    #expect(textView.string == "左音声候補右")
+    #expect(textView.selectedRange().location == 0)
+    model.commitFinal("音声")
+    model.applyTentative("次")
+    coordinator.sync(textView)
+    #expect(textView.string == "次左音声右")
+    model.commitFinal("次。")
+    coordinator.sync(textView)
+    #expect(textView.string == "次。左音声右")
+  }
+
+  @Test("IME変換中に届いた音声と途中の手入力を両方残す")
+  func compositionPreservesQueuedSpeechAndTheExistingSuffix() throws {
+    let (model, coordinator, textView, _) = try editor()
+    model.head = "前半後半"
+    coordinator.sync(textView)
+    textView.setSelectedRange(NSRange(location: 2, length: 0))
+    coordinator.textViewDidChangeSelection(Notification(name: NSTextView.didChangeSelectionNotification, object: textView))
+    textView.setMarkedText("しゅうせい", selectedRange: NSRange(location: 5, length: 0), replacementRange: textView.selectedRange())
+    coordinator.sync(textView)
+    #expect(model.isComposing)
+    model.commitFinal("音声")
+    model.applyTentative("続き")
+    textView.insertText("修正", replacementRange: textView.markedRange())
+    coordinator.sync(textView)
+    #expect(textView.string == "前半修正音声続き後半")
+    model.commitFinal("続き。")
+    coordinator.sync(textView)
+    #expect(textView.string == "前半修正音声続き。後半")
+    #expect(model.transcript.text == textView.string)
+    #expect(!model.isComposing)
+  }
+
+  @Test("途中へ音声を入れながら打った文字を、認識更新と確定で失わない")
+  func typingDuringAnInsertedSegmentSurvivesUpdates() throws {
+    let (model, coordinator, textView, storage) = try editor()
+    model.head = "左右"
+    coordinator.sync(textView)
+    textView.setSelectedRange(NSRange(location: 1, length: 0))
+    coordinator.textViewDidChangeSelection(Notification(name: NSTextView.didChangeSelectionNotification, object: textView))
+    model.applyTentative("声")
+    coordinator.sync(textView)
+    textView.insertText("手", replacementRange: textView.selectedRange())
+    model.applyTentative("音声")
+    coordinator.sync(textView)
+    #expect(textView.string == "左音声手右")
+    model.commitFinal("音声")
+    coordinator.sync(textView)
+    #expect(textView.string == "左音声手右")
+    #expect((storage.attribute(.foregroundColor, at: 1, effectiveRange: nil) as? NSColor) == .labelColor)
+    model.applyTentative("次")
+    coordinator.sync(textView)
+    #expect(textView.string == "左音声手次右")
+  }
+
+  @Test("変換中に録音を確定しても、変換した文字と保留した音声を両方残す")
+  func resigningTheEditorFlushesCompositionAndSpeech() throws {
+    let (model, coordinator, textView, _) = try editor()
+    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 320, height: 100),
+      styleMask: [.borderless], backing: .buffered, defer: true)
+    window.contentView = textView.enclosingScrollView
+    window.makeFirstResponder(textView)
+    model.head = "前半後半"
+    coordinator.sync(textView)
+    textView.setSelectedRange(NSRange(location: 2, length: 0))
+    coordinator.textViewDidChangeSelection(Notification(name: NSTextView.didChangeSelectionNotification, object: textView))
+    textView.setMarkedText("修正", selectedRange: NSRange(location: 2, length: 0), replacementRange: textView.selectedRange())
+    coordinator.sync(textView)
+    model.commitFinal("音声")
+    model.onFinishEditing?()
+    window.makeFirstResponder(nil)
+    #expect(model.transcript.text == "前半修正音声後半")
+    #expect(!model.isComposing)
+    #expect(model.typedCharacters == 2)
+    expectNoVisibleWindows()
+  }
+
+  @Test("認識結果の到着直後に打鍵しても、未描画の音声を失わない")
+  func typingImmediatelyAfterRecognitionPreservesSpeech() throws {
+    let (model, coordinator, textView, _) = try editor()
+    model.head = "前半後半"
+    coordinator.sync(textView)
+    textView.setSelectedRange(NSRange(location: 2, length: 0))
+    coordinator.textViewDidChangeSelection(Notification(name: NSTextView.didChangeSelectionNotification, object: textView))
+    model.commitFinal("音声")
+    textView.insertText("手", replacementRange: textView.selectedRange())
+    coordinator.sync(textView)
+    #expect(textView.string == "前半音声手後半")
+    #expect(model.transcript.text == textView.string)
+  }
+
+  @Test("変換中の音声とパス挿入は、先に増えた文字に合わせて位置を保つ")
+  func deferredPathFollowsCompositionAndSpeech() throws {
+    let (model, coordinator, textView, _) = try editor()
+    model.head = "前半後半"
+    coordinator.sync(textView)
+    textView.setSelectedRange(NSRange(location: 2, length: 0))
+    coordinator.textViewDidChangeSelection(Notification(name: NSTextView.didChangeSelectionNotification, object: textView))
+    textView.setMarkedText("しゅうせい", selectedRange: NSRange(location: 5, length: 0), replacementRange: textView.selectedRange())
+    coordinator.sync(textView)
+    model.applyTentative("音声候補")
+    model.requestInsertion(PaletteInsertion.insert("Sources/Example.swift", into: model.transcript.text, at: 4))
+    textView.insertText("修正", replacementRange: textView.markedRange())
+    coordinator.sync(textView)
+    #expect(textView.string == "前半修正音声候補後半 Sources/Example.swift ")
+    model.commitFinal("音声")
+    #expect(textView.string == "前半修正音声後半 Sources/Example.swift ")
+    #expect(model.transcript.text == textView.string)
   }
 
   private func descendants(of view: NSView) -> [NSView] {

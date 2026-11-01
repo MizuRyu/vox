@@ -254,6 +254,7 @@ final class HudPanel {
 
   /// 確定の直前に key を返す。この後 R16 の activate 確認 → Cmd+V。
   func resignKeyForInsertion() {
+    model.onFinishEditing?()
     panel.makeFirstResponder(nil)
     panel.resignKey()
   }

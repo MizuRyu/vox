@@ -48,6 +48,7 @@ FluidAudio は benchmarks の別 package だけが依存するので、本体は
 | `swift build --product Vox` | アプリ本体のビルド。起動しない |
 | `swift test --no-parallel`（VoxCoreTests / VoxAppTests） | 文字順序・編集・フィラー・検索・直列化・送出手順（VoxCore）と、設定の保存・HUD の描画・pasteboard・パレットの再描画・常駐（VoxApp） |
 | `swift test --no-parallel --filter 'StoreTests'` | 一部だけを走らせる例。`--filter` は型名・テスト名の正規表現 |
+| `swift test --no-parallel --filter 'TranscriptEditorTests\|CaretTests\|SectionTests'` | カーソル位置への音声挿入、途中結果と手入力の保持、IME変換中の認識結果の保留、UTF-16の差分置換。ウィンドウ表示・マイク・キー送出なし |
 | `swift test --no-parallel --filter 'MicrophoneInputTests\|MicrophoneTests\|InputConfigurationTests\|SettingsViewTests\|recordingSessionSnapshot'` | 入力選択・設定の保存と固定・合成 Audio Unit の構成検証・全選択肢のオフスクリーン描画。マイクを開かない |
 | `just tooling-test` | pre-commit フック・配布・署名の隔離検査と、skill のスクリプト（`vox-add-dictionary` の `dictionary.py`、`vox-debug` の `voxlog.py`、`vox-input-habits` の `habits.py`）を合成データで叩く `Tests/Tooling/*-script-tests.sh` |
 

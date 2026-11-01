@@ -715,3 +715,26 @@ CPUだけの登録と環境設定の復元は自動化済み: `HaasWorkerTests.c
 | **期待結果** | 用語とモデルを並行で準備し、取得上限で無制限に待たない。ログは成功時readyと件数、複数ならambiguous、対象取得失敗ならtarget_unavailableを出す。本文・用語をログに出さない。Escで両方を中止し、録音・貼り付けを始めない |
 
 自動化済み: `HaasRecognizerTests.parallelVocabularyPreparation` / `cancelVocabularyPreparation`、`SessionVocabularyTests`。入力先の実際のフォルダ取得は手動確認する。
+
+
+### REC-24 確定本文の途中への音声入力
+
+| 項目 | 内容 |
+|---|---|
+| **前提** | 録音中で、本文の一部が通常色に確定している |
+| **手順** | 確定本文の途中にカーソルを置き、文字を打ち足してから話す。淡色の表示中にカーソルを別の位置へ移し、その区間の確定後にもう一度話す |
+| **期待結果** | 最初の音声は手入力した続きに入り、後ろの本文と手入力を残す。表示中の淡色は移動せず、次の区間だけが移動後の位置へ入る。Haas / Apple共通 |
+
+自動化済み: `speechFollowsAnEditInsideCommittedText` / `finalOnlySpeechUsesTheCaretAfterAnEmoji` / `activeSpeechStaysAnchoredUntilTheNextSegment` / `typingDuringAnInsertedSegmentSurvivesUpdates`（オフスクリーンの本文・選択・色。マイクと実キーは対象外）。
+
+### REC-25 IME変換中の音声と録音の確定
+
+| 項目 | 内容 |
+|---|---|
+| **前提** | 録音中で、本文の一部が通常色に確定している |
+| **手順** | 本文の途中で日本語を変換中にし、その間に話す。変換を確定する場合と、変換中のまま録音キーで録音を確定する場合を確認する |
+| **期待結果** | 変換した文字、話した内容、後ろの既存本文をすべて残す。変換中は文字の差し替えで選択を壊さない |
+
+自動化済み: `compositionPreservesQueuedSpeechAndTheExistingSuffix` / `resigningTheEditorFlushesCompositionAndSpeech`（オフスクリーン。実際のIME操作・マイク・貼り付けは対象外）。
+
+認識直後の打鍵による音声の欠落は`typingImmediatelyAfterRecognitionPreservesSpeech`、変換中のパス挿入位置は`deferredPathFollowsCompositionAndSpeech`で自動化済み。

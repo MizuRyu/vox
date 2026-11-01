@@ -6,6 +6,39 @@ import VoxCore
 
 @Suite("Transcript: caret と本文バッファ")
 struct CaretTests {
+  @Test("差分置換は前後の文字と書記素を残し、UTF-16の表現差も反映する")
+  func replacementPreservesGraphemeBoundaries() throws {
+    for (current, desired) in [
+      ("前🙂後", "前🙂音声後"), ("前🙂候補後", "前🙂音声後"),
+      ("か後", "か\u{3099}後"), ("前é後", "前e\u{301}後"),
+      ("abc", ""), ("", "追加"), ("aaa", "aaaa"), ("a🙂a", "a👍a")
+    ] {
+      let change = try #require(TranscriptCaret.replacement(current: current, desired: desired))
+      let replaced = (current as NSString).replacingCharacters(in: change.range, with: change.text)
+      #expect(replaced.utf16.elementsEqual(desired.utf16))
+      #expect(Range(change.range, in: current) != nil)
+    }
+    let insertion = try #require(TranscriptCaret.replacement(current: "前🙂後", desired: "前🙂音声後"))
+    #expect(insertion.range == NSRange(location: 3, length: 0))
+    #expect(insertion.text == "音声")
+    #expect(TranscriptCaret.replacement(current: "同じ", desired: "同じ") == nil)
+  }
+
+  @Test("指定位置で始めた音声は、更新と確定を通して後続の本文を残す")
+  func speechAtAnExplicitCaretPreservesTheSuffix() {
+    var buffer = TranscriptBuffer(head: "前半後半", caret: 2)
+    buffer.applyTentative("候補", at: buffer.caret)
+    #expect(buffer.text == "前半候補後半")
+    #expect(buffer.caret == 4)
+    buffer.setCaret(0)
+    buffer.applyTentative("音声候補", at: buffer.caret)
+    #expect(buffer.text == "前半音声候補後半")
+    buffer.commitFinal("音声", at: buffer.caret)
+    #expect(buffer.text == "前半音声後半")
+    buffer.applyTentative("次", at: buffer.caret)
+    #expect(buffer.text == "次前半音声後半")
+  }
+
   // MARK: caret の追記規則（R14 の「割り込み」）
 
   @Test("Append moves caret when it was at the end")
