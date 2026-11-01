@@ -2,13 +2,13 @@
 
 プロセス構成、キー体系、テキスト契約、テキスト挿入、実装上の落とし穴。
 
-最終確認日: 2026-09-23
+最終確認日: 2026-11-01
 
-**native Swift/SwiftUI 単一プロセス**。Python サイドカーも WebView も置きません。
+**native Swift/SwiftUI の本体**。Haas 選択時だけ speech.cpp の認識ワーカーを子プロセスとして使います。Python と WebView は使いません。
 
-現在の経路は `SpeechLane` → `VoxController`（辞書の表記置換 → フィラー除去。`CommittedText.clean`）→ HUD → `Injector`。
+現在の経路は `SpeechLane`（入力・変換・保存）→ `SpeechRecognizer`（`HaasSpeechRecognizer` / `AppleSpeechRecognizer`）→ `SpeechLane`（確定追記・世代管理）→ `VoxController`（辞書の表記置換 → フィラー除去。`CommittedText.clean`）→ HUD → `Injector`。
 録音セッションと認識実行は 1 回分の値として生成・破棄します（`RecordingSession` と `RecognitionRun`）。
-長寿命の `VoxController` / `SpeechLane` は現在の 1 つだけを持ち、開始で作って終了で捨てます。
+長寿命の `VoxController` / `SpeechLane` は現在の録音を1つだけ持ち、開始で作って終了で捨てます。Haas のワーカーは確定後60秒まで再利用し、未使用・Apple への切り替え・破棄・終了で解放します。
 以下の図は確定レーンを含む将来構成であり、RingBuffer・VAD・ConfirmLane は現在の本体には未実装です。
 辞書は認識後の表記置換（[ADR-019](../adr/019-dictionary-surface-replacement.md)）だけが入っており、デコード段の語彙バイアスと読み一致は未実装です。
 
@@ -127,7 +127,7 @@ HUD の展開時の高さは、本文と同じ書体の TextKit で測り、画�
   結果を出さない（[ADR-007](../adr/007-latency-measurement-method.md)）
 - `.fastResults` は確定の精度を落とす（実発話 40 本で CER 1.0% → 2.3%）。ただし `.fastResults` なしの認識器を同じ analyzer に足した v1.3.1 では、
   表示用の初出が約 12 秒まで遅れる例を観測した。合成音声の実時間給餌でも再現する。Apple 内部の待ち合わせ方は未確認。
-  本体は `.volatileResults` / `.fastResults` の認識器 1 つを使い、生成は `SpeechLane.makeRecognizer` に集約する。
+  Apple 選択時は `.volatileResults` / `.fastResults` の認識器 1 つを使い、生成は `AppleSpeechRecognizer.makeRecognizer` に集約する。
   構成変更時は CER・終了後の確定時間に加え、給餌中の初出と最大空白を検査する（[開発手順](../development.md#音声認識の逐次出力の検査)）。
   別 analyzer を使った以前の実験も結果が崩れたが、一般的な制約かは未確認（[ADR-031](../adr/031-body-transcriber-without-fast-results.md)、廃止）
 - `AVAudioFile` は analyzer の `commonFormat` / `isInterleaved` で開くこと。既定の processingFormat で開くと
@@ -152,9 +152,11 @@ HUD 本文は **`head + tentative + tail`** の 3 区画。
 音声確定時は `head` に追記して `tentative` を空にする。新しい未確定音声が始まるときに `tail` を `head` に合流させ、時間順を保つ。
 編集位置は全文の UTF-16 オフセットで管理し、`tentative` 内部は直接編集しない。
 
-音声の確定は Apple `SpeechTranscriber` が `isFinal` を返した時に起きる。Apple の自発的な区切りは 11〜25 秒間隔なので、本体も区切る（[ADR-020](../adr/020-pause-triggered-segment-commit.md)）。
+Apple の音声確定は `SpeechTranscriber` が `isFinal` を返した時に起きる。Apple の自発的な区切りは 11〜25 秒間隔なので、本体も区切る（[ADR-020](../adr/020-pause-triggered-segment-commit.md)）。
 発話の後に無音が 700 ms 続き、前回の区切りから 1,500 ms 以上経ち、未確定の本文があれば、`SpeechLane.finalizeSegment(reason: .pause)` で給餌済みの位置まで確定する。
 無音はノイズ床 × 4（発話開始と同じしきい値）を下回った状態。判定は VoxCore の `PauseCommitPolicy` が持ち、締めが走っている間は判定しない。
+
+Haas は500ms間隔の再認識を淡色に出し、無音・ファイル検索・終了で確定する。連続発話が12秒に達したら直前2秒の静かな位置を選ぶが、すでに表示した音声より前へ境界を戻さない。途中で打った文字との順序を保つためである。終了時は次の更新周期を待たない。推論とパイプ待ちは MainActor の外で行う。
 
 以下の `StreamTextEvent` は初期のイベント契約案。現在の HUD の型・編集モデルを表すものではありません。
 

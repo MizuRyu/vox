@@ -17,7 +17,7 @@ Speak, clean it up, paste it as is. A local Japanese voice-input HUD for macOS.
 - **Type while you speak** — edit directly in the HUD. Speech is appended at the end, typed characters go at the caret, and recording never stops
 - **File search while speaking (`⌃P` / `@`)** — resolves the target repository from the frontmost editor or terminal and inserts a path into the text; recording continues during the search
 - **Commit in one paste** — press the recording key again to return to the app you started in and insert the whole committed text at once
-- **Runs locally** — uses Apple's `SpeechTranscriber`. Only the first model download needs the network. Nothing sends your text to the cloud
+- **Runs locally** — uses Haas Q4 by default, with Apple available in settings. Only the first model download needs the network. Nothing sends your text to the cloud
 - **Filler removal** — rule-based removal of Japanese fillers before insertion; the raw text stays in the local history
 - **Optional auto-Enter** — sends Enter after pasting once the input field reads back as expected; a single setting decides whether it also sends where the field cannot be read
 
@@ -31,13 +31,13 @@ macOS 26 or later on Apple Silicon. An internet connection is needed once, for t
 
 ## Speech recognition model
 
-Vox uses Apple's `Speech` framework (`SpeechAnalyzer` + `SpeechTranscriber`, new in macOS 26) with the `ja_JP` locale. No other model is bundled.
+Vox defaults to Haas-ja-v1.0 Q4. Select Haas or Apple SpeechTranscriber (ja-JP) under speech recognition in settings; changes apply to the next recording.
 
 | Item | Detail |
 |---|---|
-| Where it runs | On device. The OS manages the model; it is not part of the Vox binary or its memory |
-| First run | The OS downloads the Japanese model once (tens of seconds). After that everything is local |
-| Partial results | `.fastResults` is enabled, so the text updates roughly once a second while you speak |
+| Where it runs | On device. Haas uses a local worker process; Apple is managed by the OS |
+| First run | Haas downloads and verifies its runtime and approximately 352MB Q4 weights. Apple downloads its Japanese model through the OS. Recognition then works offline |
+| Partial results | Haas re-recognizes every 500ms; Apple uses `.fastResults` for updates roughly once a second |
 | Network | Neither audio nor text leaves the machine |
 
 Why this engine was chosen, and the candidates compared (Parakeet, Whisper variants), are in [docs/specs/02-speech-engines.md](docs/specs/02-speech-engines.md) (Japanese).

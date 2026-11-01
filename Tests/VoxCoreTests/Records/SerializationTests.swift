@@ -6,12 +6,12 @@ import VoxCore
 
 @Suite("Records: JSONL の直列化")
 struct SerializationTests {
-  @Test("Metrics record always writes twenty four keys")
-  func metricsRecordAlwaysWritesTwentyFourKeys() throws {
+  @Test("Metrics record always writes twenty five keys")
+  func metricsRecordAlwaysWritesTwentyFiveKeys() throws {
     let object = try encodeToObject(sampleMetrics())
-    #expect(object.count == 24, "計測 JSONL のキー数が 24 でない: \(object.count)")
+    #expect(object.count == 25, "計測 JSONL のキー数が 25 でない: \(object.count)")
     #expect(MetricsRecord.CodingKeys.allCases.count == MetricsRecord.keyCount, "CodingKeys と keyCount が食い違う")
-    #expect(object["schema_version"] as? Int == 6, "schema_version が 6 でない")
+    #expect(object["schema_version"] as? Int == 7, "schema_version が 7 でない")
     for key in [
       "target_activate_ms", "filler_removed_count", "typed_chars", "modifier_wait_ms",
       "palette_opened_count", "palette_open_ms", "palette_target_source",
@@ -25,7 +25,7 @@ struct SerializationTests {
   @Test("Metrics record writes null for missing values")
   func metricsRecordWritesNullForMissingValues() throws {
     let object = try encodeToObject(sampleMetrics())
-    #expect(object.count == 24, "欠損時にキーが落ちた")
+    #expect(object.count == 25, "欠損時にキーが落ちた")
     #expect(
       object["axis_a_ms"] is NSNull && object["error"] is NSNull
         && object["palette_open_ms"] is NSNull && object["palette_target_source"] is NSNull

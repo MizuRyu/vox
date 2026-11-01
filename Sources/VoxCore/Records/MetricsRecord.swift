@@ -1,17 +1,17 @@
-// 軸 A（発話終了 → 挿入完了）の計測 1 行。schema_version 6。
+// 軸 A（発話終了 → 挿入完了）の計測 1 行。schema_version 7。
 // 土台は指示書 T8 の表で、M2 で 4 フィールド（target_activate_ms / filler_removed_count /
 // typed_chars / modifier_wait_ms）、M3 で 3 フィールド（palette_opened_count /
 // palette_open_ms / palette_target_source）、T19 で 2 フィールド（pasted_chars /
-// readback_chars）、ADR-020 で 1 フィールド（pause_commit_count）を足した。**合計 24 キー。欠損は null で必ず出す**。
+// readback_chars）、ADR-020 で pause_commit_count、ADR-032 で speech_model を足した。**合計 25 キー。欠損は null で必ず出す**。
 //
 // 収集側（MetricsSession）は AppKit と時刻に触るので Vox に置き、直列化だけここに置く。
 
 import Foundation
 
 public struct MetricsRecord: Encodable, Sendable {
-  public static let schemaVersion = 6
+  public static let schemaVersion = 7
   /// 契約の検証用。CodingKeys の数と一致する。
-  public static let keyCount = 24
+  public static let keyCount = 25
 
   public let toggleOnMilliseconds: Double?
   public let analyzerStartMilliseconds: Double?
@@ -47,6 +47,7 @@ public struct MetricsRecord: Encodable, Sendable {
   public let readbackCharacters: Int?
   /// ADR-020。発話の後の無音で本体から区切った回数。
   public let pauseCommitCount: Int?
+  public let speechModel: String?
 
   public init(
     toggleOnMilliseconds: Double?,
@@ -71,7 +72,7 @@ public struct MetricsRecord: Encodable, Sendable {
     paletteTargetSource: String?,
     pastedCharacters: Int?,
     readbackCharacters: Int?,
-    pauseCommitCount: Int?
+    pauseCommitCount: Int?, speechModel: String? = nil
   ) {
     self.toggleOnMilliseconds = toggleOnMilliseconds
     self.analyzerStartMilliseconds = analyzerStartMilliseconds
@@ -97,6 +98,7 @@ public struct MetricsRecord: Encodable, Sendable {
     self.pastedCharacters = pastedCharacters
     self.readbackCharacters = readbackCharacters
     self.pauseCommitCount = pauseCommitCount
+    self.speechModel = speechModel
   }
 
   public enum CodingKeys: String, CodingKey, CaseIterable {
@@ -124,6 +126,7 @@ public struct MetricsRecord: Encodable, Sendable {
     case pastedCharacters = "pasted_chars"
     case readbackCharacters = "readback_chars"
     case pauseCommitCount = "pause_commit_count"
+    case speechModel = "speech_model"
   }
 
   /// 合成された `encode` は Optional を `encodeIfPresent` で書き、nil のキーを落とす。
@@ -154,6 +157,7 @@ public struct MetricsRecord: Encodable, Sendable {
     try container.encodeAlways(pastedCharacters, forKey: .pastedCharacters)
     try container.encodeAlways(readbackCharacters, forKey: .readbackCharacters)
     try container.encodeAlways(pauseCommitCount, forKey: .pauseCommitCount)
+    try container.encodeAlways(speechModel, forKey: .speechModel)
   }
 }
 

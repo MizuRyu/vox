@@ -49,6 +49,7 @@ private final class RecognitionRun {
   var bufferBuilder: AsyncStream<BufferBox>.Continuation?
   var feedTask: Task<Void, Never>?
   var fedFrameCount: Int64 = 0
+  var failure: (any Error)?
 
   init(recognizer: any SpeechRecognizer) { self.recognizer = recognizer }
 }
@@ -61,7 +62,7 @@ enum SegmentFinalizeReason: String {
 }
 
 /// トグル ON のたびに `start()`、OFF で `finalizeText()`、破棄で `abort()`。
-/// analyzer は毎回作り直す（M1 は簡潔さを優先。指示書「録音と速報レーン」）。
+/// Apple の analyzer は毎回作り直し、Haas はモデルを短時間再利用する。
 @MainActor
 final class SpeechLane {
   static let tapBufferSize: AVAudioFrameCount = 4096
@@ -76,14 +77,15 @@ final class SpeechLane {
   var onTextUpdate: (@MainActor (String, String) -> Void)?
   /// 最初の結果（volatile 含む）を受け取った時刻。
   var onFirstResult: (@MainActor (Double) -> Void)?
-  /// アセット導入が必要になったとき（初回は約 24s かかる）。
+  /// 認識モデルを準備するとき。初回は取得が必要になる。
   var onAssetInstallStarted: (@MainActor () -> Void)?
   /// 入力デバイスが変わって engine が止まったとき。引数は新しい既定入力の接続方式。
   var onCaptureInterrupted: (@MainActor (AudioTransport) -> Void)?
 
-  /// ADR-026。確定した結果の語ごとの音声時刻。保存する録音の JSON に入れる。次の `start()` で空にする。
+  /// ADR-026。確定した結果の音声時刻。保存する録音の JSON に入れる。次の `start()` で空にする。
   private(set) var finalTimings: [TimedText] = []
   private var run: RecognitionRun?
+  private var haasRecognizer: HaasSpeechRecognizer?
   private var lifecycle = RecognitionLifecycle()
   private var recognitionGeneration: RecognitionGeneration?
   private var interruption = CaptureInterruption()
@@ -95,13 +97,25 @@ final class SpeechLane {
 
   /// 戻り値は認識の準備ができた時刻（既存の `analyzer_start_ms`）。
   func start(
+    speechEngine: SpeechEngine = .haas,
     voiceProcessingEnabled: Bool = false, microphoneInput: MicrophoneInput = .automatic,
     recordingWriter: RecordingWriter? = nil
   ) async throws -> Double {
     let generation = lifecycle.begin()
     recognitionGeneration = generation
     finalTimings = []
-    let run = RecognitionRun(recognizer: AppleSpeechRecognizer())
+    let recognizer: any SpeechRecognizer
+    switch speechEngine {
+    case .apple:
+      await haasRecognizer?.abort()
+      haasRecognizer = nil
+      recognizer = AppleSpeechRecognizer()
+    case .haas:
+      let haas = haasRecognizer ?? HaasSpeechRecognizer()
+      haasRecognizer = haas
+      recognizer = haas
+    }
+    let run = RecognitionRun(recognizer: recognizer)
     self.run = run
     levels.reset()
     run.recognizer.onUpdate = { [weak self, weak run] result in
@@ -280,8 +294,10 @@ final class SpeechLane {
             diagnosticCount += 1
           }
           let converted = try converter.convertBuffer(box.buffer, to: analyzerFormat)
-          try run.recognizer.append(converted)
           recordingWriter?.append(converted)
+          if run.failure == nil {
+            do { try run.recognizer.append(converted) } catch { run.failure = error }
+          }
           // finalize(through:) に渡す「給餌済み位置」。yield した分だけ進める。
           run.fedFrameCount += Int64(converted.frameLength)
           if debugAudio {
@@ -327,10 +343,10 @@ final class SpeechLane {
       throw SpeechLaneError.notRunning
     }
     guard let generation = recognitionGeneration else { throw SpeechLaneError.notRunning }
-    // 締めが走ったままだと同じ analyzer に finalize が 2 つ入る。時間切れの回もここでもう一度待つ。
     await stopFeeding(run)
 
     // 給餌と同じタスクから呼ぶと自己デッドロックする（ADR-007）。ここは別タスク。
+    if let failure = run.failure { throw failure }
     try await run.recognizer.finish()
     let finalizedMilliseconds = voxNowMilliseconds()
 
@@ -345,7 +361,10 @@ final class SpeechLane {
   /// esc による破棄。finalize せずに畳む。
   func abort() async {
     let generation = recognitionGeneration
-    guard let run else { return }
+    guard let run else {
+      await haasRecognizer?.abort()
+      return
+    }
     await stopFeeding(run)
     await run.recognizer.abort()
     teardown(run)
@@ -355,7 +374,7 @@ final class SpeechLane {
 
   // MARK: 内部
 
-  /// 締めと破棄で共通の前半。給餌を止めて入力列を閉じる。
+  /// 締めと破棄で共通の前半。取り込みを止め、届いた音声を渡し終える。
   private func stopFeeding(_ run: RecognitionRun) async {
     run.isRunning = false
     run.halCapture?.stop()
@@ -369,7 +388,7 @@ final class SpeechLane {
     run.feedTask = nil
   }
 
-  /// 締めと破棄で共通の後半。1 回分を捨てる。analyzer の畳み方だけが呼び出し側で違う。
+  /// 締めと破棄で共通の後半。1 回分の取り込みと通知を片付ける。
   private func teardown(_ run: RecognitionRun) {
     if let observer = run.configurationObserver {
       NotificationCenter.default.removeObserver(

@@ -21,7 +21,7 @@ description: >
 ## プロジェクト概要
 
 - **スタック**: Swift 6.2 / SwiftPM、AppKit + SwiftUI、macOS 26 以上・Apple Silicon
-- **役割**: 話した内容をローカルの `SpeechTranscriber` で認識し、HUD で編集して元のアプリへ貼り付ける
+- **役割**: 話した内容をローカルの Haas Q4（既定）または Apple `SpeechTranscriber` で認識し、HUD で編集して元のアプリへ貼り付ける
 - **構成**: `Sources/Vox`（本体）、`Sources/VoxCore`（UI 非依存の判定）、`Sources/VoxSettingsSupport`（設定画面と保存）
 - エージェントは Vox 本体を起動しない（`AGENTS.md`）。確認は利用者が行う
 
@@ -72,11 +72,20 @@ macOS が再起動を求めたら Vox を終了して開き直す。ソースか
 | `auto_enter_unverified` | bool | `false` | ターミナルなど、入力欄を読み返せないアプリでも Enter を送る。貼り付け 0.5 秒後、同じアプリ・ウィンドウなら送る。以前の「Enter の送り方」で「貼り付け後に送る」を選んでいた設定は、これをオンとして引き継ぐ |
 | `voice_processing_enabled` | bool | `false` | Apple のエコー除去・ノイズ抑制（実験的。再生中の音楽が小さくなる場合がある） |
 | `microphone_input` | object | `{"mode":"automatic"}` | Vox の入力選択。`automatic` は既定の入出力が Bluetooth 系・出力稼働中なら内蔵入力を優先し、なければ既定入力。`system_default` は常に準備時の既定入力。`device` は `uid` で機器を固定し、未接続なら開始エラー |
+| `speech_engine` | string | `"haas"` | 音声認識。`haas`（Haas-ja-v1.0 Q4_K）/ `apple`（SpeechTranscriber）。次の録音から反映（ADR-032） |
 | `external_control_enabled` | bool | `false` | `vox://record/start` などの URL で、ほかのアプリから録音を操作できるようにする（ADR-022）。設定画面「連携」 |
 | `recording_save_enabled` | bool | `false` | 確定した録音ごとに、認識に渡した音声（wav）と本文・計測（JSON）を `recordings/` に残す（ADR-026）。設定画面「デバッグ」 |
 | `keep_text_on_clipboard` | bool | `true` | 貼り付けた後も確定本文をクリップボードに残し、履歴のアプリにも記録させる。オフなら貼る前の中身に戻す（ADR-027）。設定画面「貼り付け」 |
 
 マイクの指定は設定画面「使用するマイク」で保存する。個別指定の形式は `{"mode":"device","uid":"機器のUID"}`。UID は機器の再接続で変わりうる AudioDeviceID と区別し、診断ログには出さない。古い設定に `microphone_input` がなければ「自動」になる。macOS 全体の既定入力・既定出力は変更しない。録音中の設定変更は次の録音から反映する。
+
+### 音声認識とモデルの取得
+
+設定画面「マイク」の「音声認識」で Haas / Apple を選ぶ。`speech_engine` がない旧設定も Haas を使う。録音中の変更は次の録音から反映する。一般の録音保存の既定値はオフのままなので、比較用に音を残すときは「録音を保存する」もオンにする。
+
+Haas は初回の録音開始時に実行ファイルと約352MBの Q4 モデルを取得し、SHA256 を検証する。準備が終わるまでマイクを開かず、Escで中止できる。以後の認識はローカル。取得できなければ接続を確認するか Apple に切り替える。確定後60秒の未使用でワーカーを解放する。
+
+保存先は `~/Library/Application Support/vox/models/haas-v1-q4/`（モデルと speech.cpp v0.10.0）。取得し直すときは Vox を終了してこのフォルダを退避する。録音は `recordings/` にモデルを問わず録音全体として残り、JSON の `speech_model` にモデル名を記録する。Haas の `segments` は語ではなく音声窓の時刻。録音の7日・500MiBの回収はモデルには適用しない。
 
 ### dictionary.tsv（`Sources/VoxCore/Transcript/DictionaryPass.swift`、ADR-019）
 

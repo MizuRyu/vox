@@ -31,7 +31,7 @@
 | [015](015-palette-target-from-frontmost-app.md) | 検索対象はアプリ固有 → ターミナル汎用 → 最近使ったフォルダの 3 方式で決める | 承認 | 2026-09-23 |
 | [016](016-microphone-selection-input-only.md) | マイクを Vox 内で選び、通常録音を入力専用 AUHAL で開く | 承認 | 2026-09-23 |
 | [017](017-image-paste-as-file-path.md) | 貼り付けた画像は一時ファイルに書き、本文にはパスを入れる | 承認 | 2026-09-23 |
-| [018](018-no-engine-switch.md) | 認識エンジンの切り替えを本体に入れない | 承認 | 2026-09-23 |
+| [018](018-no-engine-switch.md) | 認識エンジンの切り替えを本体に入れない | 置換 → 032 | 2026-09-23 |
 | [019](019-dictionary-surface-replacement.md) | 辞書は表記の完全一致で置換し、読みの正規化と形態素解析は入れない | 承認 | 2026-09-23 |
 | [020](020-pause-triggered-segment-commit.md) | 発話の後に 700 ms 黙ったら、そこまでを本体から確定する | 承認 | 2026-09-23 |
 | [021](021-dictionary-edited-in-settings.md) | 辞書は設定画面の表で編集し、ファイルは正のまま残す | 承認 | 2026-09-24 |
@@ -45,3 +45,4 @@
 | [029](029-prosody-tuning-tool-outside-data.md) | 韻律の試作ツールはリポジトリに置き、声・ラベル・学習した重みは置かない | 提案 | 2026-10-18 |
 | [030](030-apple-vocabulary-hints-not-adopted.md) | Apple の語彙指定（contextualStrings・カスタム言語モデル）は入れず、SpeechTranscriber のままにする | 提案 | 2026-10-28 |
 | [031](031-body-transcriber-without-fast-results.md) | 本文は `.fastResults` を付けない 2 つ目の認識器から取り、表示用の認識器と同じ analyzer に載せる | 廃止 | 2026-10-28 |
+| [032](032-switchable-haas-and-apple.md) | Haas Q4 を既定にし、Apple と認識部分を切り替える | 承認 | 2026-11-01 |

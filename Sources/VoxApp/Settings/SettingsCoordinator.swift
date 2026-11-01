@@ -48,6 +48,7 @@ final class SettingsCoordinator {
   var autoEnterUnverified: Bool { controller.autoEnterUnverified }
   var voiceProcessingEnabled: Bool { controller.voiceProcessingEnabled }
   var microphoneInput: MicrophoneInput { controller.microphoneInput }
+  var speechEngine: SpeechEngine { controller.speechEngine }
   var externalControlEnabled: Bool { controller.externalControlEnabled }
   var recordingSaveEnabled: Bool { controller.recordingSaveEnabled }
   var keepTextOnClipboard: Bool { controller.keepTextOnClipboard }

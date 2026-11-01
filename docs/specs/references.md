@@ -41,3 +41,10 @@
 - [HEROZ 日本語 ASR 11 モデル比較 (2026-08-18)](https://techblog.heroz.jp/entry/2026/08/18/120000)
 - [Lyonesse — Apple Speech API benchmark](https://lyonesse.app/blog/apple-speech-api-benchmark.html) — 英語のみ。日本語の根拠には使えない
 - [Sansan Tech Blog — SpeechAnalyzer 比較](https://buildersbox.corp-sansan.com/entry/2026/02/13/130000) — 日本語での実務的な落とし穴
+
+## Haas（2026-11-01 確認）
+
+- [Haas-ja-v1.0](https://huggingface.co/third-intelligence/Haas-ja-v1.0) — 元モデル
+- [GGUF 固定リビジョン](https://huggingface.co/sakasegawa/Haas-ja-v1.0-GGUF/tree/6b965d5007ba780585de51549d57a8c1c0d67c7e) — 採用する Q4_K の重み
+- [speech.cpp v0.10.0 worker protocol](https://github.com/nyosegawa/speech.cpp/blob/v0.10.0/docs/worker.md) — JSONL / PCM / 終了とキャンセルの契約
+- [FastConformer の制約](https://github.com/nyosegawa/speech.cpp/blob/v0.10.0/docs/models/fastconformer.md) — 長い録音の分割と量子化時のデコーダー実行先

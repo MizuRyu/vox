@@ -69,6 +69,13 @@ class PipelineTest(unittest.TestCase):
 
 
 class SentenceSplitTest(unittest.TestCase):
+    def test_haas_windows_are_not_treated_as_word_timings(self):
+        sidecar = {
+            "speech_model": "haas-v1.0-q4_k-speech.cpp-0.10.0",
+            "segments": [{"text": "合成の一文。次の文。", "start_s": 0, "end_s": 12}],
+        }
+        self.assertEqual(voxdata.sentences(sidecar), [])
+
     def test_segments_split_at_sentence_marks_and_keep_last_timed_end(self):
         sidecar = {"segments": [
             {"text": "これで", "start_s": 0.1, "end_s": 0.4},

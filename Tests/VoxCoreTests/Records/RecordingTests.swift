@@ -57,7 +57,9 @@ struct RecordingTests {
       JSONSerialization.jsonObject(with: JSONEncoder().encode(sidecar)) as? [String: Any])
     #expect(
       Set(object.keys)
-        == ["schema_version", "audio", "capture_start_ms", "segments", "history", "metrics"])
+        == ["schema_version", "audio", "capture_start_ms", "segments", "history", "metrics", "speech_model"])
+    #expect(object["schema_version"] as? Int == 3)
+    #expect(object["speech_model"] is NSNull)
     #expect((object["segments"] as? [Any])?.isEmpty == true)
     #expect(object["audio"] is NSNull)
     #expect(object["metrics"] is NSNull)

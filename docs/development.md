@@ -2,7 +2,7 @@
 
 コマンドはリポジトリのルートで実行します。
 
-最終確認日: 2026-09-07
+最終確認日: 2026-11-01
 
 ## 環境
 
@@ -10,7 +10,7 @@
 - システムの Swift 6.2 以上（`Package.swift` の tools version は 6.2）
 - 任意で `nix develop`：Python の評価環境、FFmpeg、just、Gitleaks、Semgrep、Lefthook、SwiftLint、ShellCheck などを用意する
 
-Swift と Apple の SDK は Nix で管理しません。devShell でも `xcode-select` で選択した Xcode の SDK と Apple の `xcrun` を使います。`Tests/Tooling/nix-sdk-check.sh` で SDK 選択と manifest を検査できます。`.xcodeproj` も作りません（[ADR-006](adr/006-swiftpm-only-nix-devshell.md)）。本体の `Package.swift` は外部依存を持ちません。FluidAudio 0.15.0 に依存するのは M0 の比較ハーネスだけで、`benchmarks/Package.resolved` で固定しています。本体の認識は Apple を使います。
+Swift と Apple の SDK は Nix で管理しません。devShell でも `xcode-select` で選択した Xcode の SDK と Apple の `xcrun` を使います。`Tests/Tooling/nix-sdk-check.sh` で SDK 選択と manifest を検査できます。`.xcodeproj` も作りません（[ADR-006](adr/006-swiftpm-only-nix-devshell.md)）。本体の `Package.swift` は外部依存を持ちません。FluidAudio 0.15.0 に依存するのは M0 の比較ハーネスだけで、`benchmarks/Package.resolved` で固定しています。本体の認識は既定で Haas Q4、設定で Apple を使います。Haas の固定版ワーカーと重みは初回に取得します（ADR-032）。
 
 ```sh
 nix develop
@@ -60,7 +60,7 @@ pasteboard とパレットの検査は API の意味を確かめるもので、�
 ### 音声認識の逐次出力の検査
 
 認識器の設定や組合せを変えるときは、`just verify` に加えて `SpeechStreamingTests` を実行します。
-本体と同じ `SpeechLane.makeRecognizer` と `BufferConverter` を使い、合成音声を 100ms 分ずつ実時間で流します。
+本体と同じ `AppleSpeechRecognizer.makeRecognizer` と `BufferConverter` を使い、合成音声を 100ms 分ずつ実時間で流します。
 マイク・HUD・キー送出は使いません。日本語の認識モデルが導入済みの macOS 26 以降で実行し、モデルの取得は行いません。
 
 通常の `just verify` ではこの 1 件をスキップします。以下は約 30 秒の入力例です。`say` はファイルに保存するだけで、音は再生しません。
@@ -81,6 +81,19 @@ VOX_SPEECH_REPLAY_AUDIO="$PWD/z-ai/2026-10-28-speech-streaming-check/input.aiff"
 `OK: speech_replay ...` / `NG: speech_replay ...` の 1 行に計測値を出します。
 5 秒は約 12 秒の滞留を検出するための境界であり、一般の発話に対する速度の保証ではありません。
 実マイクから HUD 描画までの遅延と CER は、この検査では確認しません（[REC-16](MANUAL-VERIFICATION.md#rec-16-話し続けている間も淡色の本文が更新される)）。
+
+### Haas と Apple の共通経路の再生検査
+
+通常の `just test` は Haas の取得・起動を行いません。`swift test --no-parallel --filter Haas` で、合成 PCM による区切り、キャンセル、連続録音、不正な JSONL、ワーカーの停止とタイムアウトを検査できます。マイクとウィンドウは使いません。
+
+本体の両認識器・BufferConverter・RecordingWriter を使う実時間検査は、上で作った合成音声を次のように渡します。Haas の未取得ファイルは初回にダウンロードし、SHA256 を検証します。Apple の日本語モデルも必要です。
+
+```sh
+VOX_ENGINE_REPLAY_AUDIO="$PWD/z-ai/2026-10-28-speech-streaming-check/input.aiff" \
+  swift test --no-parallel --filter SpeechEngineReplayTests
+```
+
+`OK: engine_replay engine=... first_ms=... max_gap_ms=... finalize_ms=... updates=...` の1行で、表示が変わった初出・最大空白・入力終了後の確定待ちを報告します。wav のフレーム数と JSON のモデル名も検査し、一時録音は削除します。認識本文を出力しません。Haas の `segments` は確定した音声窓の区間なので、Apple の語ごとの時刻と同じ粒度としては比較しません。
 
 ## 静的解析と pre-commit
 
@@ -117,6 +130,7 @@ swift run Vox
 
 | データ | 既定の保存先 |
 |---|---|
+| Haas のモデルとワーカー | `~/Library/Application Support/vox/models/haas-v1-q4/`（固定版、SHA256 検証。録音の回収とは別） |
 | ホットキー設定 | `~/Library/Application Support/vox/settings.json`（schema 1、ファイル権限 0600） |
 | 確定テキストの履歴 | `~/Library/Application Support/vox/history.jsonl` |
 | 最近使った検索フォルダ | `~/Library/Application Support/vox/folders.json`（schema 1、上限 20 件、ファイル権限 0600） |
@@ -152,7 +166,7 @@ swift run Vox
 
 `input_target_changed_*` の 3 つは診断ログの `injection_rejected` 行にも出ます。同じ行に確定時の前面アプリの bundle identifier と、開始時・確定時の AX role / subrole が付きます。本文・値・タイトルは読みません。
 
-現在の計測は schema 6。schema 6 で、発話の後の無音で本体が区切った回数 `pause_commit_count`（[ADR-020](adr/020-pause-triggered-segment-commit.md)）を足しました。schema 5 で `palette_resume_ms` は廃止し、パレット表示時間の `palette_open_ms` に変更しています。過去の JSONL には以前の schema が含まれるため、同じ意味の指標として混ぜないでください。
+現在の計測は schema 7。schema 7 で認識したモデルの `speech_model` を足しました（`haas-v1.0-q4_k-speech.cpp-0.10.0` / `apple-speechtranscriber-ja-JP`）。旧行にこの項目がなければ Apple として読む必要があります。録音 JSON は schema 3 で同じ項目を持ちます。schema 6 で、発話の後の無音で本体が区切った回数 `pause_commit_count`（[ADR-020](adr/020-pause-triggered-segment-commit.md)）を足しました。schema 5 で `palette_resume_ms` は廃止し、パレット表示時間の `palette_open_ms` に変更しています。過去の JSONL には以前の schema が含まれるため、同じ意味の指標として混ぜないでください。
 
 ## 配布物と署名
 

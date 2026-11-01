@@ -1,5 +1,5 @@
 // 軸 A（発話終了 → 挿入完了）の計測。1 入力 = 1 行の収集側。
-// 直列化とスキーマ（schema_version 6 / 24 キー）は VoxCore.MetricsRecord が持つ。
+// 直列化とスキーマ（schema_version 7 / 25 キー）は VoxCore.MetricsRecord が持つ。
 
 import Foundation
 import OSLog
@@ -26,6 +26,7 @@ struct MetricsSession {
   var finalTextLength: Int?
   var targetApp: String?
   var error: String?
+  var speechModel: String?
   /// R16。挿入先を前面に戻すのにかかった時間。activate を呼ばなかったら nil。
   var targetActivateMilliseconds: Double?
   /// R18。committed から除去したフィラーの語数。
@@ -88,7 +89,7 @@ struct MetricsSession {
       paletteTargetSource: paletteTargetSource,
       pastedCharacters: pastedCharacters,
       readbackCharacters: readbackCharacters,
-      pauseCommitCount: pauseCommitCount
+      pauseCommitCount: pauseCommitCount, speechModel: speechModel
     )
   }
 }

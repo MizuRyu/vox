@@ -229,6 +229,7 @@ final class VoxController {
       switch state {
       case .starting:
         recording?.cancelRequested = true
+        recording?.task?.cancel()
         voxLog("escape queued state=starting")
       case .recording:
         // esc は破棄 1 回のみ（R14 改訂で「編集モードを抜ける」は廃止）。
@@ -351,7 +352,7 @@ final class VoxController {
         }
         guard proceed(recording) else { close(); return }
         let analyzerStart = try await lane.start(
-          voiceProcessingEnabled: recording.voiceProcessingEnabled,
+          speechEngine: recording.speechEngine, voiceProcessingEnabled: recording.voiceProcessingEnabled,
           microphoneInput: recording.microphoneInput,
           recordingWriter: recording.recordingWriter)
         recording.metrics?.analyzerStartMilliseconds = analyzerStart
@@ -376,6 +377,7 @@ final class VoxController {
       } catch {
         await lane.abort()
         guard proceed(recording) else { close(); return }
+        if recording.cancelRequested || error is CancellationError { close(); return }
         let message = String(describing: error)
         voxLog("start_error \(message)")
         onResidentPhaseChange?(.error, "録音を開始できませんでした")
@@ -438,10 +440,10 @@ final class VoxController {
     let metrics = recording.flushedMetrics
     let captureStart = lane.levels.firstBufferMilliseconds
     let segments = lane.finalTimings
-    recording.recordingWriter?.finish { audio in
+    recording.recordingWriter?.finish { [speechModel = recording.speechEngine.modelIdentifier] audio in
       RecordingSidecar(
         audio: audio, captureStartMilliseconds: captureStart, segments: segments, history: record,
-        metrics: metrics)
+        metrics: metrics, speechModel: speechModel)
     }
   }
 

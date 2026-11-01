@@ -20,7 +20,7 @@ Sources/
     Process/             子プロセス実行、単調時計
   VoxApp/                macOS 層。AppKit / SwiftUI / AVFoundation / Speech / CoreGraphics を使う唯一の場所
     Session/             録音セッションの接続点（App.swift）。開始・確定・破棄の流れ
-    Audio/               SpeechAnalyzer、入力専用 AUHAL、録音用 Audio Unit の構成、音声診断
+    Audio/               SpeechLane の共通入力・変換・保存、Apple / Haas の認識、Haas の取得と worker、入力専用 AUHAL、音声診断
     Input/               ホットキー監視、貼り付け、入力欄の読み取り
     Hud/                 HUD パネルと本文エディタ
     Palette/             パレットのパネル・ビュー、対象フォルダの解決と切り替え、索引の取得、常駐索引と FSEvents の監視
@@ -80,7 +80,7 @@ images/                  README の画面例（合成データ）と再生成の
 
 | 目標 | 現在のファイル |
 |---|---|
-| Audio/ | AudioTransport, MicrophoneInput（MicrophoneDevice / MicrophoneOutput を含む） |
+| Audio/ | AudioTransport, MicrophoneInput（MicrophoneDevice / MicrophoneOutput を含む）, HaasAudioWindow |
 | Attachments/ | AttachmentPaste, AttachmentImageKind, AttachmentFileName, AttachmentRetention |
 | Transcript/ | TranscriptBuffer, TranscriptCaret, FillerPass, DictionaryPass, DictionaryDocument, DictionaryRows, SigilTrigger, AnalyzerFinalizePoint, SpeechAssetReadiness, HandsFreePolicy, PauseCommitPolicy, HudEditCommand |
 | Injection/ | InjectionSafety, AutoEnter, TerminalAutoEnter, ActivationPolicy |

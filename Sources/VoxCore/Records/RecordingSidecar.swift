@@ -4,8 +4,8 @@
 import Foundation
 
 public struct RecordingSidecar: Encodable, Sendable {
-  /// 2: 確定した語ごとの音声時刻（`segments`）を足した。
-  public static let schemaVersion = 2
+  /// 2: `segments`。3: 認識したモデル（`speech_model`）。
+  public static let schemaVersion = 3
 
   public struct Audio: Encodable, Sendable, Equatable {
     /// JSON と同じフォルダにある wav のファイル名。
@@ -37,21 +37,23 @@ public struct RecordingSidecar: Encodable, Sendable {
   public var audio: Audio?
   /// 最初の音声バッファを受け取った時刻（計測と同じ単調時計）。
   public var captureStartMilliseconds: Double?
-  /// 確定した結果の語ごとの区間。文末の音声を切り出すのに使う。並びは認識した順。
+  /// 確定した結果の区間。Apple は語ごと、Haas は確定した音声窓ごと。並びは認識した順。
   public var segments: [TimedText]
   public var history: HistoryRecord
   public var metrics: MetricsRecord?
+  public var speechModel: String?
 
   public init(
     audio: Audio?, captureStartMilliseconds: Double?, segments: [TimedText] = [],
     history: HistoryRecord,
-    metrics: MetricsRecord?
+    metrics: MetricsRecord?, speechModel: String? = nil
   ) {
     self.audio = audio
     self.captureStartMilliseconds = captureStartMilliseconds
     self.segments = segments
     self.history = history
     self.metrics = metrics
+    self.speechModel = speechModel
   }
 
   enum CodingKeys: String, CodingKey {
@@ -61,6 +63,7 @@ public struct RecordingSidecar: Encodable, Sendable {
     case segments
     case history
     case metrics
+    case speechModel = "speech_model"
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -71,6 +74,7 @@ public struct RecordingSidecar: Encodable, Sendable {
     try container.encode(segments, forKey: .segments)
     try container.encode(history, forKey: .history)
     try container.encodeAlways(metrics, forKey: .metrics)
+    try container.encodeAlways(speechModel, forKey: .speechModel)
   }
 }
 

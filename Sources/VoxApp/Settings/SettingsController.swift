@@ -15,6 +15,7 @@ public final class SettingsController: NSObject, NSWindowDelegate {
   public private(set) var autoEnterUnverified: Bool
   public private(set) var voiceProcessingEnabled: Bool
   public private(set) var microphoneInput: MicrophoneInput
+  public private(set) var speechEngine: SpeechEngine
   public private(set) var externalControlEnabled: Bool
   public private(set) var recordingSaveEnabled: Bool
   public private(set) var keepTextOnClipboard: Bool
@@ -40,6 +41,7 @@ public final class SettingsController: NSObject, NSWindowDelegate {
     autoEnterUnverified = saved?.autoEnterUnverified ?? false
     voiceProcessingEnabled = saved?.voiceProcessingEnabled ?? false
     microphoneInput = saved?.microphoneInput ?? .automatic
+    speechEngine = saved?.speechEngine ?? .haas
     externalControlEnabled = saved?.externalControlEnabled ?? false
     recordingSaveEnabled = saved?.recordingSaveEnabled ?? false
     keepTextOnClipboard = saved?.keepTextOnClipboard ?? true
@@ -73,6 +75,7 @@ public final class SettingsController: NSObject, NSWindowDelegate {
       autoEnterUnverified = saved.autoEnterUnverified
       voiceProcessingEnabled = saved.voiceProcessingEnabled
       microphoneInput = saved.microphoneInput
+      speechEngine = saved.speechEngine
       externalControlEnabled = saved.externalControlEnabled
       recordingSaveEnabled = saved.recordingSaveEnabled
       keepTextOnClipboard = saved.keepTextOnClipboard

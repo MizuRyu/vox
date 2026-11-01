@@ -89,6 +89,16 @@ public struct SettingsView: View {
             microphoneList
 
             Divider()
+            Picker("音声認識", selection: $model.speechEngine) {
+              Text("Haas").tag(SpeechEngine.haas)
+              Text("Apple").tag(SpeechEngine.apple)
+            }
+            .disabled(model.loadFailed)
+            Text("Haasは初回にモデルを取得します。音声はどちらもこのMacで認識し、外部には送りません。")
+              .font(.caption).foregroundStyle(.secondary)
+              .fixedSize(horizontal: false, vertical: true)
+
+            Divider()
             Toggle("通話向けの音声処理（実験的）", isOn: $model.voiceProcessingEnabled)
               .disabled(model.loadFailed)
             Text("再生中の音楽が小さくなることがあります。音楽やほかの人の声は完全には分けられません。次の録音から反映されます。")

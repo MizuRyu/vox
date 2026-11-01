@@ -9,6 +9,29 @@ import VoxCore
 @MainActor
 @Suite("Settings: 保存と編集")
 struct SettingsStoreTests {
+  @Test("旧設定はHaasを使い、Appleへの変更を保存して読み直せる")
+  func speechEngineSwitching() throws {
+    let (root, store) = fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    #expect(try store.decode(Data("{\"schema_version\":1}".utf8)).speechEngine == .haas)
+    #expect(throws: (any Error).self) {
+      _ = try store.decode(Data("{\"schema_version\":1,\"speech_engine\":\"unknown\"}".utf8))
+    }
+    let model = SettingsModel(store: store, defaults: .standard)
+    model.speechEngine = .apple
+    model.recordingSaveEnabled = true
+    #expect(model.save())
+    #expect(try store.load().speechEngine == .apple)
+    #expect(try store.load().recordingSaveEnabled)
+    let controller = SettingsController(store: store, defaults: .standard, configuration: .standard)
+    #expect(controller.speechEngine == .apple)
+    model.resetDraft()
+    #expect(model.speechEngine == .haas)
+    #expect(model.save())
+    controller.reload()
+    #expect(controller.speechEngine == .haas)
+  }
+
   /// 保存先だけを持つ使い捨ての設定。呼び出し側が root を消す。
   private func fixture() -> (root: URL, store: SettingsStore) {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(

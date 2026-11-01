@@ -2,19 +2,36 @@
 
 採用している認識エンジン、その実測値と制約、比較して却下した候補。
 
-最終確認日: 2026-10-28（実発話の CER と Apple の語彙指定を測定。採用は変わらず Apple 1 本）
+最終確認日: 2026-11-01（Haas Q4 を既定にし、Apple と切り替える。[ADR-032](../adr/032-switchable-haas-and-apple.md)）
 
 ## いま動いているもの
 
-**Apple `SpeechTranscriber`（macOS 26 / ja_JP）1 本だけ。** 他のモデルは 1 つも積んでいない。
+既定は **Haas-ja-v1.0 Q4_K**。設定画面「音声認識」または `settings.json` の `speech_engine` で `haas` / `apple` を選ぶ。録音開始時に固定し、変更は次の録音から反映する。設定に項目がなければ `haas` を使う。Haas の精度優位を確定した採用ではなく、保存した録音で比較しながら使うための選択である。
+
+### Haas
+
+| 項目 | 値 |
+|---|---|
+| モデル | Haas-ja-v1.0、GGUF Q4_K、351,901,216 bytes |
+| 実行 | speech.cpp v0.10.0 のローカル子プロセス。Metal エンコーダー / CPU デコーダー、4スレッド |
+| 音声 | 16kHz / Int16 / mono。入力・保存は Apple と同じ SpeechLane の経路 |
+| 途中結果 | 500ms 間隔で音声の未確定部分を再認識。処理中に要求を積まない |
+| 区切り | 無音、ファイル検索、終了時。連続発話は最大12秒で静かな位置を選ぶ。表示済みの区間より前には戻さない |
+| モデル保存先 | `~/Library/Application Support/vox/models/haas-v1-q4/`。初回だけ取得し、SHA256 を検証 |
+| 解放 | 確定後60秒の未使用、Apple への切り替え、破棄、終了 |
+| ネットワーク | 初回の実行ファイル・重みの取得だけ。音声も本文も外へ送らない |
+
+M4・32GB の比較実験でワーカーのピーク RSS は約473MiB。保存音声40本の推定 CER は Apple 2.27% / Haas Q4 8.45%、合成音声16本は Apple 8.47% / Haas Q4 4.24%。正解の偏りと音声の違いがあるため、実利用での精度順位は未確定である。判断と測定条件は [ADR-032](../adr/032-switchable-haas-and-apple.md)。
+
+### Apple `SpeechTranscriber`（macOS 26 / ja_JP）
 
 | 項目 | 値 |
 |---|---|
 | API | `Speech` framework の `SpeechAnalyzer` + `SpeechTranscriber`（macOS 26 で追加） |
 | ロケール | `ja-JP`（`supportedLocales` に実在することを実測で確認済み） |
-| モデルの置き場所 | **アプリのメモリ空間外**（OS が管理）。Vox のバイナリにも RAM にも乗らない |
+| モデルの置き場所 | OS が管理する別プロセス。Vox のバイナリとプロセス RSS には含まれないが、OS 側のメモリは使う |
 | 初回のダウンロード | 必要。約 24 秒。一度入れば以後は不要（`AssetInventory` の状態が `installed` になる） |
-| 実行先 | Apple Neural Engine（OS 側の実装。Vox からは指定しない） |
+| 実行先 | OS が選ぶ。Vox からは指定しない |
 | ネットワーク | 初回のモデル取得のときだけ。以後は完全ローカル |
 
 ### 必須の設定 — `.fastResults`

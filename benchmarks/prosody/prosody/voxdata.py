@@ -59,6 +59,9 @@ def recording_paths(recording: str) -> tuple[Path, Path]:
 
 def sentences(sidecar: dict) -> list[Sentence]:
     """確定した語の区間（schema 2 の segments）から文に分ける。無ければ本文全体を 1 文にする。"""
+    # Haas の区間は音声窓であり、文末の語の時刻として学習に使えない。
+    if str(sidecar.get("speech_model", "")).startswith("haas-"):
+        return []
     segments = sidecar.get("segments") or []
     if not segments:
         text = (sidecar.get("history") or {}).get("raw_text") or ""

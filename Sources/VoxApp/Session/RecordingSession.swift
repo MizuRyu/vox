@@ -14,6 +14,7 @@ final class RecordingSession {
   let keepTextOnClipboard: Bool
   let voiceProcessingEnabled: Bool
   let microphoneInput: MicrophoneInput
+  let speechEngine: SpeechEngine
   /// ADR-026。設定がオンの回だけ持つ。確定まで進んだら JSON を書き、それ以外は消す。
   let recordingWriter: RecordingWriter?
   /// 書き出した計測の行。保存する録音の JSON に同じものを入れる。
@@ -51,6 +52,7 @@ final class RecordingSession {
     keepTextOnClipboard = settings.keepTextOnClipboard
     voiceProcessingEnabled = settings.voiceProcessingEnabled
     microphoneInput = settings.microphoneInput
+    speechEngine = settings.speechEngine
     recordingWriter = settings.recordingSaveEnabled ? RecordingStore.standard.makeWriter() : nil
     self.dictionary = dictionary
     self.target = target
@@ -61,6 +63,7 @@ final class RecordingSession {
     }
     var metrics = MetricsSession(toggleOnMilliseconds: toggleOnMilliseconds)
     metrics.targetApp = target?.bundleIdentifier
+    metrics.speechModel = speechEngine.modelIdentifier
     self.metrics = metrics
   }
 }

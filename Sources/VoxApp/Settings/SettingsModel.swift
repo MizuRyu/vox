@@ -11,6 +11,7 @@ public final class SettingsModel: ObservableObject {
   @Published public var autoEnterUnverified = false
   @Published public var voiceProcessingEnabled = false
   @Published public var microphoneInput: MicrophoneInput = .automatic
+  @Published public var speechEngine: SpeechEngine = .haas
   @Published public var externalControlEnabled = false
   @Published public var recordingSaveEnabled = false
   @Published public var keepTextOnClipboard = true
@@ -189,6 +190,7 @@ public final class SettingsModel: ObservableObject {
     autoEnterUnverified = original.autoEnterUnverified
     voiceProcessingEnabled = original.voiceProcessingEnabled
     microphoneInput = original.microphoneInput
+    speechEngine = original.speechEngine
     externalControlEnabled = original.externalControlEnabled
     recordingSaveEnabled = original.recordingSaveEnabled
     keepTextOnClipboard = original.keepTextOnClipboard
@@ -201,6 +203,7 @@ public final class SettingsModel: ObservableObject {
     autoEnterUnverified = false
     voiceProcessingEnabled = false
     microphoneInput = .automatic
+    speechEngine = .haas
     externalControlEnabled = false
     recordingSaveEnabled = false
     keepTextOnClipboard = true
@@ -219,7 +222,7 @@ public final class SettingsModel: ObservableObject {
         autoEnterEnabled: autoEnterEnabled,
         autoEnterUnverified: autoEnterUnverified,
         voiceProcessingEnabled: voiceProcessingEnabled, microphoneInput: microphoneInput,
-        externalControlEnabled: externalControlEnabled,
+        speechEngine: speechEngine, externalControlEnabled: externalControlEnabled,
         recordingSaveEnabled: recordingSaveEnabled,
         keepTextOnClipboard: keepTextOnClipboard)
       // A CLI override is not editable here and must never become a persisted preference.

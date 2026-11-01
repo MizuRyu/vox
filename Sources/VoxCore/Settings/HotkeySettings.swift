@@ -36,6 +36,18 @@ public struct HotkeyOverrides: Sendable {
   }
 }
 
+public enum SpeechEngine: String, Codable, CaseIterable, Sendable {
+  case haas
+  case apple
+
+  public var modelIdentifier: String {
+    switch self {
+    case .haas: "haas-v1.0-q4_k-speech.cpp-0.10.0"
+    case .apple: "apple-speechtranscriber-ja-JP"
+    }
+  }
+}
+
 public struct HotkeySettings: Codable, Equatable, Sendable {
   public var schemaVersion: Int = 1
   public var toggleKey: String?
@@ -44,6 +56,7 @@ public struct HotkeySettings: Codable, Equatable, Sendable {
   public var autoEnterUnverified: Bool
   public var voiceProcessingEnabled: Bool
   public var microphoneInput: MicrophoneInput
+  public var speechEngine: SpeechEngine
   /// ADR-022。`vox://record/…` の URL を受け付けるか。
   public var externalControlEnabled: Bool
   /// ADR-026。認識に渡した音声を wav で残すか。
@@ -55,7 +68,7 @@ public struct HotkeySettings: Codable, Equatable, Sendable {
     toggleKey: String? = nil, paletteKey: String? = nil,
     autoEnterEnabled: Bool = false, autoEnterUnverified: Bool = false,
     voiceProcessingEnabled: Bool = false, microphoneInput: MicrophoneInput = .automatic,
-    externalControlEnabled: Bool = false,
+    speechEngine: SpeechEngine = .haas, externalControlEnabled: Bool = false,
     recordingSaveEnabled: Bool = false,
     keepTextOnClipboard: Bool = true
   ) {
@@ -65,6 +78,7 @@ public struct HotkeySettings: Codable, Equatable, Sendable {
     self.autoEnterUnverified = autoEnterUnverified
     self.voiceProcessingEnabled = voiceProcessingEnabled
     self.microphoneInput = microphoneInput
+    self.speechEngine = speechEngine
     self.externalControlEnabled = externalControlEnabled
     self.recordingSaveEnabled = recordingSaveEnabled
     self.keepTextOnClipboard = keepTextOnClipboard
@@ -78,6 +92,7 @@ public struct HotkeySettings: Codable, Equatable, Sendable {
     case autoEnterUnverified = "auto_enter_unverified"
     case voiceProcessingEnabled = "voice_processing_enabled"
     case microphoneInput = "microphone_input"
+    case speechEngine = "speech_engine"
     case externalControlEnabled = "external_control_enabled"
     case recordingSaveEnabled = "recording_save_enabled"
     case keepTextOnClipboard = "keep_text_on_clipboard"
@@ -101,6 +116,7 @@ public struct HotkeySettings: Codable, Equatable, Sendable {
       try container.decodeIfPresent(Bool.self, forKey: .autoEnterUnverified) ?? migrated
     voiceProcessingEnabled = try container.decodeIfPresent(Bool.self, forKey: .voiceProcessingEnabled) ?? false
     microphoneInput = try container.decodeIfPresent(MicrophoneInput.self, forKey: .microphoneInput) ?? .automatic
+    speechEngine = try container.decodeIfPresent(SpeechEngine.self, forKey: .speechEngine) ?? .haas
     externalControlEnabled =
       try container.decodeIfPresent(Bool.self, forKey: .externalControlEnabled) ?? false
     recordingSaveEnabled =

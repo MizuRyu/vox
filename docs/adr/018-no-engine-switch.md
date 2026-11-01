@@ -1,6 +1,6 @@
 # ADR-018 認識エンジンの切り替えを本体に入れない
 
-- 状態: 承認
+- 状態: 置換（→ [ADR-032](032-switchable-haas-and-apple.md)、2026-11-01）
 - 日付: 2026-09-23
 - 関連: [02 音声エンジン](../specs/02-speech-engines.md)、[ADR-002](002-two-lane-transcription.md)、[ADR-003](003-confirm-lane-parakeet-ja.md)、[ADR-010](010-speed-metric-axis-a-apple.md)、[既知の問題と制約](../KNOWN-ISSUES.md)
 
