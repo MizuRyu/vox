@@ -1,17 +1,24 @@
 import Darwin
 import Foundation
+import VoxCore
 
 protocol HaasTranscribing: Sendable {
-  func prepare(keywords: String) async throws
+  func prepare(keywords: String, onProgress: @Sendable (SpeechPreparationStage) async -> Void) async throws
   func transcribe(_ pcm: Data, windowStartFrame: Int, isFinal: Bool) async throws -> String
   func shutdown() async
   func speechEndFrame() async -> Int?
   func setKeywords(_ keywords: String) async
 }
 
+extension HaasTranscribing {
+  func prepare(keywords: String = "") async throws {
+    try await prepare(keywords: keywords, onProgress: { _ in })
+  }
+}
+
 /// 固定版 speech.cpp の JSONL。推論・パイプ I/O・モデルの検証は MainActor の外。
 actor HaasWorker: HaasTranscribing {
-  private let prepareAssets: @Sendable () async throws -> HaasAssets
+  private let prepareAssets: @Sendable (@Sendable (SpeechPreparationStage) async -> Void) async throws -> HaasAssets
   private let startupTimeout: Duration
   private let requestTimeout: Duration
   private let makeVAD: @Sendable (HaasAssets) throws -> HaasVAD?
@@ -26,9 +33,9 @@ actor HaasWorker: HaasTranscribing {
   private var sequence = 0
 
   init(
-    prepareAssets: @escaping @Sendable () async throws -> HaasAssets = {
+    prepareAssets: @escaping @Sendable (@Sendable (SpeechPreparationStage) async -> Void) async throws -> HaasAssets = { progress in
       let assets = HaasAssets.standard
-      try await assets.prepare()
+      try await assets.prepare(onProgress: progress)
       return assets
     },
     startupTimeout: Duration = .seconds(60), requestTimeout: Duration = .seconds(5),
@@ -42,7 +49,7 @@ actor HaasWorker: HaasTranscribing {
     self.makeVAD = makeVAD
   }
 
-  func prepare(keywords: String = "") async throws {
+  func prepare(keywords: String, onProgress: @Sendable (SpeechPreparationStage) async -> Void) async throws {
     let started = voxNowMilliseconds()
     if process?.isRunning == true {
       vad?.reset()
@@ -55,8 +62,9 @@ actor HaasWorker: HaasTranscribing {
     shutdown()
     self.keywords = keywords
     let assetsStarted = voxNowMilliseconds()
-    let assets = try await prepareAssets()
+    let assets = try await prepareAssets(onProgress)
     let assetsReady = voxNowMilliseconds()
+    await onProgress(.loadingModel)
     vad = try makeVAD(assets)
     let vadReady = voxNowMilliseconds()
     try Task.checkCancellation()

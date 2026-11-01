@@ -102,6 +102,10 @@ VOX_ENGINE_REPLAY_AUDIO="$PWD/z-ai/2026-10-28-speech-streaming-check/input.aiff"
 
 診断ログの`haas_prepared`は、再利用の有無と準備時間を記録する。新規起動では`assets_ms`（取得・SHA256検証）/ `vad_ms` / `worker_ms` / `total_ms`、再利用では`total_ms`を出す。`voxlog.py summary`の`prepare_ms`は`analyzer_start_ms - toggle_on_ms`で算出し、保存形式はschema 7のまま変えない。発話開始後の`first_token_ms`とは分けて見る。
 
+取得済みのモデルだけで準備時間を測る場合は、`VOX_HAAS_STARTUP_PROBE=1 swift test --no-parallel --filter HaasWorkerTests/startupTiming`を使う。ワーカーの新規起動・再利用・終了を3回ずつ行い、マイクとVox本体は起動しない。初回のSHA256検証と、同じアプリの起動中にファイルが変わっていない場合の検証再利用を区別する。初回の検証は起動時の事前検証へ移せるが、その処理時間自体がなくなるわけではない。
+
+`HaasAssetVerifierTests`は同サイズ・同更新日時に戻したファイルの改変も拒否することを検査する。`PreparationViewTests`は準備の各段階をライト・ダークでオフスクリーン描画する。`VOX_HUD_PREPARATION_OUTPUT`に一時フォルダを指定すると合成した画面例を保存する。`SigilEscapeTests`は`@`の復元、選択範囲、検索中の音声、ショートカットからの検索、ファイルの確定を検査する。
+
 `SpeechGateTests` / `SpeechVocabularyTests` / `SessionVocabularyTests`は発話区間の再認識抑止、会話本文だけからの抽出、フォルダ・期限・並行セッション・読み取り上限を検査する。`HaasWorkerTests.sessionKeywords`と`HaasRecognizerTests.keywordCorrectionAtCommit`は、ヒントを確定時だけ使い、次の録音へ持ち越さないことを検査する。
 
 `HaasRecognizerTests.speechEndpointCommitsPreview`は音量床を待たないVAD終端の確定、`parallelVocabularyPreparation` / `cancelVocabularyPreparation`はモデルと用語の並行準備・中止を検査する。`boundedWindowsCoverAllFrames`は12秒区切りの音声と時刻を保ち、途中を文末扱いしないことも確認する。`QuestionMarkTests`はHaasの文末補完と既存約物・途中の節の保護、`FillerTests` / `SectionTests.hesitationKeepsTypedTail`は表記・引用・返事・除去後の手入力を検査する。

@@ -5,6 +5,9 @@ import VoxCore
 @MainActor
 public final class HudModel: ObservableObject {
   @Published public var status = "準備中"
+  @Published public var preparation: SpeechPreparationStage? {
+    didSet { if let preparation { status = preparation.title } }
+  }
   /// 淡色より前に確定した分。音声の final と、それ以前に打った文字が入る（T21 で `committed` から改名）。
   @Published public var head = ""
   /// いま出ている淡色。並びは `head` と `tail` の**間**（T21）。
@@ -22,7 +25,9 @@ public final class HudModel: ObservableObject {
   var onFinishEditing: (() -> Void)?
   var onTranscriptChange: (() -> Void)?
   /// 中段をテキストの代わりに占める通知（挿入確認の失敗など）。
-  @Published public var notice: String?
+  @Published public var notice: String? {
+    didSet { if notice != nil { preparation = nil } }
+  }
   /// ADR-017。画像を保存できなかったときの 1 行。キーヒントの行に出す
   /// （`notice` は本文と入れ替わるので、録音中の失敗には使えない）。
   @Published var attachmentNotice: String?
@@ -39,7 +44,9 @@ public final class HudModel: ObservableObject {
   public var typedCharacters = 0
 
   /// T13。`@` の打鍵をパレットの合図として扱ってよい状態か（録音中のみ）。
-  public var isRecording = false
+  public var isRecording = false {
+    didSet { if isRecording { preparation = nil } }
+  }
   /// T15。テキストビューが IME の変換中（marked text がある）。
   /// 変換中は esc / ⌃P を tap で飲まない（IME のキャンセルと変換操作を優先する）。
   public var isComposing = false
@@ -47,8 +54,8 @@ public final class HudModel: ObservableObject {
   public var hadInput = false
   /// T13。`--no-sigil-trigger` で false。打鍵トリガーを止めて `⌃P` だけにする。
   public var sigilTriggerEnabled = true
-  /// T13。sigil が打たれた。第 2 引数は打った caret 位置（UTF-16）。
-  public var onSigil: ((PaletteSigil, Int) -> Void)?
+  /// T13。sigil が打たれた。第2引数は置き換える選択範囲（UTF-16）。
+  public var onSigil: ((PaletteSigil, NSRange) -> Void)?
   /// T20。ファイルのペーストを相対パスにするための検索対象のルート。
   /// パレットが対象を解決したときに入る（未解決なら nil で、絶対パスを `~` に短縮するだけ）。
   public var repositoryRoot: String?
@@ -215,6 +222,15 @@ public final class HudModel: ObservableObject {
     pendingInsertion = plan
     adopt(buffer)
     insertionToken += 1
+    onTranscriptChange?()
+  }
+
+  func restoreLiteralSigil(at range: NSRange) {
+    var buffer = transcript
+    guard buffer.replace(range: buffer.clampSelection(range), with: "@") else { return }
+    adopt(buffer)
+    hadInput = true
+    typedCharacters += 1
     onTranscriptChange?()
   }
 }
@@ -452,7 +468,7 @@ public struct TranscriptEditor: NSViewRepresentable {
         enabled: model.sigilTriggerEnabled && model.onSigil != nil,
         isComposing: isComposing) {
       case .open(let sigil):
-        model.onSigil?(sigil, affectedCharRange.location)
+        model.onSigil?(sigil, affectedCharRange)
         return false
       case .ignore:
         return false

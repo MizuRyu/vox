@@ -38,7 +38,7 @@ private struct LevelMeter: View {
   }
 }
 
-private struct HudView: View {
+struct HudView: View {
   @ObservedObject var model: HudModel
 
   var body: some View {
@@ -48,12 +48,16 @@ private struct HudView: View {
         // ボタンと当たり判定を重ねない（重ねるとボタンを押したときに二重に効く恐れがある）。
         // ドラッグでウィンドウは動かさない（`isMovableByWindowBackground` は false のまま）。
         HStack(spacing: 10) {
-          Circle()
-            .fill(Color.red.opacity(0.85))
-            .frame(width: 7, height: 7)
+          if model.preparation != nil {
+            ProgressView().controlSize(.small)
+          } else {
+            Circle()
+              .fill(model.isRecording ? Color.red.opacity(0.85) : Color.secondary)
+              .frame(width: 7, height: 7)
+          }
           Text(model.status)
             .font(.system(size: 11, weight: .medium))
-          LevelMeter(level: model.level)
+          if model.preparation == nil { LevelMeter(level: model.level) }
           Spacer(minLength: 8)
         }
         .frame(maxWidth: .infinity, minHeight: 18)
@@ -93,6 +97,14 @@ private struct HudView: View {
         } else {
           TranscriptEditor(model: model)
             .frame(minHeight: 30)
+            .overlay(alignment: .topLeading) {
+              if let preparation = model.preparation, model.transcript.text.isEmpty {
+                Text(preparation.detail)
+                  .font(.system(size: 13))
+                  .foregroundStyle(.secondary)
+                  .allowsHitTesting(false)
+              }
+            }
         }
       }
       // 展開中は伸びた分を本文が受け取る（畳んでいる間は従来の 1〜2 行）。
@@ -107,11 +119,13 @@ private struct HudView: View {
             .font(.system(size: 10))
             .foregroundStyle(.secondary)
         } else {
-          hint(model.toggleShortcutLabel, "確定して貼り付け")
-          if VoxConfig.sigilTriggerEnabled {
-            hint("@", "ファイル")
+          if model.preparation != nil {
+            hint("esc", "中止")
+          } else {
+            hint(model.toggleShortcutLabel, "確定して貼り付け")
+            if VoxConfig.sigilTriggerEnabled { hint("@", "ファイル") }
+            hint("esc", "破棄")
           }
-          hint("esc", "破棄")
         }
         Spacer(minLength: 0)
       }
@@ -264,8 +278,9 @@ final class HudPanel {
     panel.orderOut(nil)
   }
 
-  func reset(status: String) {
+  func reset(status: String, preparation: SpeechPreparationStage? = nil) {
     model.status = status
+    model.preparation = preparation
     // T21。head / tentative / tail をまとめて空にする。前の回を持ち越さない。
     model.clearText()
     model.notice = nil

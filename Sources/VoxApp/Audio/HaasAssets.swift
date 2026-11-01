@@ -1,4 +1,5 @@
 import CryptoKit
+import Darwin
 import Foundation
 import VoxCore
 
@@ -26,6 +27,7 @@ enum HaasError: Error, CustomStringConvertible {
 
 /// 配布物を固定し、音声を含まない取得だけを行う。呼び出しは HaasWorker の actor 上。
 struct HaasAssets: Sendable {
+  private static let verifier = HaasAssetVerifier()
   static let modelName = "Haas-616M-ja-v1.0-Q4_K.gguf"
   static let modelSHA256 = "d24d53f29b75214a933ff482b0de1217e0a800f4118cca39ad6cf03609a89d6f"
   static let runtimeSHA256 = "f344cf59d72b5f91f5838df68c37cae739f80ae0b4f141bc553a81ffde9547bd"
@@ -55,20 +57,37 @@ struct HaasAssets: Sendable {
     Self(root: RecordingStore.standard.root.deletingLastPathComponent().appendingPathComponent("models/haas-v1-q4"))
   }
 
-  func prepare() async throws {
+  func prepare(onProgress: @Sendable (SpeechPreparationStage) async -> Void = { _ in }) async throws {
+    await onProgress(.checkingFiles)
     try FileManager.default.createDirectory(
       at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-    let runtimeMissing = try !Self.matches(executable, sha256: Self.runtimeSHA256)
-    let libraryMissing = try bundledLibrary == nil && !Self.matches(library, sha256: Self.librarySHA256)
-    if runtimeMissing || libraryMissing { try await installRuntime() }
+    let runtimeMissing = try await !Self.verifier.matches(executable, sha256: Self.runtimeSHA256)
+    let libraryMissing = if bundledLibrary == nil {
+      try await !Self.verifier.matches(library, sha256: Self.librarySHA256)
+    } else { false }
+    if runtimeMissing || libraryMissing {
+      await onProgress(.downloading)
+      try await installRuntime()
+    }
     guard FileManager.default.fileExists(atPath: library.path) else { throw HaasError.invalidAsset }
-    if try !Self.matches(model, sha256: Self.modelSHA256) {
+    if try await !Self.verifier.matches(model, sha256: Self.modelSHA256) {
+      await onProgress(.downloading)
       try await download(Self.modelURL, to: model, sha256: Self.modelSHA256)
     }
-    if try !Self.matches(vadModel, sha256: Self.vadSHA256) {
+    if try await !Self.verifier.matches(vadModel, sha256: Self.vadSHA256) {
+      await onProgress(.downloading)
       try await download(Self.vadURL, to: vadModel, sha256: Self.vadSHA256)
     }
     try Task.checkCancellation()
+  }
+
+  func verifyInstalledFiles() async throws {
+    let files = [(executable, Self.runtimeSHA256), (model, Self.modelSHA256), (vadModel, Self.vadSHA256)]
+      + (bundledLibrary == nil ? [(library, Self.librarySHA256)] : [])
+    for (file, digest) in files {
+      try Task.checkCancellation()
+      guard try await Self.verifier.matches(file, sha256: digest) else { return }
+    }
   }
 
   static func matches(_ file: URL, sha256: String) throws -> Bool {
@@ -127,5 +146,52 @@ struct HaasAssets: Sendable {
     } else {
       try FileManager.default.moveItem(at: source, to: destination)
     }
+  }
+}
+
+actor HaasAssetVerifier {
+  private struct Time: Equatable {
+    let seconds: Int
+    let nanoseconds: Int
+    init(_ value: timespec) { seconds = value.tv_sec; nanoseconds = value.tv_nsec }
+  }
+
+  private struct Fingerprint: Equatable {
+    let device: Int32
+    let inode: UInt64
+    let size: Int64
+    let modified: Time
+    let changed: Time
+
+    init(_ file: URL) throws {
+      var info = stat()
+      guard lstat(file.path, &info) == 0, info.st_mode & S_IFMT == S_IFREG else { throw HaasError.invalidAsset }
+      device = info.st_dev
+      inode = info.st_ino
+      size = info.st_size
+      modified = Time(info.st_mtimespec)
+      changed = Time(info.st_ctimespec)
+    }
+  }
+
+  private struct Entry {
+    let digest: String
+    let fingerprint: Fingerprint
+  }
+
+  private var verified: [URL: Entry] = [:]
+
+  func matches(_ file: URL, sha256: String) throws -> Bool {
+    guard FileManager.default.fileExists(atPath: file.path) else {
+      verified[file] = nil
+      return false
+    }
+    let before = try Fingerprint(file)
+    if let entry = verified[file], entry.digest == sha256, entry.fingerprint == before { return true }
+    verified[file] = nil
+    guard try HaasAssets.matches(file, sha256: sha256) else { return false }
+    guard try Fingerprint(file) == before else { throw HaasError.invalidAsset }
+    verified[file] = Entry(digest: sha256, fingerprint: before)
+    return true
   }
 }

@@ -17,6 +17,7 @@ final class PaletteCoordinator {
 
   private let panel = PalettePanel()
   private let hud: HudPanel
+  private let showsPanels: Bool
   /// T38-b。登録フォルダの常駐索引。未登録の対象では今までどおり開くたびに読む。
   private let indexes: ResidentIndexStore
 
@@ -44,6 +45,7 @@ final class PaletteCoordinator {
   /// T13。`@` を打った caret 位置。nil は「committed の末尾」（`⌃P` と、末尾で打った場合）。
   /// 末尾で打った回を位置で固定しないのは、開いたあとに締めた final が末尾に入るため。
   private var insertLocation: Int?
+  private var typedSigil: (range: NSRange, text: String)?
   /// T23。この録音の間だけ持ち越す、選び直した検索対象。開き直しても同じフォルダで続け、
   /// 録音の後片付け（`reset`）で捨てて自動解決に戻す。
   private var chosenTarget: PaletteTarget?
@@ -52,15 +54,16 @@ final class PaletteCoordinator {
   /// T38-c。`⌘]` で巡回する輪。候補を選び直すと写し直す。
   private var cycle = TargetCycle(current: nil, candidates: [])
 
-  init(hud: HudPanel, indexes: ResidentIndexStore) {
+  init(hud: HudPanel, indexes: ResidentIndexStore, showsPanels: Bool = true) {
     self.hud = hud
     self.indexes = indexes
+    self.showsPanels = showsPanels
     panel.model.onCommit = { [weak self] path, fileNameOnly in
       self?.close(insert: path, fileNameOnly: fileNameOnly)
     }
-    // T16。キーヒントの Esc クリック。esc キーと同じ「挿入せず再開」。
+    // T16。キーヒントのEscクリックも、Escキーと同じ経路で閉じる。
     panel.model.onCancel = { [weak self] in
-      self?.close(insert: nil, fileNameOnly: false)
+      self?.escape()
     }
     // T38-a / T23。候補行で選んだ worktree・フォルダに検索対象を移す。
     panel.model.onSwitchTarget = { [weak self] target in
@@ -78,13 +81,14 @@ final class PaletteCoordinator {
 
   /// `⌃P` と `@` の打鍵。T22 で**音声供給は止めない**（開いたまま喋り続けられる）。
   /// `typedAt` は `@` を打った caret 位置（`⌃P` は nil）。
-  func open(atMilliseconds: Double, typedAt: Int?) {
+  func open(atMilliseconds: Double, typedAt: Int?, selectionLength: Int = 0) {
     isOpen = true
     openedAtMilliseconds = atMilliseconds
     onMetric(.opened)
     // 末尾で打った場合は位置で固定しない（この後に喋った分の後ろ、閉じる時点の末尾が正しい）。
     let length = hud.model.transcript.length
     insertLocation = typedAt.flatMap { $0 >= length ? nil : $0 }
+    typedSigil = typedAt.map { (NSRange(location: $0, length: selectionLength), hud.model.transcript.text) }
 
     // 開いた時点の tentative を final として締める（淡色を残したまま閉じないため）。
     // T22。供給は止めないので、締めた後に届く final も通常どおり `head` に追記される。
@@ -96,10 +100,11 @@ final class PaletteCoordinator {
     // T38-c。候補は開くたびに読み直すので、輪も写し直す。
     resetCycle()
     // T22。録音は続いているので状態表示は「録音中」のまま。
-    panel.show()
+    if showsPanels { panel.show() }
     voxLog("palette_opened at_ms=\(atMilliseconds)")
 
     setupTask = Task { @MainActor in
+      guard !Task.isCancelled else { return }
       // T23。最近使ったフォルダはファイル読み込みなので detached。候補行は索引より先に出る。
       let folders = Task.detached { FolderHistoryStore.load() }
       // why: 固定した挿入先は中断点の前に読む（再開した後は次の録音のアプリになっている）。
@@ -141,6 +146,9 @@ final class PaletteCoordinator {
     let openMilliseconds = openedAtMilliseconds.map { voxNowMilliseconds() - $0 }
     openedAtMilliseconds = nil
     isOpen = false
+    typedSigil = nil
+    let insertionLocation = insertLocation
+    insertLocation = nil
     setupTask?.cancel()
     setupTask = nil
     previewTask?.cancel()
@@ -165,11 +173,10 @@ final class PaletteCoordinator {
         // 既定は**閉じる時点の**全体の末尾で、開いている間に喋った分の後ろに入る（時間順）。
         // `@` を `head` の途中で打った回だけその位置。
         let buffer = hud.model.transcript
-        let location = insertLocation ?? buffer.length
+        let location = insertionLocation ?? buffer.length
         hud.model.requestInsertion(
           PaletteInsertion.insert(value, into: buffer.text, at: location))
       }
-      insertLocation = nil
       // T22。給餌は止めていないので再開は要らない。状態表示も「録音中」のまま。
       onMetric(.closed(openMilliseconds: openMilliseconds))
       voxLog(
@@ -180,7 +187,7 @@ final class PaletteCoordinator {
 
   /// 設定画面を閉じたときに key を返す。開閉はしない。
   func focus() {
-    panel.show()
+    if showsPanels { panel.show() }
   }
 
   /// 確定はパレットを締めるタスクの後。差し込む位置を動かさないため。
@@ -202,6 +209,7 @@ final class PaletteCoordinator {
     finalizeTask = nil
     previewedPath = nil
     insertLocation = nil
+    typedSigil = nil
     openedAtMilliseconds = nil
     // T23。選び直したフォルダはこの録音までで、次の録音は自動解決から始める。
     chosenTarget = nil
@@ -286,6 +294,15 @@ final class PaletteCoordinator {
   func escape() {
     if dismissFolderPanel() { return }
     guard !panel.model.consumeEscape() else { return }
+    if let typedSigil {
+      var range = typedSigil.range
+      if let change = TranscriptCaret.replacement(current: typedSigil.text, desired: hud.model.transcript.text) {
+        let start = TranscriptCaret.rebased(range.location, by: change)
+        let end = TranscriptCaret.rebased(NSMaxRange(range), by: change)
+        range = NSRange(location: start, length: max(0, end - start))
+      }
+      hud.model.restoreLiteralSigil(at: range)
+    }
     close(insert: nil, fileNameOnly: false)
   }
 

@@ -111,7 +111,7 @@ struct TargetCycleKeyTests {
     }
     try history.encoded().write(to: URL(fileURLWithPath: FolderHistoryStore.path))
 
-    let coordinator = PaletteCoordinator(hud: HudPanel(), indexes: ResidentIndexStore())
+    let coordinator = PaletteCoordinator(hud: HudPanel(), indexes: ResidentIndexStore(), showsPanels: false)
     coordinator.open(atMilliseconds: 0, typedAt: nil)
     for _ in 0..<500 {
       if coordinator.paletteModel.folderHistory.entries.count == 3 { break }
@@ -149,7 +149,7 @@ struct TargetCycleKeyTests {
     let previousPath = FolderHistoryStore.path
     FolderHistoryStore.path = NSTemporaryDirectory() + "vox-empty-\(UUID().uuidString).json"
     defer { FolderHistoryStore.path = previousPath }
-    let coordinator = PaletteCoordinator(hud: HudPanel(), indexes: ResidentIndexStore())
+    let coordinator = PaletteCoordinator(hud: HudPanel(), indexes: ResidentIndexStore(), showsPanels: false)
     coordinator.open(atMilliseconds: 0, typedAt: nil)
     coordinator.cycleTarget()
     #expect(coordinator.paletteModel.target == nil, "候補が無いのに対象が変わった")

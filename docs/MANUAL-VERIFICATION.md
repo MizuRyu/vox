@@ -740,3 +740,23 @@ CPUだけの登録と環境設定の復元は自動化済み: `HaasWorkerTests.c
 自動化済み: `compositionPreservesQueuedSpeechAndTheExistingSuffix` / `resigningTheEditorFlushesCompositionAndSpeech`（オフスクリーン。実際のIME操作・マイク・貼り付けは対象外）。
 
 認識直後の打鍵による音声の欠落は`typingImmediatelyAfterRecognitionPreservesSpeech`、変換中のパス挿入位置は`deferredPathFollowsCompositionAndSpeech`で自動化済み。
+
+### REC-26 モデル準備の段階と再利用
+
+| 項目 | 内容 |
+|---|---|
+| **前提** | Haasを選び、モデルを取得済み |
+| **手順** | Vox起動後に録音を始める。確定後すぐにもう一度録音し、その後60秒以上空けて録音する。準備中はEscでも中止する |
+| **期待結果** | 準備中は実際の段階と、まだ録音していないことが分かる。「録音中」に変わるまで赤い録音表示や波形を出さない。読み込み済みモデルの再利用でモデル準備の表示を出さない。60秒経過後は読み込みを待ち、中止すると録音を始めない |
+
+自動化済み: `HaasWorkerTests.reusedWorkerDoesNotReportPreparation` / `HaasRecognizerTests.cancelledPreparation` / `PreparationViewTests`。準備時間の計測は`HaasWorkerTests.startupTiming`を任意実行する。実マイクとキー操作は手動確認する。
+
+### PAL-16 @を文字として入力する
+
+| 項目 | 内容 |
+|---|---|
+| **前提** | 録音中でHUDにフォーカスがある |
+| **手順** | 本文の途中か選択範囲の上で`@`を打ち、検索をEscで閉じてIDを続けて打つ。`⌃P`で開いた検索を閉じる場合と、ファイルを選ぶ場合も確認する |
+| **期待結果** | `@`から開いた検索をEscで閉じたときだけ、通常の文字として空白なしで`@`が入る。選択範囲は置き換える。録音とその後の手入力を続けられる。ショートカットから開いた場合とファイルの確定では余計な`@`を残さない |
+
+自動化済み: `SigilEscapeTests`。実際のキー配送と手入力の継続は手動確認する。

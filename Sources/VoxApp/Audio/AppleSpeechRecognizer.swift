@@ -40,12 +40,12 @@ private final class AppleRecognitionRun {
 @MainActor
 final class AppleSpeechRecognizer: SpeechRecognizer {
   var onUpdate: ((RecognitionUpdate) -> Void)?
-  private var onAssetInstallStarted: (() -> Void)?
+  private var onPreparation: (@MainActor (SpeechPreparationStage) -> Void)?
   private var run: AppleRecognitionRun?
   var isSegmentFinalizePending: Bool { run?.segmentFinalize.hasPending == true }
 
-  func start(onAssetInstallStarted: (() -> Void)?) async throws -> AVAudioFormat {
-    self.onAssetInstallStarted = onAssetInstallStarted
+  func start(onPreparation: (@MainActor (SpeechPreparationStage) -> Void)?) async throws -> AVAudioFormat {
+    self.onPreparation = onPreparation
     guard SpeechTranscriber.isAvailable else { throw SpeechLaneError.transcriberUnavailable }
     guard let locale = await SpeechTranscriber.supportedLocale(equivalentTo: Locale(identifier: "ja_JP")) else {
       throw SpeechLaneError.japaneseUnavailable
@@ -220,7 +220,7 @@ final class AppleSpeechRecognizer: SpeechRecognizer {
     case .installed:
       return
     case .supported:
-      onAssetInstallStarted?()
+      onPreparation?(.downloading)
       voxLog("assets status=downloading")
       guard let request = try await AssetInventory.assetInstallationRequest(supporting: modules)
       else {

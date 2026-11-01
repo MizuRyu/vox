@@ -31,16 +31,17 @@ final class HaasSpeechRecognizer: SpeechRecognizer {
 
   init(worker: any HaasTranscribing = HaasWorker()) { self.worker = worker }
 
-  func start(onAssetInstallStarted: (() -> Void)?) async throws -> AVAudioFormat {
+  func start(onPreparation: (@MainActor (SpeechPreparationStage) -> Void)?) async throws -> AVAudioFormat {
     idleTask?.cancel()
     await idleTask?.value
     idleTask = nil
-    onAssetInstallStarted?()
     pauseCommitCount = 0
     let vocabulary = vocabularyTask
     vocabularyTask = nil
     try await withTaskCancellationHandler {
-      async let prepared: Void = worker.prepare(keywords: keywords)
+      async let prepared: Void = worker.prepare(keywords: keywords) { stage in
+        await onPreparation?(stage)
+      }
       if let vocabulary { keywords = await vocabulary.value }
       try Task.checkCancellation()
       try await prepared

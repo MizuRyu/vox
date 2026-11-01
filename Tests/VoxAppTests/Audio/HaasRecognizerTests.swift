@@ -26,7 +26,8 @@ private actor StubHaasWorker: HaasTranscribing {
     self.speechEnd = speechEnd
   }
 
-  func prepare(keywords: String) async throws {
+  func prepare(keywords: String, onProgress: @Sendable (SpeechPreparationStage) async -> Void) async throws {
+    await onProgress(.loadingModel)
     try await Task.sleep(for: prepareDelay)
     stopped = false
   }
@@ -52,7 +53,7 @@ struct HaasRecognizerTests {
     let recognizer = HaasSpeechRecognizer(worker: worker)
     var updates: [RecognitionUpdate] = []
     recognizer.onUpdate = { updates.append($0) }
-    let format = try await recognizer.start(onAssetInstallStarted: nil)
+    let format = try await recognizer.start(onPreparation: nil)
     try await Task.sleep(for: .milliseconds(510))
     try recognizer.append(audio(32000, format: format))
     await VoxPoll.wait(until: { updates.last?.isFinal == true }, deadline: voxNowMilliseconds() + 800,
@@ -73,12 +74,12 @@ struct HaasRecognizerTests {
       return "Haas"
     }
     let started = ContinuousClock.now
-    _ = try await recognizer.start(onAssetInstallStarted: nil)
+    _ = try await recognizer.start(onPreparation: nil)
     #expect(started.duration(to: .now) < .milliseconds(350))
     #expect(await worker.currentKeywords == "Haas")
     await recognizer.abort()
     recognizer.keywords = ""
-    _ = try await recognizer.start(onAssetInstallStarted: nil)
+    _ = try await recognizer.start(onPreparation: nil)
     #expect(await worker.currentKeywords.isEmpty)
     await recognizer.abort()
   }
@@ -92,7 +93,7 @@ struct HaasRecognizerTests {
       return "Haas"
     }
     recognizer.vocabularyTask = vocabulary
-    let preparation = Task { try await recognizer.start(onAssetInstallStarted: nil) }
+    let preparation = Task { try await recognizer.start(onPreparation: nil) }
     try await Task.sleep(for: .milliseconds(20))
     let cancelled = ContinuousClock.now
     preparation.cancel()
@@ -107,7 +108,7 @@ struct HaasRecognizerTests {
     let recognizer = HaasSpeechRecognizer(worker: StubHaasWorker(emptyResult: true))
     var updates: [RecognitionUpdate] = []
     recognizer.onUpdate = { updates.append($0) }
-    let format = try await recognizer.start(onAssetInstallStarted: nil)
+    let format = try await recognizer.start(onPreparation: nil)
     try recognizer.append(audio(16000, format: format))
     try await recognizer.finish()
     #expect(updates.isEmpty)
@@ -118,7 +119,7 @@ struct HaasRecognizerTests {
   func cancelledPreparation() async throws {
     let worker = StubHaasWorker(prepareDelay: .seconds(1))
     let recognizer = HaasSpeechRecognizer(worker: worker)
-    let task = Task { try await recognizer.start(onAssetInstallStarted: nil) }
+    let task = Task { try await recognizer.start(onPreparation: nil) }
     try await Task.sleep(for: .milliseconds(20))
     task.cancel()
     await #expect(throws: CancellationError.self) { _ = try await task.value }
@@ -131,10 +132,10 @@ struct HaasRecognizerTests {
     let recognizer = HaasSpeechRecognizer(worker: StubHaasWorker())
     var updates: [RecognitionUpdate] = []
     recognizer.onUpdate = { updates.append($0) }
-    let format = try await recognizer.start(onAssetInstallStarted: nil)
+    let format = try await recognizer.start(onPreparation: nil)
     try recognizer.append(audio(8000, format: format))
     try await recognizer.finish()
-    _ = try await recognizer.start(onAssetInstallStarted: nil)
+    _ = try await recognizer.start(onPreparation: nil)
     try recognizer.append(audio(4000, format: format))
     try await recognizer.finish()
     #expect(updates.map(\.text) == ["音声8000", "音声4000"])
@@ -156,7 +157,7 @@ struct HaasRecognizerTests {
     let recognizer = HaasSpeechRecognizer(worker: worker)
     var updates: [RecognitionUpdate] = []
     recognizer.onUpdate = { updates.append($0) }
-    let format = try await recognizer.start(onAssetInstallStarted: nil)
+    let format = try await recognizer.start(onPreparation: nil)
     try recognizer.append(audio(16000, format: format))
     let started = ContinuousClock.now
     try await recognizer.finish()
@@ -174,7 +175,7 @@ struct HaasRecognizerTests {
     let recognizer = HaasSpeechRecognizer(worker: worker)
     var updates: [RecognitionUpdate] = []
     recognizer.onUpdate = { updates.append($0) }
-    let format = try await recognizer.start(onAssetInstallStarted: nil)
+    let format = try await recognizer.start(onPreparation: nil)
     try await Task.sleep(for: .milliseconds(510))
     try recognizer.append(audio(8000, format: format))
     await VoxPoll.wait(
@@ -194,7 +195,7 @@ struct HaasRecognizerTests {
     recognizer.keywords = "Haas"
     var updates: [RecognitionUpdate] = []
     recognizer.onUpdate = { updates.append($0) }
-    let format = try await recognizer.start(onAssetInstallStarted: nil)
+    let format = try await recognizer.start(onPreparation: nil)
     try await Task.sleep(for: .milliseconds(510))
     try recognizer.append(audio(8000, format: format))
     await VoxPoll.wait(
@@ -212,7 +213,7 @@ struct HaasRecognizerTests {
     let recognizer = HaasSpeechRecognizer(worker: worker)
     var updates: [RecognitionUpdate] = []
     recognizer.onUpdate = { updates.append($0) }
-    let format = try await recognizer.start(onAssetInstallStarted: nil)
+    let format = try await recognizer.start(onPreparation: nil)
     let input = try audio(16 * 16000, format: format)
     try recognizer.append(input)
     try await recognizer.finish()
@@ -235,7 +236,7 @@ struct HaasRecognizerTests {
     let recognizer = HaasSpeechRecognizer(worker: worker)
     var updates: [RecognitionUpdate] = []
     recognizer.onUpdate = { updates.append($0) }
-    let format = try await recognizer.start(onAssetInstallStarted: nil)
+    let format = try await recognizer.start(onPreparation: nil)
     try recognizer.append(audio(16000, format: format))
     let commit = Task { await recognizer.finalizeSegment(reason: .palette) }
     try await Task.sleep(for: .milliseconds(10))
@@ -253,14 +254,14 @@ struct HaasRecognizerTests {
     let recognizer = HaasSpeechRecognizer(worker: worker)
     var updates: [RecognitionUpdate] = []
     recognizer.onUpdate = { updates.append($0) }
-    let format = try await recognizer.start(onAssetInstallStarted: nil)
+    let format = try await recognizer.start(onPreparation: nil)
     try recognizer.append(audio(16000, format: format))
     let commit = Task { await recognizer.finalizeSegment(reason: .pause) }
     try await Task.sleep(for: .milliseconds(10))
     await recognizer.abort()
     await commit.value
     #expect(updates.isEmpty)
-    _ = try await recognizer.start(onAssetInstallStarted: nil)
+    _ = try await recognizer.start(onPreparation: nil)
     try recognizer.append(audio(4000, format: format))
     try await recognizer.finish()
     #expect(updates.map(\.text) == ["音声4000"])
@@ -274,7 +275,7 @@ struct HaasRecognizerTests {
     let recognizer = HaasSpeechRecognizer(worker: worker)
     var updates: [RecognitionUpdate] = []
     recognizer.onUpdate = { updates.append($0) }
-    let format = try await recognizer.start(onAssetInstallStarted: nil)
+    let format = try await recognizer.start(onPreparation: nil)
     try recognizer.append(audio(8000, format: format))
     await #expect(throws: HaasError.self) { try await recognizer.finish() }
     #expect(updates.isEmpty)

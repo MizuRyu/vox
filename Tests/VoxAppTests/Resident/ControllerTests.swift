@@ -92,7 +92,7 @@ func recordingSessionSnapshot() throws {
   let hud = HudPanel()
   let coordinator = SettingsCoordinator(
     controller: settings, hud: hud, hotkeys: HotkeyMonitor(),
-    palette: PaletteCoordinator(hud: hud, indexes: ResidentIndexStore()))
+    palette: PaletteCoordinator(hud: hud, indexes: ResidentIndexStore(), showsPanels: false))
 
   let recording = RecordingSession(
     toggleOnMilliseconds: 1_000, settings: coordinator,

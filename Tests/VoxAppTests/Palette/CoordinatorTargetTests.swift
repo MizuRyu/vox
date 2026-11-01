@@ -51,7 +51,7 @@ struct CoordinatorTargetTests {
 
     try await withEmptyFolderHistory { directory in
       let log = Box()
-      let coordinator = PaletteCoordinator(hud: HudPanel(), indexes: ResidentIndexStore())
+      let coordinator = PaletteCoordinator(hud: HudPanel(), indexes: ResidentIndexStore(), showsPanels: false)
       sources(of: coordinator, into: log)
 
       coordinator.open(atMilliseconds: 0, typedAt: nil)
@@ -96,7 +96,7 @@ struct CoordinatorTargetTests {
       FolderHistoryStore.record(recent.path, at: Date(timeIntervalSince1970: 1_700_000_000))
 
       let log = Box()
-      let coordinator = PaletteCoordinator(hud: HudPanel(), indexes: ResidentIndexStore())
+      let coordinator = PaletteCoordinator(hud: HudPanel(), indexes: ResidentIndexStore(), showsPanels: false)
       sources(of: coordinator, into: log)
       coordinator.open(atMilliseconds: 0, typedAt: nil)
       await waitForSource(log, count: 1)
@@ -117,7 +117,7 @@ struct CoordinatorTargetTests {
     VoxConfig.allowCurrentDirectoryFallback = false
     defer { VoxConfig.allowCurrentDirectoryFallback = allowCurrentDirectory }
 
-    let coordinator = PaletteCoordinator(hud: HudPanel(), indexes: ResidentIndexStore())
+    let coordinator = PaletteCoordinator(hud: HudPanel(), indexes: ResidentIndexStore(), showsPanels: false)
     coordinator.open(atMilliseconds: 0, typedAt: nil)
     coordinator.paletteModel.setPickingFolder(true)
 

@@ -33,7 +33,7 @@ struct CoordinatorFinalizeTests {
     defer { VoxConfig.allowCurrentDirectoryFallback = allowCurrentDirectory }
 
     let gate = FinalizeGate()
-    let coordinator = PaletteCoordinator(hud: HudPanel(), indexes: ResidentIndexStore())
+    let coordinator = PaletteCoordinator(hud: HudPanel(), indexes: ResidentIndexStore(), showsPanels: false)
     coordinator.finalizeSegment = { await gate.run() }
 
     coordinator.open(atMilliseconds: 0, typedAt: nil)

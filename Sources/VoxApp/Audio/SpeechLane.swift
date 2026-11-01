@@ -78,7 +78,7 @@ final class SpeechLane {
   /// 最初の結果（volatile 含む）を受け取った時刻。
   var onFirstResult: (@MainActor (Double) -> Void)?
   /// 認識モデルを準備するとき。初回は取得が必要になる。
-  var onAssetInstallStarted: (@MainActor () -> Void)?
+  var onPreparation: (@MainActor (SpeechPreparationStage) -> Void)?
   /// 入力デバイスが変わって engine が止まったとき。引数は新しい既定入力の接続方式。
   var onCaptureInterrupted: (@MainActor (AudioTransport) -> Void)?
 
@@ -86,6 +86,7 @@ final class SpeechLane {
   private(set) var finalTimings: [TimedText] = []
   private var run: RecognitionRun?
   private var haasRecognizer: HaasSpeechRecognizer?
+  private var assetVerificationTask: Task<Void, Never>?
   private var lifecycle = RecognitionLifecycle()
   private var recognitionGeneration: RecognitionGeneration?
   private var interruption = CaptureInterruption()
@@ -95,6 +96,13 @@ final class SpeechLane {
   var hasTentativeText: Bool { run?.tentative.isEmpty == false }
   /// 締めが走っている間は重ねて頼まない（同じ analyzer に finalize を 2 つ入れない。ADR-007）。
   var isSegmentFinalizePending: Bool { run?.recognizer.isSegmentFinalizePending == true }
+
+  func verifyInstalledSpeechFiles(speechEngine: SpeechEngine) {
+    guard assetVerificationTask == nil, speechEngine == .haas else { return }
+    assetVerificationTask = Task.detached(priority: .utility) {
+      try? await HaasAssets.standard.verifyInstalledFiles()
+    }
+  }
 
   /// 戻り値は認識の準備ができた時刻（既存の `analyzer_start_ms`）。
   func start(
@@ -125,12 +133,16 @@ final class SpeechLane {
       guard let self, let run, self.lifecycle.accepts(generation) else { return }
       self.accept(result: result, into: run)
     }
-    let analyzerFormat = try await run.recognizer.start(onAssetInstallStarted: onAssetInstallStarted)
+    let analyzerFormat = try await run.recognizer.start { [weak self] stage in
+      guard let self, lifecycle.accepts(generation) else { return }
+      onPreparation?(stage)
+    }
     let analyzerStartMilliseconds = voxNowMilliseconds()
     voxLog("analyzer_started at_ms=\(analyzerStartMilliseconds)")
 
     // Asset/permission awaits may finish after Quit cancelled the start task.
     try Task.checkCancellation()
+    onPreparation?(.startingCapture)
     let device = try MicrophoneDevices.resolve(microphoneInput)
     let bufferStream = voiceProcessingEnabled
       ? try startVoiceProcessingCapture(
@@ -363,6 +375,8 @@ final class SpeechLane {
 
   /// esc による破棄。finalize せずに畳む。
   func abort() async {
+    assetVerificationTask?.cancel()
+    await assetVerificationTask?.value
     let generation = recognitionGeneration
     guard let run else {
       await haasRecognizer?.abort()

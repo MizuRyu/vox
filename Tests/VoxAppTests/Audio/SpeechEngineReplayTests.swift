@@ -29,7 +29,7 @@ struct SpeechEngineReplayTests {
       }
     }
     do {
-      let format = try await recognizer.start(onAssetInstallStarted: nil)
+      let format = try await recognizer.start(onPreparation: nil)
       let started = voxNowMilliseconds()
       let frames = try await feed(path: path, format: format, started: started, recognizer: recognizer, writer: writer)
       let ended = voxNowMilliseconds()

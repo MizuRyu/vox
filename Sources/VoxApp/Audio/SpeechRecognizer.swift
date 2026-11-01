@@ -13,7 +13,7 @@ struct RecognitionUpdate {
 protocol SpeechRecognizer: AnyObject {
   var onUpdate: ((RecognitionUpdate) -> Void)? { get set }
   var isSegmentFinalizePending: Bool { get }
-  func start(onAssetInstallStarted: (() -> Void)?) async throws -> AVAudioFormat
+  func start(onPreparation: (@MainActor (SpeechPreparationStage) -> Void)?) async throws -> AVAudioFormat
   func append(_ buffer: AVAudioPCMBuffer) throws
   func finalizeSegment(reason: SegmentFinalizeReason) async
   func finish() async throws

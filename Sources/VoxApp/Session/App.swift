@@ -69,8 +69,8 @@ final class VoxController {
       recording?.metrics?.firstResultMilliseconds = at
       hud.model.status = "録音中"
     }
-    lane.onAssetInstallStarted = { [weak self] in
-      self?.hud.model.status = "モデルを準備中"
+    lane.onPreparation = { [weak self] stage in
+      self?.hud.model.preparation = stage
     }
     lane.onCaptureInterrupted = { [weak self] transport in
       self?.captureInterrupted(transport: transport)
@@ -104,12 +104,12 @@ final class VoxController {
     // T13。HUD のテキスト領域に打った sigil。shouldChangeTextIn からここに来る。
     // 開くのは 1 hop 遅らせる（テキストビューの変更処理の中でパネルを key にしない）。
     hud.model.sigilTriggerEnabled = VoxConfig.sigilTriggerEnabled
-    hud.model.onSigil = { [weak self] sigil, caret in
+    hud.model.onSigil = { [weak self] sigil, range in
       Task { @MainActor in
-        self?.openPalette(sigil: sigil, atMilliseconds: voxNowMilliseconds(), typedAt: caret)
+        self?.openPalette(sigil: sigil, atMilliseconds: voxNowMilliseconds(), typedRange: range)
       }
     }
-    if enableHotkeys { try hotkeys.start() }
+    if enableHotkeys { try self.enableHotkeys() }
     settings.listen()
     indexes.start()
   }
@@ -117,6 +117,7 @@ final class VoxController {
   func enableHotkeys() throws {
     guard !isShuttingDown else { return }
     try hotkeys.start()
+    lane.verifyInstalledSpeechFiles(speechEngine: settings.speechEngine)
   }
 
   func disableHotkeysWhenIdle() {
@@ -212,16 +213,15 @@ final class VoxController {
       case .recording:
         finish(toggleOffMilliseconds: at)
       case .starting:
-        // 準備中の 2 度押しは破棄として扱う（マイクが開いたままにならないように）。
         voxLog("toggle ignored state=starting")
       case .finishing:
         voxLog("toggle ignored state=finishing")
       }
     case .palette(let at):
-      openPalette(sigil: .file, atMilliseconds: at, typedAt: nil)
+      openPalette(sigil: .file, atMilliseconds: at, typedRange: nil)
     case .escape:
       if palette.isOpen {
-        // パレット表示中の esc は「挿入せず閉じる」。録音は止めない。
+        // パレット表示中のEscはファイル検索を閉じる。録音は止めない。
         // T23。フォルダ選択モードのときだけモードを抜けるだけで済む。
         palette.escape()
         return
@@ -244,13 +244,13 @@ final class VoxController {
 
   // MARK: M3 コマンドパレット
 
-  private func openPalette(sigil: PaletteSigil, atMilliseconds: Double, typedAt: Int?) {
+  private func openPalette(sigil: PaletteSigil, atMilliseconds: Double, typedRange: NSRange?) {
     guard state == .recording, !palette.isOpen else { return }
     guard sigil.isImplemented else {
       showUnimplementedSigil(sigil)
       return
     }
-    palette.open(atMilliseconds: atMilliseconds, typedAt: typedAt)
+    palette.open(atMilliseconds: atMilliseconds, typedAt: typedRange?.location, selectionLength: typedRange?.length ?? 0)
   }
 
   /// `#` `!` `~`。M3 では候補を出せないので、パレットを開かずに状態表示だけ差し替える。
@@ -337,7 +337,7 @@ final class VoxController {
       toggleOnMilliseconds: toggleOnMilliseconds, settings: settings,
       dictionary: dictionary.load(), target: target, handsFree: handsFree)
     self.recording = recording
-    hud.reset(status: "準備中")
+    hud.reset(status: SpeechPreparationStage.startingCapture.title, preparation: .startingCapture)
     hud.show()
     voxLog("target_app fixed=\(target?.bundleIdentifier ?? "-")")
     recording.task = Task { @MainActor in

@@ -2,10 +2,48 @@ import AVFoundation
 import Darwin
 import Foundation
 import Testing
+import VoxCore
 @testable import VoxApp
 
 @Suite("Haas: worker protocol", .serialized)
 struct HaasWorkerTests {
+  private actor ProgressLog {
+    var stages: [SpeechPreparationStage] = []
+    func append(_ stage: SpeechPreparationStage) { stages.append(stage) }
+  }
+
+  @Test("読み込んだモデルを再利用するときは、モデル準備の表示を出さない")
+  func reusedWorkerDoesNotReportPreparation() async throws {
+    let assets = try fixture(mode: "ok")
+    defer { try? FileManager.default.removeItem(at: assets.root) }
+    let worker = HaasWorker(prepareAssets: { progress in
+      await progress(.checkingFiles)
+      return assets
+    }, makeVAD: { _ in nil })
+    let cold = ProgressLog()
+    try await worker.prepare(keywords: "") { await cold.append($0) }
+    #expect(await cold.stages == [.checkingFiles, .loadingModel])
+    let warm = ProgressLog()
+    try await worker.prepare(keywords: "") { await warm.append($0) }
+    #expect(await warm.stages.isEmpty)
+    await worker.shutdown()
+  }
+
+  @Test("取得済みモデルの読み込みと再利用の時間を測る",
+    .enabled(if: ProcessInfo.processInfo.environment["VOX_HAAS_STARTUP_PROBE"] == "1"))
+  func startupTiming() async throws {
+    let assets = HaasAssets.standard
+    for url in [assets.executable, assets.model, assets.vadModel, assets.library] {
+      try #require(FileManager.default.fileExists(atPath: url.path))
+    }
+    let worker = HaasWorker()
+    for _ in 0..<3 {
+      try await worker.prepare()
+      try await worker.prepare()
+      await worker.shutdown()
+    }
+  }
+
   @Test("CPU用VADはGPUを初期化せず、Metalの環境設定を戻す",
     .enabled(if: ProcessInfo.processInfo.environment["VOX_VAD_LIBRARY"] != nil))
   func cpuOnlyVADStartup() throws {
@@ -30,7 +68,7 @@ struct HaasWorkerTests {
   func sessionKeywords() async throws {
     let assets = try fixture(mode: "ok")
     defer { try? FileManager.default.removeItem(at: assets.root) }
-    let worker = HaasWorker(prepareAssets: { assets }, makeVAD: { _ in nil })
+    let worker = HaasWorker(prepareAssets: { _ in assets }, makeVAD: { _ in nil })
     try await worker.prepare(keywords: "Haas\nOrca")
     _ = try await worker.transcribe(Data([0, 0]))
     let file = assets.root.appendingPathComponent("request.json")
@@ -58,7 +96,7 @@ struct HaasWorkerTests {
       atPath: try #require(environment["VOX_VAD_LIBRARY"]), toPath: assets.library.path)
     try FileManager.default.linkItem(
       atPath: try #require(environment["VOX_VAD_MODEL"]), toPath: assets.vadModel.path)
-    let worker = HaasWorker(prepareAssets: { assets })
+    let worker = HaasWorker(prepareAssets: { _ in assets })
     try await worker.prepare(keywords: "Haas")
     let files = try FileManager.default.contentsOfDirectory(at: audioRoot, includingPropertiesForKeys: nil)
       .filter {
@@ -133,7 +171,7 @@ struct HaasWorkerTests {
   func successfulRequests() async throws {
     let assets = try fixture(mode: "ok")
     defer { try? FileManager.default.removeItem(at: assets.root) }
-    let worker = HaasWorker(prepareAssets: { assets }, makeVAD: { _ in nil })
+    let worker = HaasWorker(prepareAssets: { _ in assets }, makeVAD: { _ in nil })
     try await worker.prepare()
     #expect(try await worker.transcribe(Data([0, 0])) == "試験")
     #expect(try await worker.transcribe(Data([0, 0])) == "試験")
@@ -147,7 +185,7 @@ struct HaasWorkerTests {
     let assets = try fixture(mode: mode)
     defer { try? FileManager.default.removeItem(at: assets.root) }
     let worker = HaasWorker(
-      prepareAssets: { assets }, startupTimeout: .seconds(3), requestTimeout: .milliseconds(100), makeVAD: { _ in nil })
+      prepareAssets: { _ in assets }, startupTimeout: .seconds(3), requestTimeout: .milliseconds(100), makeVAD: { _ in nil })
     if mode == "protocol" || mode == "startup" {
       await #expect(throws: HaasError.self) { try await worker.prepare() }
     } else {
@@ -162,7 +200,7 @@ struct HaasWorkerTests {
   func cancelledRequest() async throws {
     let assets = try fixture(mode: "hang")
     defer { try? FileManager.default.removeItem(at: assets.root) }
-    let worker = HaasWorker(prepareAssets: { assets }, makeVAD: { _ in nil })
+    let worker = HaasWorker(prepareAssets: { _ in assets }, makeVAD: { _ in nil })
     try await worker.prepare()
     let task = Task { try await worker.transcribe(Data([0, 0])) }
     try await Task.sleep(for: .milliseconds(20))
