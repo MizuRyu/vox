@@ -35,7 +35,6 @@ Tests/
   Tooling/               scripts/ の隔離テスト（shell）
 Tools/
   DocImages/             README 画像の生成（VoxApp を import する executable）
-  ProductMovie/          合成データの紹介動画。日英の文言、場面描画、BGM、MP4・GIFの生成と検査
 benchmarks/
   Package.swift          M0 ハーネス。FluidAudio はここだけが依存する
   Sources/               M0HarnessCore, VoxM0, VoxM0FactCheck, VoxM0LiveProbe
@@ -109,6 +108,6 @@ images/                  README の画面例（合成データ）と再生成の
 - `VoxApp` に `@_spi(Testing)` は無い（testTarget の `@testable import` で足りる）
 - `Tools/` はまだ作っていない。`VoxDocImages` は `Sources/VoxDocImages` のまま
 
-紹介動画の生成は独立したSwiftPMパッケージとして`Tools/ProductMovie/`に置く。`VoxDocImages`は`Sources/VoxDocImages`のままで、本体のターゲット構成には追加しない。生成したMP4・GIF・静止画は`images/`、中間ファイルとログは`z-ai/`に置く。
+紹介動画の生成ツールは別リポジトリ`product-movie`に置く。Voxでは生成したMP4・GIF・静止画を`images/`で管理する。
 
 移行は [ADR-013](../adr/013-library-app-and-test-targets.md) の段階 1〜3 で行い、各段階で `just verify` を通した。

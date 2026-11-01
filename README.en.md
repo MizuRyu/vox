@@ -18,7 +18,7 @@ Speak, clean it up, paste it as is. A local Japanese voice-input HUD for macOS.
 ## Features
 
 - **Real-time display** — what you say appears immediately in a HUD at the bottom of the screen; nothing reaches the target app until you commit
-- **Type while you speak** — edit directly in the HUD. Speech is appended at the end, typed characters go at the caret, and recording never stops
+- **Type while you speak** — edit directly in the HUD. Typed text and new speech segments go at the caret, and recording never stops
 - **File search while speaking (`⌃P` / `@`)** — resolves the target repository from the frontmost editor or terminal and inserts a path into the text; recording continues during the search
 - **Commit in one paste** — press the recording key again to return to the app you started in and insert the whole committed text at once
 - **Runs locally** — uses Haas Q4 by default, with Apple available in settings. Only the first model download needs the network. Nothing sends your text to the cloud

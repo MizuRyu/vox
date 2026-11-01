@@ -727,6 +727,8 @@ CPUだけの登録と環境設定の復元は自動化済み: `HaasWorkerTests.c
 
 自動化済み: `speechFollowsAnEditInsideCommittedText` / `finalOnlySpeechUsesTheCaretAfterAnEmoji` / `activeSpeechStaysAnchoredUntilTheNextSegment` / `typingDuringAnInsertedSegmentSurvivesUpdates`（オフスクリーンの本文・選択・色。マイクと実キーは対象外）。
 
+2026-11-01: 本文途中へカーソルを移してから話し、その位置に音声が入ることを利用者が実機で確認。認識途中のカーソル移動と両エンジン個別の操作は、この確認には含めない。
+
 ### REC-25 IME変換中の音声と録音の確定
 
 | 項目 | 内容 |

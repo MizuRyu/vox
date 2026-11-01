@@ -63,7 +63,6 @@
         packages = [
           appleXcrun
           benchPython
-          pkgs.uv # 紹介動画の生成ツール（Tools/ProductMovie）
           pkgs.ffmpeg # 音声を 16kHz mono へ正規化
           pkgs.just # タスクランナー (justfile)
           pkgs.jq

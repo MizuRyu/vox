@@ -18,4 +18,11 @@ python3 scripts/render-palette-example.py
 出力先の変更は `swift run vox-doc-images /path/to/output`。実装は `Sources/VoxDocImages/main.swift`。
 アイコンは提供されたコンセプト画像から抽出した透過 PNG を採用した。画像生成後に alpha 0〜255 を確認済み。元ファイルと由来は [Resources](../Resources/README.md) を参照。
 
-紹介動画は`just movie`で再生成し、`just movie-check`で保存済み素材を検査する。合成文・架空の入力欄とファイルを使い、音楽も波形から合成する。文言・場面・書き出し手順は[Tools/ProductMovie](../Tools/ProductMovie/README.md)を参照。
+紹介動画は別リポジトリ`product-movie`の`examples/vox/movie.json`から生成する。標準の配置はVoxと同じ親フォルダの`../product-movie/`。ツールのREADMEに必要な環境と編集手順を記載している。
+
+```sh
+uv run --no-project python ../product-movie/build.py --config ../product-movie/examples/vox/movie.json --output images
+uv run --no-project python ../product-movie/build.py --config ../product-movie/examples/vox/movie.json --output images --check
+```
+
+合成文・架空の入力欄とファイルを使い、音楽も波形から合成する。
