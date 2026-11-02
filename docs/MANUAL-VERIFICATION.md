@@ -636,6 +636,16 @@
 | **期待結果** | 署名 identity が変わらない更新では権限が維持される。変わった場合は [usage.md の再許可手順](usage.md#更新後に権限が効かなくなったとき) どおりにアクセシビリティ・入力監視を許可し直せば復旧する |
 
 
+### DIST-05 アドホック署名で同梱ライブラリを読み込める
+
+| 項目 | 内容 |
+|---|---|
+| **前提** | macOSで配布検査を実行できる |
+| **手順** | `Tests/Tooling/package-tests.sh`と`Tests/Tooling/development-signing-tests.sh`を実行する |
+| **期待結果** | Hardened Runtime付きの合成入力をアドホックで梱包し直しても、同梱ライブラリを読み込み、ABIを確認できる。アプリとライブラリのHardened Runtimeフラグは消える。開発用証明書での署名にはHardened Runtimeが残る |
+
+自動化済み: `package-tests.sh`の合成ローダーと`development-signing-tests.sh`。Vox本体・マイク・HUDの起動は含まない。
+
 ### REC-17 Haas と Apple の切り替えと録音の保存
 
 | 項目 | 内容 |

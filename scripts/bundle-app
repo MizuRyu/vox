@@ -187,8 +187,13 @@ trap cleanup EXIT
 app="$staging/Vox.app"
 
 sign_bundle() {
-  sign_args=(--sign "$signing_identity" --force --options runtime)
-  $development && sign_args+=(--timestamp=none)
+  sign_args=(--sign "$signing_identity" --force)
+  if $development; then
+    sign_args+=(--options runtime --timestamp=none)
+  else
+    # Ad-hoc signatures have no Team ID for library validation. Clear inherited flags too.
+    sign_args+=(--options 0)
+  fi
   if [[ -f "$app/Contents/Frameworks/libspeech.4.dylib" ]]; then
     codesign "${sign_args[@]}" "$app/Contents/Frameworks/libspeech.4.dylib"
   fi

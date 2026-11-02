@@ -193,7 +193,7 @@ swift run Vox
 
 ## 配布物と署名
 
-`just bundle` は release executable をビルドし、Hardened Runtime とマイク入力 entitlement（`com.apple.security.device.audio-input` のみ。App Sandbox は使わない）を付けた `.app` と、`/Applications` へのショートカットを含む DMG、その SHA-256 を作ります。アイコンは `Resources/VoxIcon.png` を `sips` と `iconutil` で ICNS に変換したものです。
+`just bundle` は release executable をビルドし、マイク入力 entitlement（`com.apple.security.device.audio-input` のみ。App Sandbox は使わない）を付けた `.app` と、`/Applications` へのショートカットを含む DMG、その SHA-256 を作ります。アイコンは `Resources/VoxIcon.png` を `sips` と `iconutil` で ICNS に変換したものです。
 
 署名は環境で決まります。
 
@@ -202,6 +202,10 @@ swift run Vox
 | `VOX_SIGNING_IDENTITY` あり | Developer ID Application | 公開配布。公証は `just notarize IN OUT`（`VOX_NOTARY_PROFILE` が必要。Apple へ送信する） |
 | `~/.config/vox/development-signing-identity` に証明書の SHA-1 fingerprint | Apple Development（固定） | 手元の更新。権限を引き継げる |
 | どちらもなし | ad-hoc | 診断用。更新のたびに権限を許可し直す必要がある |
+
+Apple DevelopmentとDeveloper IDでは、アプリと同梱ライブラリへ同じ証明書でHardened Runtimeを付け、ライブラリ検証を有効にします。アドホック署名ではTeam IDがないため、アプリとライブラリの両方を`--options 0`で署名し、元のバイナリに残るHardened Runtimeのフラグも消します。全モード共通のentitlementに`disable-library-validation`は加えません。ライブラリ検証の条件は[Appleの文書](https://developer.apple.com/documentation/bundleresources/entitlements/com.apple.security.cs.disable-library-validation)を参照してください。
+
+`Tests/Tooling/package-tests.sh`は、Hardened Runtime付きの合成実行ファイルとライブラリをアドホックで梱包し直し、`dlopen`とABIの確認まで行います。静的な署名検査だけで読み込み可能とは判断しません。`development-signing-tests.sh`は開発用署名のHardened Runtime維持を検査します。Vox本体・マイク・HUDは起動しません。
 
 **署名 identity を固定する理由**は、macOS が「以前許可したコード署名要件を更新版が満たすか」でアプリの同一性を判定するためです（[Apple TN3127](https://developer.apple.com/documentation/technotes/tn3127-inside-code-signing-requirements)）。ad-hoc から開発用証明書、開発用から Developer ID へ移るとアクセシビリティ・入力監視の再許可が必要になります。開発用の署名は fingerprint だけを設定ファイルに置き、その証明書が現在の Keychain にない場合は失敗して別の証明書や ad-hoc へ切り替えません。証明書名・秘密鍵・notary profile の値はリポジトリにもコマンド引数にも書かず、環境変数から渡します。
 

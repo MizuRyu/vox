@@ -60,6 +60,8 @@ just install                     # 起動中なら「Vox を終了」→ 開き�
 | どちらもなし | ad-hoc | 診断用。**更新のたびに権限を許可し直す必要がある** |
 
 公開 Release の dmg は Developer ID + 公証が前提。未署名で出す場合はノートに「初回起動時に quarantine 解除が必要」と書く。
+
+アドホック候補はアプリと同梱ライブラリの両方を`--options 0`で署名する。Hardened Runtimeを付けるとTeam IDのないライブラリが読み込み時に拒否される。Apple DevelopmentとDeveloper IDでは同じ証明書で両方を署名し、Hardened Runtimeとライブラリ検証を維持する。`package-tests.sh`の合成ローダーによる実ロード検査も通す。
 証明書名・秘密鍵・notary profile の値はコマンド引数やファイルに書かず、環境変数から渡す。
 
 ## リリースノートの規約

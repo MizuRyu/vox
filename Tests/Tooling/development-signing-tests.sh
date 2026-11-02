@@ -125,6 +125,8 @@ grep -Fqx "signing certificate sha1: $fingerprint" \
   "$development_app/Contents/Resources/BUILD-INFO.txt" || fail 'signing fingerprint metadata is missing'
 [[ "$(grep -Fc -- "--sign $fingerprint" "$signing_log")" == '4' ]] \
   || fail 'configured identity was not forwarded to the app and nested library signature passes'
+[[ "$(grep -F -- "--sign $fingerprint" "$signing_log" | grep -Fc -- '--options runtime')" == '4' ]] \
+  || fail 'development signatures did not retain hardened runtime'
 
 requirement_dump="$(/usr/bin/codesign -d -r- "$development_app" 2>&1)"
 printf '%s\n' "$requirement_dump" \

@@ -18,6 +18,8 @@ fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 cc "$project_root/Tests/Tooling/sleeper.c" -o "$temporary_root/Vox"
 printf 'int speech_api_version_major(void) { return 4; }\n' >"$temporary_root/speech.c"
 cc -dynamiclib "$temporary_root/speech.c" -o "$temporary_root/libspeech.4.dylib"
+codesign --sign - --force --options runtime "$temporary_root/Vox" >/dev/null
+codesign --sign - --force --options runtime "$temporary_root/libspeech.4.dylib" >/dev/null
 source_png="$project_root/images/settings.png"
 sips -c 1024 1024 "$source_png" --out "$temporary_root/AppIcon.png" >/dev/null
 
@@ -27,6 +29,15 @@ app="$temporary_root/Vox-local-adhoc.app"
 "$project_root/scripts/validate-app" "$app"
 [[ -f "$app/Contents/Frameworks/libspeech.4.dylib" ]] || fail 'speech library is missing'
 [[ -f "$app/Contents/Resources/ThirdPartyNotices.txt" ]] || fail 'runtime notices are missing'
+# The synthetic loader has no HUD, microphone, or key handling.
+VOX_FAKE_LIBRARY="$app/Contents/Frameworks/libspeech.4.dylib" "$app/Contents/MacOS/Vox" \
+  || fail 'ad-hoc app cannot load its bundled speech library'
+for payload in "$app" "$app/Contents/Frameworks/libspeech.4.dylib"; do
+  codesign -dv --verbose=4 "$payload" >"$temporary_root/signature.out" 2>&1
+  if grep -Eq 'flags=.*runtime' "$temporary_root/signature.out"; then
+    fail 'ad-hoc payload retained hardened runtime flags'
+  fi
+done
 [[ "$(plutil -extract LSUIElement raw "$app/Contents/Info.plist")" == 'false' ]] \
   || fail 'packaged app is hidden from the Dock'
 accessory_app="$temporary_root/legacy-accessory.app"

@@ -1,4 +1,5 @@
 #include <signal.h>
+#include <dlfcn.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,6 +11,18 @@ static void stop(int signal_number) {
 }
 
 int main(int argc, char **argv) {
+  const char *library_path = getenv("VOX_FAKE_LIBRARY");
+  if (library_path != NULL) {
+    void *library = dlopen(library_path, RTLD_NOW | RTLD_LOCAL);
+    if (library == NULL) {
+      fprintf(stderr, "%s\n", dlerror());
+      return 69;
+    }
+    int (*version)(void) = (int (*)(void))dlsym(library, "speech_api_version_major");
+    int result = version != NULL && version() == 4 ? 0 : 70;
+    dlclose(library);
+    return result;
+  }
   const char *pid_file = getenv("VOX_FAKE_PID_FILE");
   if (pid_file != NULL) {
     FILE *file = fopen(pid_file, "w");
