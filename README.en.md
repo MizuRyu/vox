@@ -31,7 +31,14 @@ Speak, clean it up, paste it as is. A local Japanese voice-input HUD for macOS.
 
 ## Requirements
 
-macOS 26 or later on Apple Silicon. An internet connection is needed once, for the initial speech model download.
+macOS 26 or later on Apple Silicon.
+
+| What | Used for |
+|---|---|
+| Microphone permission | Recording |
+| Accessibility permission | Pasting into the original app. Without it, Vox only copies to the clipboard |
+| Input Monitoring permission | The recording shortcut. Without it, recording starts only from the menu bar |
+| Internet connection (first run only) | Downloading the speech model |
 
 ## Speech recognition model
 
@@ -88,6 +95,12 @@ The file search toggles between `Changes` and `Tree`. Changes lists modified fil
 
 *The real view rendered with fictional file names and contents.*
 
+| When | Do this |
+|---|---|
+| A word is often misrecognized | Add the recognized form and the form you want under 辞書 (Dictionary) in settings |
+| Paste or the shortcut stops working after an update | [Grant the permissions again](docs/usage.md#更新後に権限が効かなくなったとき) (Japanese) |
+| You want another app to start recording | Turn on 連携 (Integration) in settings ([details](docs/usage.md#ほかのアプリから録音を操作する), Japanese) |
+
 Full details on operation, permissions, and limitations are in [docs/usage.md](docs/usage.md) (Japanese).
 
 ## Settings
@@ -97,6 +110,12 @@ Full details on operation, permissions, and limitations are in [docs/usage.md](d
 *The app's own settings view, rendered offscreen with synthetic settings and fictional microphone data.*
 
 Open settings from the menu bar item, the gear in the HUD, or `⌘,`. You can change the recording and file-search shortcuts, enable auto-Enter and whether it also sends in terminals, choose whether the committed text stays on the clipboard (on by default), turn on the experimental voice processing, save recordings for debugging (off by default), and review the available microphones. See [docs/usage.md](docs/usage.md#設定) for what each item does.
+
+## Limitations
+
+- Vox does not summarize or rephrase. It only removes fillers, adds question marks and punctuation, and applies dictionary replacements, all by fixed rules.
+- It does not fix every misrecognition. When the target is Orca, Zed, or a terminal, Haas gets up to 12 terms from the latest Claude / Codex conversation in the same folder as hints; Apple recognition cannot take vocabulary hints.
+- The build is not Developer ID signed or notarized, so the quarantine attribute must be removed once.
 
 ## Development
 
