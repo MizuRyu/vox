@@ -19,7 +19,7 @@
     # mcp 2.x（FastMCP → MCPServer に改名）と組み合わさり、import で落ちてビルドできない。
     # 撤去条件: 次が成功したら、この input と semgrepPkgs を消して pkgs.semgrep に戻す。
     #   nix build --no-link github:NixOS/nixpkgs/nixpkgs-unstable#legacyPackages.aarch64-darwin.semgrep
-    nixpkgs-semgrep.url = "github:NixOS/nixpkgs/afb4584a80bbf779ce0f691509ff902d188c2b3d";
+    nixpkgs-semgrep.url = "github:NixOS/nixpkgs/05fb9b1c1b60746ccb10fda4df826d87de549529";
   };
 
   outputs = { self, nixpkgs, nixpkgs-semgrep }:
