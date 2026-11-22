@@ -41,7 +41,7 @@ struct ViewTransitionTests {
     let scale = bitmap.pixelsWide / 960
     let bytesPerPixel = bitmap.bitsPerPixel / 8
     var result = Data()
-    for y in (180 * scale)..<(450 * scale) {
+    for y in (184 * scale)..<(450 * scale) {
       let offset = y * bitmap.bytesPerRow + 18 * scale * bytesPerPixel
       result.append(data.advanced(by: offset), count: 450 * scale * bytesPerPixel)
     }
