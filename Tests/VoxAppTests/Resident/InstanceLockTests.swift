@@ -82,4 +82,26 @@ struct InstanceLockTests {
       try Data(contentsOf: victim) == Data("keep".utf8),
       "rejected logging preserves external target")
   }
+
+  @Test("別のツールが 0755 で作った vox ディレクトリは 0700 に締めてログを書く")
+  func logRouterTightensSharedDirectory() throws {
+    let manager = FileManager.default
+    let root = manager.temporaryDirectory.appendingPathComponent("vox-log-" + UUID().uuidString)
+    try manager.createDirectory(at: root, withIntermediateDirectories: false)
+    defer { try? manager.removeItem(at: root) }
+    let vox = root.appendingPathComponent("vox")
+    try manager.createDirectory(
+      at: vox, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o755])
+
+    let savedError = dup(STDERR_FILENO)
+    defer { _ = dup2(savedError, STDERR_FILENO); close(savedError) }
+    let router = try AppLogRouter.install(applicationSupport: root)
+    withExtendedLifetime(router) {}
+    _ = dup2(savedError, STDERR_FILENO)
+
+    let attributes = try manager.attributesOfItem(atPath: vox.path)
+    #expect(
+      (attributes[.posixPermissions] as? NSNumber)?.intValue == 0o700,
+      "existing vox directory is tightened to private")
+  }
 }

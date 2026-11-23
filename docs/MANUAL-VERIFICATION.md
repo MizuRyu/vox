@@ -45,6 +45,14 @@
 | **手順** | `/Applications/Vox.app` をもう一度開く |
 | **期待結果** | セットアップ画面が開く |
 
+### SETUP-05 設定を先に配った環境でも診断ログが書かれる
+
+| 項目 | 内容 |
+|---|---|
+| **前提** | `~/Library/Application Support/vox` を別のツール（nix-darwin の設定配布など）が 0755 で作っている。ディレクトリを締める部分は自動化済み: `InstanceLockTests.logRouterTightensSharedDirectory` |
+| **手順** | Vox を起動して 1 回録音・確定し、メニューバーの「診断ログを開く…」を選ぶ |
+| **期待結果** | `logs/vox.log` が開き、`paste_posted` と、自動 Enter がオンなら `auto_enter result=` の行がある。`stat -f %Sp ~/Library/Application\ Support/vox` が `drwx------` |
+
 ## REC — 録音開始・確定・破棄
 
 ### REC-01 録音開始でHUDが表示される

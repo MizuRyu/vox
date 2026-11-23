@@ -76,9 +76,11 @@ final class AppLogRouter {
     guard descriptor >= 0 else {
       throw PrivateFileSafetyError.systemCall("open-log-directory", errno)
     }
+    // why: 0755 を拒否すると、設定を先に配るツール（umask 022）が親を作った環境で診断ログが
+    // 黙って止まる。所有者が自分なら下の fchmod で締めて使う。
     var info = stat()
     guard fstat(descriptor, &info) == 0,
-      (info.st_mode & S_IFMT) == S_IFDIR, info.st_uid == geteuid(), (info.st_mode & 0o077) == 0
+      (info.st_mode & S_IFMT) == S_IFDIR, info.st_uid == geteuid()
     else {
       close(descriptor)
       throw PrivateFileSafetyError.unsafeFile(URL(fileURLWithPath: name))
