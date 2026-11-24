@@ -2,7 +2,7 @@
 
 - 状態: 承認
 - 日付: 2026-09-08
-- 関連: ADR-009（promise pasteboard）、[06 権限とリスク](../specs/06-permissions-and-risks.md)
+- 関連: ADR-009（promise pasteboard）、[06 権限とリスク](../specs/06-permissions-and-risks.md)、[ADR-035](035-readback-never-lowers-auto-enter.md)（設定がオンの時は、読めて一致しない入力欄にも送る）
 
 ## 文脈
 

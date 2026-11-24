@@ -48,3 +48,4 @@
 | [032](032-switchable-haas-and-apple.md) | Haas Q4 を既定にし、Apple と認識部分を切り替える | 承認 | 2026-11-01 |
 | [033](033-speech-insertion-at-caret.md) | 新しい音声をカーソル位置から挿入する | 承認 | 2026-11-01 |
 | [034](034-haas-hot-standby.md) | Haasを先読みし、録音の間もモデルを保持する | 承認 | 2026-11-02 |
+| [035](035-readback-never-lowers-auto-enter.md) | 読み返しは自動 Enter を早めるためだけに使い、読めない入力欄より送られにくくしない | 承認 | 2026-11-24 |

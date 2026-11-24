@@ -290,6 +290,15 @@
 | **期待結果** | 貼り付けから 0.5 秒ほどで Enter が送られ、コマンドが実行される。診断ログに `auto_enter result=postedUnverified`（`timedOut` にならない。ADR-025） |
 | **自動化済み（一部）** | 判定だけ: `swift test --filter "AutoEnterTests"` |
 
+### ENTER-06 読めても一致しない入力欄でも設定オンなら Enter が送られる
+
+| 項目 | 内容 |
+|---|---|
+| **前提** | 「貼り付け後にEnterを押す」と「ターミナルでもEnterを押す」が ON。T3 Code の入力欄にカーソルがある |
+| **手順** | 録音して一文話し、確定する。T3 Code を起動した直後と、数時間使った後の両方で行う |
+| **期待結果** | どちらでも貼り付けから 0.5 秒ほどで Enter が送られる。診断ログに `auto_enter result=postedUnverified` か `posted`（`timedOut` にならない。ADR-035） |
+| **自動化済み（一部）** | 判定だけ: `swift test --filter "AutoEnterTests"` |
+
 ### ENTER-03 修飾キーが押されたままだとEnterを省略する
 
 | 項目 | 内容 |

@@ -48,12 +48,12 @@ struct AutoEnterTests {
   }
 
   @MainActor
-  @Test("読み返せる入力欄では各条件で打鍵数と結果が決まる")
+  @Test("読み返せる入力欄では各条件で打鍵数と結果が決まる。一致しない時だけ設定が結果を変える")
   func autoEnterGateChecks() async {
     let (before, plan, after) = autoEnterFixture()
     let original = InjectionTarget(processID: 42, focusedElement: .known(1))
     let changed = InjectionTarget(processID: 43, focusedElement: .known(1))
-    // 読み返せる入力欄の結果は「確認できないアプリでも送る」に左右されない。
+    // 一致した時と拒否された時の結果は「確認できないアプリでも送る」に左右されない。
     for sendWhenUnverified in [false, true] {
       for scenario in [
         "success", "disabled", "unknown", "unsupported", "timeout", "target", "modifier",
@@ -119,12 +119,21 @@ struct AutoEnterTests {
     scenario: String, sendWhenUnverified: Bool, result: AutoEnterResult, posts: Int, reads: Int
   ) {
     let label = "\(scenario) unverified=\(sendWhenUnverified)"
+    // ADR-035。一致しない・読めない入力欄は、設定がオンなら確かめずに送る側と同じ条件で送る。
+    let fallsBack =
+      sendWhenUnverified
+      && ["unknown", "unsupported", "nil", "timeout", "changedValue"].contains(scenario)
     #expect(
-      posts == (["success", "postFailure", "delayed", "modifierClears"].contains(scenario) ? 1 : 0),
+      posts
+        == (["success", "postFailure", "delayed", "modifierClears"].contains(scenario) || fallsBack
+          ? 1 : 0),
       "auto Enter event count: \(label)")
     #expect(
       (result == .posted) == (["success", "delayed", "modifierClears"].contains(scenario)),
       "auto Enter outcome: \(label)")
+    #expect(
+      (result == .postedUnverified) == fallsBack, "unmatched input follows the setting: \(label)")
+    if fallsBack { return }
     if scenario == "unknown" || scenario == "unsupported" || scenario == "nil" {
       #expect(result == .inputUnavailable, "unreadable input reports unavailable input: \(label)")
     } else if scenario == "timeout" || scenario == "late" {
@@ -302,6 +311,39 @@ struct AutoEnterTests {
     #expect(off == .unverifiable && offPosts == 0, "設定オフのターミナルで Enter を送った: \(off)")
     let (on, onPosts) = await run(sendWhenUnverified: true)
     #expect(on == .postedUnverified && onPosts == 1, "設定オンのターミナルで Enter が送られない: \(on)")
+  }
+
+  @MainActor
+  @Test("読めても一致しない入力欄は、読めない入力欄より送られにくくならない")
+  func unmatchedReadbackFollowsTheSetting() async {
+    let (before, plan, _) = autoEnterFixture()
+    // 貼った本文を組み替えて入れる入力欄。値は変わるが「元の値 + 貼った本文」にはならない。
+    let rewritten = TextInsertionSnapshot(value: "前 音声 後", selection: NSRange(location: 5, length: 0))
+    let original = InjectionTarget(processID: 1, focusedElement: .known(1))
+    func run(
+      sendWhenUnverified: Bool, sameWindow: Bool = true
+    ) async -> (result: AutoEnterResult, postedAt: Double?) {
+      var time = 0.1
+      var postedAt: Double?
+      let result = await AutoEnterGate.run(
+        enabled: true, sendWhenUnverified: sendWhenUnverified, plan: plan, original: original,
+        pastePostedAt: 0,
+        probes: .init(
+          currentTarget: { original }, modifiersHeld: { false }, isCancelled: { false },
+          clipboardOwned: { true }, readback: { time < 0.2 ? before : rewritten },
+          sameWindow: { sameWindow },
+          postReturn: { postedAt = time; return true }, now: { time }, wait: { time += 0.1 }))
+      return (result, postedAt)
+    }
+    let off = await run(sendWhenUnverified: false)
+    #expect(off.result == .timedOut && off.postedAt == nil, "設定オフで一致しないのに送った: \(off)")
+    let on = await run(sendWhenUnverified: true)
+    #expect(on.result == .postedUnverified, "設定オンで一致しない入力欄に送られない: \(on)")
+    #expect((on.postedAt ?? 0) >= 0.5, "一致を確かめずに送るのに貼り付けから待っていない: \(on)")
+    let otherWindow = await run(sendWhenUnverified: true, sameWindow: false)
+    #expect(
+      otherWindow.result == .windowUnverified && otherWindow.postedAt == nil,
+      "ウィンドウが変わったのに確かめずに送った: \(otherWindow)")
   }
 
   @Test("読み返しで確かめないアプリは、パレットのターミナルの表と同じ")

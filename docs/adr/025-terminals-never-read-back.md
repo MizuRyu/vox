@@ -1,7 +1,7 @@
 # ADR-025: ターミナルは画面を読めても、自動 Enter の読み返しに使わない
 
 - 状態: **提案**（2026-09-29）
-- 関連: [ADR-014](014-auto-enter-readability-decides.md)（自動 Enter は読み返せるかで決める）、[ADR-015](015-palette-target-from-frontmost-app.md)（ターミナルの表）
+- 関連: [ADR-014](014-auto-enter-readability-decides.md)（自動 Enter は読み返せるかで決める）、[ADR-015](015-palette-target-from-frontmost-app.md)（ターミナルの表）、[ADR-035](035-readback-never-lowers-auto-enter.md)（設定がオンの時は、表に無いアプリでも一致しなければ確かめずに送る）
 
 ## 文脈
 

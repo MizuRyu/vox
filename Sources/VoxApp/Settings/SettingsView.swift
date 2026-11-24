@@ -185,7 +185,7 @@ public struct SettingsView: View {
 
   private var autoEnterDescription: String {
     model.autoEnterUnverified
-      ? "貼り付けた内容を読み取れないアプリでは、同じウィンドウのまま0.5秒待ってから押します。コマンドの実行になる場合があります。"
+      ? "貼り付けた内容を入力欄で確認できないときは、同じウィンドウのまま0.5秒待ってから押します。コマンドの実行になる場合があります。"
       : "貼り付けた内容を入力欄で確認できたときだけEnterを押します。アプリによっては送信になります。"
   }
 

@@ -68,8 +68,8 @@ public enum AutoEnterResult: String, Sendable {
   public var isVerifiedInsertion: Bool { self == .posted }
 }
 
-/// 自動 Enter の判断に使う、外から差し込む観測と作用。読み返せる入力欄かどうかで読むものが違う
-/// （`sameWindow` は読み返せないときだけが見る）。
+/// 自動 Enter の判断に使う、外から差し込む観測と作用。一致を確かめて送るかどうかで読むものが違う
+/// （`sameWindow` は一致を確かめずに送るときだけが見る）。
 @MainActor
 public struct AutoEnterProbes {
   public let currentTarget: () -> InjectionTarget
@@ -102,18 +102,19 @@ public struct AutoEnterProbes {
 }
 
 public enum AutoEnterGate {
-  /// 読み返せない入力欄で貼り付けから Enter までおく間。読み返せる側は一致の確認がこれに代わる。
+  /// 一致を確かめずに送るとき、貼り付けから Enter までおく間。一致が先に取れれば待たない。
   static let unverifiedDelaySeconds = 0.5
 
-  /// 読み返せる入力欄では読み返しの一致だけが Return を許可する。読み返せない入力欄では
-  /// `sendWhenUnverified` が送るかを決め、猶予が過ぎた時点で他の拒否理由（取り消し・
-  /// ウィンドウ変化など）がなければ打つ。
   /// ADR-025。ターミナルは画面全体を読めるが、貼った本文との一致は取れない。読み返せないアプリとして扱う。
   /// 表はパレットの対象判定（`PaletteTargetAdapter`）と共有する。
   public static func readsBack(bundleIdentifier: String?) -> Bool {
     PaletteTargetAdapter.forBundleIdentifier(bundleIdentifier) != .terminal
   }
 
+  /// 読み返しが一致すれば、すぐに Return を打つ。一致しない・読めないときは `sendWhenUnverified` が
+  /// 送るかを決め、猶予が過ぎた時点で他の拒否理由（取り消し・ウィンドウ変化など）がなければ打つ。
+  /// ADR-035。読めることで、読めない入力欄より送られにくくしない（貼った本文を組み替える入力欄は、
+  /// 読めても一致しない）。
   @MainActor
   public static func run(
     enabled: Bool, sendWhenUnverified: Bool, readsBack: Bool = true, plan: AutoEnterPlan?,
@@ -121,35 +122,39 @@ public enum AutoEnterGate {
   ) async -> AutoEnterResult {
     guard enabled else { return .disabled }
     // 計画があるなら貼り付け前に読めている。無いときだけ入力欄に聞く。
-    let verifying = readsBack && (plan != nil || probes.readback() != nil)
-    guard verifying || sendWhenUnverified else { return .unverifiable }
+    let readable = readsBack && (plan != nil || probes.readback() != nil)
+    guard readable || sendWhenUnverified else { return .unverifiable }
+    var matchable = false
+    if readable, plan != nil, case .known = original.focusedElement { matchable = true }
+    guard matchable || sendWhenUnverified else { return .inputUnavailable }
     let startedAt: Double
     let deadlineSeconds: Double
     let attempts: Int
-    // 期限切れの言い方。読み返せる側は入力欄を一度も読めなければ「読めない」と言う。
+    // 期限切れの言い方。一致だけで送る側は入力欄を一度も読めなければ「読めない」と言う。
     var expiry = AutoEnterResult.timedOut
-    if verifying {
+    if sendWhenUnverified {
+      // 一致を確かめずに送る側は時計の異常を rejection() の中でだけ見る
+      // （取り消しなど他の理由が先に立てば、その理由を優先する）。
+      startedAt = pastePostedAt
+      deadlineSeconds = 2.0
+      attempts = 100
+    } else {
       // A receipt is deliberately absent from this branch: only matching input readback can permit Return.
-      guard plan != nil, case .known = original.focusedElement else { return .inputUnavailable }
       startedAt = probes.now()
       guard startedAt.isFinite else { return .invalidClock }
       deadlineSeconds = 1.5
       attempts = 75
       expiry = .inputUnavailable
-    } else {
-      // 読み返せない側は時計の異常を rejection() の中でだけ見る
-      // （取り消しなど他の理由が先に立てば、その理由を優先する）。
-      startedAt = pastePostedAt
-      deadlineSeconds = 2.0
-      attempts = 100
     }
     func elapsed() -> Double { probes.now() - startedAt }
-    func rejection(checkModifiers: Bool = true, checkDeadline: Bool = true) -> AutoEnterResult? {
+    func rejection(
+      checkModifiers: Bool = true, checkDeadline: Bool = true, unverified: Bool = !matchable
+    ) -> AutoEnterResult? {
       if probes.isCancelled() { return .cancelled }
       if !InjectionSafety.canPost(to: original, current: probes.currentTarget(), modifiersHeld: false) {
         return .targetChanged
       }
-      if !verifying, !probes.sameWindow() { return .windowUnverified }
+      if unverified, !probes.sameWindow() { return .windowUnverified }
       if checkModifiers, probes.modifiersHeld() { return .modifiersHeld }
       if !probes.clipboardOwned() { return .clipboardChanged }
       let seconds = elapsed()
@@ -157,22 +162,25 @@ public enum AutoEnterGate {
       if checkDeadline, seconds >= deadlineSeconds { return expiry }
       return nil
     }
-    /// 押せるかを 1 回試す。`nil` は「まだ待つ」。
-    func attempt() -> AutoEnterResult? {
-      guard verifying else {
-        guard elapsed() >= unverifiedDelaySeconds else { return nil }
-        if let reason = rejection() { return reason }
-        return probes.postReturn() ? .postedUnverified : .eventUnavailable
-      }
+    /// 一致を確かめて押せるかを 1 回試す。`nil` は「まだ待つ」。
+    func verifiedAttempt() -> AutoEnterResult? {
       guard let plan, let snapshot = probes.readback() else { return nil }
       expiry = .timedOut
       guard plan.matches(snapshot) else { return nil }
       if let reason = rejection() { return reason }
       // Re-read immediately before posting to catch edits or cursor movement during the first read.
-      guard let last = probes.readback() else { return .inputUnavailable }
-      guard plan.matches(last) else { return .readbackMismatch }
+      // 一致を確かめずに送る設定では、食い違いで打ち切らず猶予を待つ。
+      guard let last = probes.readback() else { return sendWhenUnverified ? nil : .inputUnavailable }
+      guard plan.matches(last) else { return sendWhenUnverified ? nil : .readbackMismatch }
       if let reason = rejection() { return reason }
       return probes.postReturn() ? .posted : .eventUnavailable
+    }
+    /// 押せるかを 1 回試す。`nil` は「まだ待つ」。
+    func attempt() -> AutoEnterResult? {
+      if matchable, let result = verifiedAttempt() { return result }
+      guard sendWhenUnverified, elapsed() >= unverifiedDelaySeconds else { return nil }
+      if let reason = rejection(unverified: true) { return reason }
+      return probes.postReturn() ? .postedUnverified : .eventUnavailable
     }
     // Both a deadline and an attempt bound cover a stalled clock or test scheduler.
     for _ in 0..<attempts {

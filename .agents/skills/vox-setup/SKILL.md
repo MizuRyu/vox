@@ -73,7 +73,7 @@ macOS が再起動を求めたら Vox を終了して開き直す。ソースか
 | `toggle_key` | string \| null | `null`（= `cmd+shift+space`） | 録音開始／確定して貼り付け |
 | `palette_key` | string \| null | `null`（= `ctrl+p`） | ファイル検索パレット |
 | `auto_enter_enabled` | bool | `false` | 貼り付け後に Enter を送る |
-| `auto_enter_unverified` | bool | `false` | ターミナルなど、入力欄を読み返せないアプリでも Enter を送る。貼り付け 0.5 秒後、同じアプリ・ウィンドウなら送る。以前の「Enter の送り方」で「貼り付け後に送る」を選んでいた設定は、これをオンとして引き継ぐ |
+| `auto_enter_unverified` | bool | `false` | ターミナルなど、入力欄を読み返せないアプリと、読み返せても一致しないアプリ（T3 Code など）でも Enter を送る。貼り付け 0.5 秒後、同じアプリ・ウィンドウなら送る（ADR-035）。以前の「Enter の送り方」で「貼り付け後に送る」を選んでいた設定は、これをオンとして引き継ぐ |
 | `voice_processing_enabled` | bool | `false` | Apple のエコー除去・ノイズ抑制（実験的。再生中の音楽が小さくなる場合がある） |
 | `microphone_input` | object | `{"mode":"automatic"}` | Vox の入力選択。`automatic` は既定の入出力が Bluetooth 系・出力稼働中なら内蔵入力を優先し、なければ既定入力。`system_default` は常に準備時の既定入力。`device` は `uid` で機器を固定し、未接続なら開始エラー |
 | `speech_engine` | string | `"haas"` | 音声認識。`haas`（Haas-ja-v1.0 Q4_K）/ `apple`（SpeechTranscriber）。次の録音から反映（ADR-032） |
@@ -182,7 +182,7 @@ HUDで`@`を打って開いた検索を`Esc`で閉じると、元の位置に通
 - **指定したマイクが見つからない**: 接続後に設定の「更新」を押すか、「使用するマイク」を選び直して保存する。別のマイクへ自動的には戻さない
 - **音楽が途切れる**: 「使用するマイク」を内蔵・USBなどへ指定して保存する。「自動」の切替は既定の入出力が Bluetooth 系かつ出力稼働中の場合だけ。「通話向けの音声処理」はオフにする。診断ログの `audio_input` が選択した機器、`audio_input_verified device_id= route=input_only` が開始後の機器確認を示す。録音直後に `audio_configuration_changed` が出る場合は録音が打ち切られている
 - **貼り付けが起きない**: メニューバー「診断ログを開く…」で `error` を見る。意味は `docs/development.md` の表。`input_target_changed_*` は確定時に前面アプリが変わっている
-- **Enter が省略される**: 修飾キーが押されたまま、入力先の変更、クリップボード競合で省略する。入力欄を読み返せないアプリ（ターミナル系）では `auto_enter_unverified` をオンにしないと送らない。HUD には理由を出さない（ADR-024）。診断ログの `auto_enter result=` を見る。`unverifiable` は読み返せないアプリ（Zed、ターミナル系。ターミナルは画面を読めても読み返さない: ADR-025）で `auto_enter_unverified` がオフ、`timedOut` は読み返せるアプリで、貼った本文が 1.5 秒以内に入力欄の内容と一致しなかった（アプリが本文を整形した、反映が遅い）。こちらは `auto_enter_unverified` では変わらない
+- **Enter が省略される**: 修飾キーが押されたまま、入力先の変更、クリップボード競合で省略する。入力欄を読み返せないアプリ（ターミナル系）では `auto_enter_unverified` をオンにしないと送らない。HUD には理由を出さない（ADR-024）。診断ログの `auto_enter result=` を見る。`unverifiable` は読み返せないアプリ（Zed、ターミナル系。ターミナルは画面を読めても読み返さない: ADR-025）で `auto_enter_unverified` がオフ、`timedOut` は読み返せるアプリで、貼った本文が 1.5 秒以内に入力欄の内容と一致しなかった（アプリが本文を整形した、反映が遅い）。`auto_enter_unverified` をオンにすると、一致しなくても貼り付け 0.5 秒後に送る（`postedUnverified`。ADR-035）
 - **辞書が効かない**: 設定の「辞書」で「更新」を押し、件数と行番号を見る。行番号が出ていればその行の区切りがタブでない。0 件のときは、まだ例が `#` のままか、全行がコメントか、区切りがタブでないかをファイルで確かめる。件数が合っていて効かないときは、置き換える表記が認識結果と 1 文字でも違う（履歴の `raw_text` と突き合わせる）か、認識が語の途中で区切られている。表計算アプリで保存し直すと形式が変わる
 - **更新したら権限が消えた**: 署名 identity の変更。上の「署名と権限の関係」
 - **ファイル検索の対象が違う**: 対象は録音開始時の前面アプリから決まる。Orca はアクティブなローカル worktree、Zed は最前面ウィンドウのプロジェクト（`~/Library/Application Support/Zed/db/0-<channel>/db.sqlite` を読み取り専用で読む）、ターミナル（Terminal.app / Ghostty / cmux / iTerm2 / Warp）は直前に出力があったタブの `cwd` のリポジトリ。裏のタブで出力が流れていると、そのタブが選ばれることがある。どれでもなければ `--repo` → 最近使ったフォルダ → カレントディレクトリで、ヘッダが「対象を特定できず」の表示になる。その場で変えるなら候補行の最近使ったフォルダ、またはヘッダのパスをクリックして「フォルダを選ぶ」。切り替えはその録音のあいだだけ有効で、固定はできない
