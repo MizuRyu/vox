@@ -113,7 +113,7 @@ xattr -dr com.apple.quarantine /Applications/Vox.app
 
 ## 音声認識
 
-既定は Haas-ja-v1.0 の Q4 版です。設定画面の「音声認識」で Apple `SpeechTranscriber`（ja-JP）に切り替えられます。変更は次の録音から反映します。
+既定は Haas-ja-v1.0-dialogue Q4_K です。設定画面の「音声認識」で Apple `SpeechTranscriber` の日本語認識に切り替えられます。変更は次の録音から反映します。
 
 <details>
 <summary>認識モデルの詳細</summary>
@@ -125,7 +125,7 @@ xattr -dr com.apple.quarantine /Applications/Vox.app
 | 途中結果の更新 | Haas は500ms間隔で再認識。Apple は `.fastResults` で約1秒周期の更新 |
 | 外部への送信 | 音声も本文も送信しない |
 
-Haas を選んだ理由は [ADR-032](docs/adr/032-switchable-haas-and-apple.md)、比較した候補（Parakeet、Whisper 系）は [音声認識モデルの仕様](docs/specs/02-speech-engines.md) を参照してください。
+モデルを選んだ理由と比較結果は [ADR-036](docs/adr/036-haas-ja-dialogue-q4.md) を参照してください。
 
 </details>
 

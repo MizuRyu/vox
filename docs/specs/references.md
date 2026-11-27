@@ -42,9 +42,10 @@
 - [Lyonesse — Apple Speech API benchmark](https://lyonesse.app/blog/apple-speech-api-benchmark.html) — 英語のみ。日本語の根拠には使えない
 - [Sansan Tech Blog — SpeechAnalyzer 比較](https://buildersbox.corp-sansan.com/entry/2026/02/13/130000) — 日本語での実務的な落とし穴
 
-## Haas（2026-11-01 確認）
+## Haas（2026-11-27 確認）
 
-- [Haas-ja-v1.0](https://huggingface.co/third-intelligence/Haas-ja-v1.0) — 元モデル
-- [GGUF 固定リビジョン](https://huggingface.co/sakasegawa/Haas-ja-v1.0-GGUF/tree/6b965d5007ba780585de51549d57a8c1c0d67c7e) — 採用する Q4_K の重み
+- 対話モデルのApache-2.0の重みと固定リビジョン。[dena-ai/Haas-ja-v1.0-dialogue](https://huggingface.co/dena-ai/Haas-ja-v1.0-dialogue/tree/8722f3f855b2d6a1327d46c2d8d3dfaa842b5890)
+- voxが取得するQ4_Kの配布アセット。[model-haas-ja-v1.0-dialogue-q4-r1](https://github.com/MizuRyu/vox/releases/tag/model-haas-ja-v1.0-dialogue-q4-r1)
+- 対話モデルの追加学習元であり、voxの旧モデル。[third-intelligence/Haas-ja-v1.0](https://huggingface.co/third-intelligence/Haas-ja-v1.0)
 - [speech.cpp v0.10.0 worker protocol](https://github.com/nyosegawa/speech.cpp/blob/v0.10.0/docs/worker.md) — JSONL / PCM / 終了とキャンセルの契約
 - [FastConformer の制約](https://github.com/nyosegawa/speech.cpp/blob/v0.10.0/docs/models/fastconformer.md) — 長い録音の分割と量子化時のデコーダー実行先

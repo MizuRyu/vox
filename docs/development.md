@@ -189,7 +189,9 @@ swift run Vox
 
 `input_target_changed_*` の 3 つは診断ログの `injection_rejected` 行にも出ます。同じ行に確定時の前面アプリの bundle identifier と、開始時・確定時の AX role / subrole が付きます。本文・値・タイトルは読みません。
 
-現在の計測は schema 7。schema 7 で認識したモデルの `speech_model` を足しました（`haas-v1.0-q4_k-speech.cpp-0.10.0` / `apple-speechtranscriber-ja-JP`）。旧行にこの項目がなければ Apple として読む必要があります。録音 JSON は schema 3 で同じ項目を持ちます。schema 6 で、発話の後の無音で本体が区切った回数 `pause_commit_count`（[ADR-020](adr/020-pause-triggered-segment-commit.md)）を足しました。schema 5 で `palette_resume_ms` は廃止し、パレット表示時間の `palette_open_ms` に変更しています。過去の JSONL には以前の schema が含まれるため、同じ意味の指標として混ぜないでください。
+現在の計測はschema 7で、認識したモデルを `speech_model` に記録します。既定のHaas対話モデルは `haas-v1.0-dialogue-q4_k-speech.cpp-0.10.0`、旧Haasは `haas-v1.0-q4_k-speech.cpp-0.10.0`、Appleは `apple-speechtranscriber-ja-JP` です。旧行にこの項目がなければAppleとして扱います。録音JSONはschema 3で同じ項目を持ちます。
+
+schema 6では発話後の無音で本体が区切った回数 `pause_commit_count` を追加しました（[ADR-020](adr/020-pause-triggered-segment-commit.md)）。schema 5では `palette_resume_ms` を廃止し、パレット表示時間を `palette_open_ms` に変更しました。過去のJSONLを集計するときはschemaとモデル識別子を確認してください。
 
 ## 配布物と署名
 

@@ -42,7 +42,7 @@ public enum SpeechEngine: String, Codable, CaseIterable, Sendable {
 
   public var modelIdentifier: String {
     switch self {
-    case .haas: "haas-v1.0-q4_k-speech.cpp-0.10.0"
+    case .haas: "haas-v1.0-dialogue-q4_k-speech.cpp-0.10.0"
     case .apple: "apple-speechtranscriber-ja-JP"
     }
   }

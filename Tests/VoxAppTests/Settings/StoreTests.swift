@@ -13,7 +13,9 @@ struct SettingsStoreTests {
   func speechEngineSwitching() throws {
     let (root, store) = fixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    #expect(try store.decode(Data("{\"schema_version\":1}".utf8)).speechEngine == .haas)
+    let engine = try store.decode(Data("{\"schema_version\":1}".utf8)).speechEngine
+    #expect(engine == .haas)
+    #expect(engine.modelIdentifier == "haas-v1.0-dialogue-q4_k-speech.cpp-0.10.0")
     #expect(throws: (any Error).self) {
       _ = try store.decode(Data("{\"schema_version\":1,\"speech_engine\":\"unknown\"}".utf8))
     }

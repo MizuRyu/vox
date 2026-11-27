@@ -21,7 +21,7 @@ Speak, clean it up, paste it as is. A local Japanese voice-input HUD for macOS.
 - **Type while you speak** — edit directly in the HUD. Typed text and new speech segments go at the caret, and recording never stops
 - **File search while speaking (`⌃P` / `@`)** — resolves the target repository from the frontmost editor or terminal and inserts a path into the text; recording continues during the search
 - **Commit in one paste** — press the recording key again to return to the app you started in and insert the whole committed text at once
-- **Runs locally** — uses Haas Q4 by default, with Apple available in settings. Only the first model download needs the network. Nothing sends your text to the cloud
+- **Runs locally** — uses Haas-ja-v1.0-dialogue Q4_K by default, with Apple available in settings. Only model downloads need a network connection
 - **Filler removal** — rule-based removal of Japanese fillers before insertion; the raw text stays in the local history
 - **Optional auto-Enter** — sends Enter after pasting once the input field reads back as expected; a single setting decides whether it also sends where the field cannot be read
 
@@ -42,7 +42,7 @@ macOS 26 or later on Apple Silicon.
 
 ## Speech recognition model
 
-Vox defaults to Haas-ja-v1.0 Q4. Select Haas or Apple SpeechTranscriber (ja-JP) under speech recognition in settings; changes apply to the next recording.
+Vox defaults to Haas-ja-v1.0-dialogue Q4_K. Select Haas or Apple SpeechTranscriber (ja-JP) under speech recognition in settings. Changes apply to the next recording.
 
 | Item | Detail |
 |---|---|

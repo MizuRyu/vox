@@ -5,6 +5,14 @@ import Testing
 
 @Suite("Haas: 検証済みファイルの再利用")
 struct HaasAssetVerifierTests {
+  @Test("対話モデルを既存のHaasキャッシュに配置する")
+  func pinnedDialogueAsset() {
+    let model = HaasAssets.standard.model
+    #expect(model.path.hasSuffix("/models/haas-v1-q4/Haas-616M-ja-v1.0-dialogue-Q4_K.gguf"))
+    #expect(HaasAssets.modelURL.absoluteString ==
+      "https://github.com/MizuRyu/vox/releases/download/model-haas-ja-v1.0-dialogue-q4-r1/\(model.lastPathComponent)")
+  }
+
   @Test("先読みは未取得のモデルをダウンロードしない")
   func cachedPreparationDoesNotDownload() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("vox-cached-\(UUID().uuidString)")

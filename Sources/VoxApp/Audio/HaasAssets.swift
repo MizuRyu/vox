@@ -28,8 +28,8 @@ enum HaasError: Error, CustomStringConvertible {
 /// 配布物を固定し、音声を含まない取得だけを行う。呼び出しは HaasWorker の actor 上。
 struct HaasAssets: Sendable {
   private static let verifier = HaasAssetVerifier()
-  static let modelName = "Haas-616M-ja-v1.0-Q4_K.gguf"
-  static let modelSHA256 = "d24d53f29b75214a933ff482b0de1217e0a800f4118cca39ad6cf03609a89d6f"
+  static let modelName = "Haas-616M-ja-v1.0-dialogue-Q4_K.gguf"
+  static let modelSHA256 = "514cb8ad2ee23833153ab8329bad3af50edc645c05e36cd516afca22bd61e91d"
   static let runtimeSHA256 = "f344cf59d72b5f91f5838df68c37cae739f80ae0b4f141bc553a81ffde9547bd"
   static let archiveSHA256 = "4f48ac4aefe65a00e2724e94749f01f7993de6190998c49bb347662f96f7af6d"
   static let librarySHA256 = "e3fac058886bc215cb237a6745fced4d1555263808569998a42478fc889d85b6"
@@ -37,11 +37,11 @@ struct HaasAssets: Sendable {
   static let vadName = "silero-vad-309K-v6.2-F32.gguf"
   static let vadURL = URL(
     string: "https://huggingface.co/sakasegawa/silero-vad-GGUF/resolve/7fcb7aa2a70c312f8579fc987b3e1cdecf9321ca/silero-vad-309K-v6.2-F32.gguf")!
-  static let revision = "6b965d5007ba780585de51549d57a8c1c0d67c7e"
+  static let modelRelease = "model-haas-ja-v1.0-dialogue-q4-r1"
   static let runtimeURL = URL(
     string: "https://github.com/nyosegawa/speech.cpp/releases/download/v0.10.0/speech-0.10.0-macos-arm64-metal.zip")!
   static let modelURL = URL(
-    string: "https://huggingface.co/sakasegawa/Haas-ja-v1.0-GGUF/resolve/\(revision)/\(modelName)")!
+    string: "https://github.com/MizuRyu/vox/releases/download/\(modelRelease)/\(modelName)")!
 
   let root: URL
   var executable: URL { root.appendingPathComponent("speech-0.10.0") }

@@ -23,8 +23,18 @@ struct FillerTests {
   func hesitationWithoutReply() {
     expect(FillerPass.remove(from: "えっと。"), "", 1)
     expect(FillerPass.remove(from: "あー。"), "", 1)
+    expect(FillerPass.remove(from: "えっと？"), "", 1)
+    expect(FillerPass.remove(from: "あー!"), "", 1)
+    expect(FillerPass.remove(from: "はい?"), "はい?", 0)
     expect(FillerPass.remove(from: "はい。"), "はい。", 0)
     expect(FillerPass.remove(from: "うん"), "うん", 0)
+  }
+
+  @Test("半角の疑問符と感嘆符をフィラーの境界として扱う")
+  func asciiSentenceBoundaries() {
+    expect(FillerPass.remove(from: "完了ですか?うーん確認します。"), "完了ですか?確認します。", 1)
+    expect(FillerPass.remove(from: "完了です!うーん確認します。"), "完了です!確認します。", 1)
+    expect(FillerPass.remove(from: "完了ですか?あの台帳を確認します。"), "完了ですか?あの台帳を確認します。", 0)
   }
 
   // MARK: 単独フィラー（左が読点・句点・空白・文頭。あの / その / まあ は両側を要求する）
@@ -209,5 +219,26 @@ struct FillerTests {
     let gated = FillerPass.remove(from: text, enabled: true)
     let plain = FillerPass.remove(from: text)
     #expect(gated == plain, "enabled:true が既定と一致しない")
+  }
+
+  @Test("URL query and code symbols are preserved around ASCII question/exclamation marks")
+  func urlAndCodeSymbolsArePreserved() throws {
+    expect(FillerPass.remove(from: "https://example.test/?うーん=1"), "https://example.test/?うーん=1", 0)
+    expect(
+      FillerPass.remove(from: "https://example.test/?値=例、?うーん=1"),
+      "https://example.test/?値=例、?うーん=1", 0)
+    expect(
+      FillerPass.remove(from: "https://example.test/資料。。?q=1"),
+      "https://example.test/資料。。?q=1", 0)
+    expect(FillerPass.remove(from: "`foo?うーん=1`"), "`foo?うーん=1`", 0)
+    expect(FillerPass.remove(from: "``値。。``"), "``値。。``", 0)
+    expect(FillerPass.remove(from: "``値?うーん=1``"), "``値?うーん=1``", 0)
+  }
+
+  @Test("Leading filler-only sentence drops its trailing ASCII terminator while keeping body terminators")
+  func leadingFillerSentenceDropsTrailingTerminator() throws {
+    expect(FillerPass.remove(from: "あー!次に進みます。"), "次に進みます。", 1)
+    expect(FillerPass.remove(from: "あー !次に進みます。"), "次に進みます。", 1)
+    expect(FillerPass.remove(from: "完了です!次に進みます。"), "完了です!次に進みます。", 0)
   }
 }

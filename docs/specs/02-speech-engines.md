@@ -2,29 +2,32 @@
 
 採用している認識エンジン、その実測値と制約、比較して却下した候補。
 
-最終確認日: 2026-11-02（Haasの先読みと常駐。[ADR-034](../adr/034-haas-hot-standby.md)）
+最終確認日: 2026-11-27（既定モデルの変更。[ADR-036](../adr/036-haas-ja-dialogue-q4.md)）
 
 ## いま動いているもの
 
-既定は **Haas-ja-v1.0 Q4_K**。設定画面「音声認識」または `settings.json` の `speech_engine` で `haas` / `apple` を選ぶ。録音開始時に固定し、変更は次の録音から反映する。設定に項目がなければ `haas` を使う。Haas の精度優位を確定した採用ではなく、保存した録音で比較しながら使うための選択である。
+既定は **Haas-ja-v1.0-dialogue Q4_K**。設定画面「音声認識」または `settings.json` の `speech_engine` で `haas` / `apple` を選ぶ。録音開始時に固定し、変更は次の録音から反映する。設定に項目がなければ `haas` を使う。HaasとAppleの実利用での精度順位は未確定である。
 
 ### Haas
 
 | 項目 | 値 |
 |---|---|
-| モデル | Haas-ja-v1.0、GGUF Q4_K、351,901,216 bytes |
+| モデル | `dena-ai/Haas-ja-v1.0-dialogue`、GGUF Q4_K、351,901,216バイト |
+| モデル識別子 | `haas-v1.0-dialogue-q4_k-speech.cpp-0.10.0` |
 | 実行 | speech.cpp v0.10.0 のローカル子プロセス。Metal エンコーダー / CPU デコーダー、4スレッド |
 | 音声 | 16kHz / Int16 / mono。入力・保存は Apple と同じ SpeechLane の経路 |
 | 途中結果 | 500ms 間隔で発話区間を再認識。処理中に要求を積まず、新しい発話がなければ更新しない |
 | 発話検出 | Silero VAD v6.2、CPU 1スレッド。新着音声だけを判定。重み1,238,624 bytes |
 | 用語ヒント | 同じフォルダの直近セッションから最大12語。確定時だけ適用し、辞書には保存しない |
 | 区切り | Sileroの発話終端から700ms以上の無音、ファイル検索、終了時。連続発話は最大12秒で静かな位置を選ぶ。表示済みの区間より前には戻さない |
-| モデル保存先 | `~/Library/Application Support/vox/models/haas-v1-q4/`。初回だけ取得し、SHA256 を検証 |
+| モデル保存先 | `~/Library/Application Support/vox/models/haas-v1-q4/Haas-616M-ja-v1.0-dialogue-Q4_K.gguf`。未取得時にGitHub Releaseから取得し、SHA256を検証 |
 | 待機 | 取得済みモデルを起動時に先読みし、確定・通常の破棄後も保持。先読みはダウンロードもマイクの起動も行わない |
 | 解放 | Appleへの切り替え、Vox終了、異常や推論中止でワーカーの停止が必要なとき。Haas選択中はアイドルに戻ると先読みし直す |
-| ネットワーク | 初回の実行ファイル・重みの取得だけ。音声も本文も外へ送らない |
+| ネットワーク | 未取得・検証失敗時の実行ファイルと重みの取得に使用。音声も本文も外へ送らない |
 
-M4・32GB の比較実験でワーカーのピーク RSS は約473MiB。保存音声40本の推定 CER は Apple 2.27% / Haas Q4 8.45%、合成音声16本は Apple 8.47% / Haas Q4 4.24%。正解の偏りと音声の違いがあるため、実利用での精度順位は未確定である。判断と測定条件は [ADR-032](../adr/032-switchable-haas-and-apple.md)。
+旧Haas-ja-v1.0 Q4_Kからの更新時は、検証済みのspeech.cpp v0.10.0、ライブラリ、Silero VADモデルを再利用する。対話モデルは新しいファイルとして取得する。実録音40本の比較で対話モデルは句読点をより多く出力し、別の量子化比較でQ4_KはQ8_0よりピークRSSが約305MiB小さかった。測定条件と候補の比較は[ADR-036](../adr/036-haas-ja-dialogue-q4.md)。
+
+旧Haas-ja-v1.0 Q4_KとAppleの比較では、M4・32GBでHaasワーカーのピークRSSは約473MiB。保存音声40本の推定CERはApple 2.27% / 旧Haas 8.45%、合成音声16本はApple 8.47% / 旧Haas 4.24%だった。判断と測定条件は[ADR-032](../adr/032-switchable-haas-and-apple.md)。
 
 ### Haasの無発話対策とセッション用語
 

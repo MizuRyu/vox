@@ -669,7 +669,7 @@
 |---|---|
 | **前提** | 設定で音声認識をHaasにし、「録音を保存する」をオンにする |
 | **手順** | 15秒以上話し、途中で文字を打ち、ファイル検索を開いてから確定する。次に設定でAppleを選んで保存し、もう一度録音する |
-| **期待結果** | どちらも録音中に本文が更新され、打った文字と選んだパスが残る。次の録音から認識器が変わる。録音ごとにwav全体が残り、JSONのspeech_modelが選んだモデルと一致する |
+| **期待結果** | どちらも録音中に本文が更新され、打った文字と選んだパスが残る。次の録音から認識器が変わる。録音ごとにwav全体が残る。JSONの `speech_model` はHaasで `haas-v1.0-dialogue-q4_k-speech.cpp-0.10.0`、Appleで `apple-speechtranscriber-ja-JP` になる |
 
 合成音声での逐次出力とwavのフレーム数は自動化済み: `SpeechEngineReplayTests.pacedAudio`（任意実行）。マイク・実際の編集・貼り付けは手動確認する。
 
@@ -787,6 +787,26 @@ CPUだけの登録と環境設定の復元は自動化済み: `HaasWorkerTests.c
 | **期待結果** | 最初の録音と61秒後も読み込み済みモデルを使う。通常の破棄ではモデルを残し、推論の中止で停止した場合は先読みし直す。前の音声・本文・用語は次回へ持ち越さない。待機中にマイクを開かない。Appleへの切り替えと終了でワーカーを解放し、終了後は再起動しない |
 
 自動化済み: `HaasRecognizerTests.prewarmJoinsRecordingStart` / `completedPrewarmDoesNotFlashPreparation` / `discardRetainsOnlyModel` / `standbyEndsWithEngineOrApp` / `shutdownBeforeStandbyTaskStarts`。取得済み実モデルの61秒待機は`HaasStandbyTests.standbyTiming`を任意実行する。実マイク・キー・アプリ全体の開始時間は手動確認する。
+
+### REC-28 旧Haasのキャッシュから対話モデルへ更新する
+
+| 項目 | 内容 |
+|---|---|
+| **前提** | 旧Haasの実行ファイルとモデル、Silero VADモデルを取得済みで、対話モデルは未取得。Haasを選んで録音保存をオンにする |
+| **手順** | Voxの更新後に最初の録音を開始し、モデルの取得完了後に「台帳を確認します」と話して確定する。モデルフォルダと録音JSONを確認する |
+| **期待結果** | 既存の `models/haas-v1-q4/` に `Haas-616M-ja-v1.0-dialogue-Q4_K.gguf` が追加され、検証済みの実行ファイルとSilero VADモデルが再利用される。録音JSONの `speech_model` はREC-17のHaasの値と一致する |
+
+固定した配布先とモデル識別子は自動化済み。公開アセットの取得と更新直後のモデル準備表示は手動確認する。
+
+### REC-29 認識結果に句読点が連続した場合の確定
+
+| 項目 | 内容 |
+|---|---|
+| **前提** | 合成テキストを使う単体テストを実行できる |
+| **手順** | `swift test --filter 'FillerTests|QuestionMarkTests'` を実行する |
+| **期待結果** | 「。。」が文末に1個の句点または疑問符として残り、「?。」には「?」が残る。半角の「?」「!」の直後でも境界の条件を満たすフィラーを除去する。相づちだけの発話は保つ |
+
+自動化済み: `QuestionMarkTests.existingSentenceMarks` / `missingSentenceMarks`、`FillerTests.asciiSentenceBoundaries` / `hesitationWithoutReply`。
 
 ### PAL-16 @を文字として入力する
 

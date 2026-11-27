@@ -76,7 +76,7 @@ macOS が再起動を求めたら Vox を終了して開き直す。ソースか
 | `auto_enter_unverified` | bool | `false` | ターミナルなど、入力欄を読み返せないアプリと、読み返せても一致しないアプリ（T3 Code など）でも Enter を送る。貼り付け 0.5 秒後、同じアプリ・ウィンドウなら送る（ADR-035）。以前の「Enter の送り方」で「貼り付け後に送る」を選んでいた設定は、これをオンとして引き継ぐ |
 | `voice_processing_enabled` | bool | `false` | Apple のエコー除去・ノイズ抑制（実験的。再生中の音楽が小さくなる場合がある） |
 | `microphone_input` | object | `{"mode":"automatic"}` | Vox の入力選択。`automatic` は既定の入出力が Bluetooth 系・出力稼働中なら内蔵入力を優先し、なければ既定入力。`system_default` は常に準備時の既定入力。`device` は `uid` で機器を固定し、未接続なら開始エラー |
-| `speech_engine` | string | `"haas"` | 音声認識。`haas`（Haas-ja-v1.0 Q4_K）/ `apple`（SpeechTranscriber）。次の録音から反映（ADR-032） |
+| `speech_engine` | string | `"haas"` | 音声認識。`haas`（Haas-ja-v1.0-dialogue Q4_K）/ `apple`（SpeechTranscriber）。次の録音から反映（ADR-032、ADR-036） |
 | `external_control_enabled` | bool | `false` | `vox://record/start` などの URL で、ほかのアプリから録音を操作できるようにする（ADR-022）。設定画面「連携」 |
 | `recording_save_enabled` | bool | `false` | 確定した録音ごとに、認識に渡した音声（wav）と本文・計測（JSON）を `recordings/` に残す（ADR-026）。設定画面「デバッグ」 |
 | `keep_text_on_clipboard` | bool | `true` | 貼り付けた後も確定本文をクリップボードに残し、履歴のアプリにも記録させる。オフなら貼る前の中身に戻す（ADR-027）。設定画面「貼り付け」 |
@@ -87,7 +87,7 @@ macOS が再起動を求めたら Vox を終了して開き直す。ソースか
 
 設定画面「マイク」の「音声認識」で Haas / Apple を選ぶ。`speech_engine` がない旧設定も Haas を使う。録音中の変更は次の録音から反映する。一般の録音保存の既定値はオフのままなので、比較用に音を残すときは「録音を保存する」もオンにする。
 
-Haas は初回の録音開始時に実行ファイルと約352MBの Q4 モデル、約1.24MBの Silero VAD モデルを取得し、SHA256 を検証する。準備が終わるまでマイクを開かず、Escで中止できる。以後の認識はローカル。取得できなければ接続を確認するか Apple に切り替える。
+Haas は初回の録音開始時に実行ファイルと約352MBの対話モデルQ4_K、約1.24MBのSilero VADモデルを取得し、SHA256を検証する。旧Haas-ja-v1.0の取得済み環境からは検証済みの実行ファイルとSilero VADモデルを再利用し、対話モデルを追加で取得する。準備が終わるまでマイクを開かず、Escで中止できる。以後の認識はローカル。取得できなければ接続を確認するかAppleに切り替える。
 
 HUDの準備表示は確認・ダウンロード・読み込み・録音開始を区別する。準備中は進行表示と「まだ録音していません」の説明を出し、Escのヒントは「中止」にする。モデル再利用時はモデル準備の通知を出さない。
 
@@ -107,7 +107,7 @@ VADはCPUだけを初期化する。モデル読み込み中だけMetalの登録
 
 VAD用の `libspeech.4.dylib` は `.app/Contents/Frameworks/` に本体と同じ署名で同梱する。SwiftPMの直接実行ではモデルのフォルダからSHA256検証済みのライブラリを読む。ライブラリ検証を無効にするentitlementは足さない。
 
-保存先は `~/Library/Application Support/vox/models/haas-v1-q4/`（モデルと speech.cpp v0.10.0）。取得し直すときは Vox を終了してこのフォルダを退避する。録音は `recordings/` にモデルを問わず録音全体として残り、JSON の `speech_model` にモデル名を記録する。Haas の `segments` は語ではなく音声窓の時刻。録音の7日・500MiBの回収はモデルには適用しない。
+保存先は `~/Library/Application Support/vox/models/haas-v1-q4/`。対話モデルのファイル名は `Haas-616M-ja-v1.0-dialogue-Q4_K.gguf`。取得し直すときはVoxを終了して対象のファイルを退避する。録音は `recordings/` にモデルを問わず録音全体として残り、JSONの `speech_model` にモデル識別子を記録する。Haasの `segments` は音声窓の時刻を示す。録音の7日・500MiBの回収はモデルには適用しない。
 
 ### dictionary.tsv（`Sources/VoxCore/Transcript/DictionaryPass.swift`、ADR-019）
 

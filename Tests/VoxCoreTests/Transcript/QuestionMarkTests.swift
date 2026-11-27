@@ -16,6 +16,8 @@ struct QuestionMarkTests {
       ("反映したいけど", "反映したいけど"),
       ("台帳を更新します。", "台帳を更新します。"),
       ("できますか？", "できますか？"),
+      ("できますか?あの、ちなみに確認します。", "できますか?ちなみに、確認します。"),
+      ("完了です!えっと。次に進みます。", "完了です!次に進みます。"),
       ("メモ.txt", "メモ.txt"),
       ("API", "API"),
       ("えっと。", ""),
@@ -30,6 +32,42 @@ struct QuestionMarkTests {
     let result = CommittedText.clean(input, dictionary: DictionaryTable(contents: ""),
       fillerRemovalEnabled: true, completingSentence: true)
     #expect(result.text == expected)
+  }
+
+  @Test("フィラー除去の設定にかかわらずモデルの文末記号を重複させない",
+    arguments: [true, false])
+  func existingSentenceMarks(fillerRemovalEnabled: Bool) {
+    let result = CommittedText.clean(
+      "えーあいですか。。次も確認しますか?。完了です。！？。", dictionary: DictionaryTable(contents: "えーあい\tAI"),
+      fillerRemovalEnabled: fillerRemovalEnabled, completingSentence: true)
+    #expect(result.text == "AIですか？次も確認しますか?完了です！？")
+  }
+
+  @Test("引用・コード・URL 内の記号は正規化せず、通常文の重複疑問符・感嘆符も保つ",
+    arguments: [true, false])
+  func quotesCodeAndRepeatedMarksArePreserved(fillerRemovalEnabled: Bool) {
+    let quoted = CommittedText.clean(
+      "「値?。」と`let x = \"。。\"`と``値?。``を確認します。", dictionary: DictionaryTable(contents: ""),
+      fillerRemovalEnabled: fillerRemovalEnabled, completingSentence: true)
+    #expect(quoted.text == "「値?。」と`let x = \"。。\"`と``値?。``を確認します。")
+
+    let url = CommittedText.clean(
+      "https://example.test/資料。?q=1 https://example.test/資料。。?q=1 https://example.test/確認できますか。?q=1 https://example.test/です次に",
+      dictionary: DictionaryTable(contents: ""),
+      fillerRemovalEnabled: fillerRemovalEnabled, completingSentence: true)
+    #expect(
+      url.text
+        == "https://example.test/資料。?q=1 https://example.test/資料。。?q=1 https://example.test/確認できますか。?q=1 https://example.test/です次に")
+
+    let multiBacktick = CommittedText.clean(
+      "``値。。``と``値?うーん=1``を確認します。", dictionary: DictionaryTable(contents: ""),
+      fillerRemovalEnabled: fillerRemovalEnabled, completingSentence: true)
+    #expect(multiBacktick.text == "``値。。``と``値?うーん=1``を確認します。")
+
+    let repeated = CommittedText.clean(
+      "本当??。すごい!!。", dictionary: DictionaryTable(contents: ""),
+      fillerRemovalEnabled: fillerRemovalEnabled, completingSentence: true)
+    #expect(repeated.text == "本当??すごい!!")
   }
 
   @Test("12秒の上限とパレットで切っただけの区間に句点を補わない")

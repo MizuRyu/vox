@@ -49,3 +49,4 @@
 | [033](033-speech-insertion-at-caret.md) | 新しい音声をカーソル位置から挿入する | 承認 | 2026-11-01 |
 | [034](034-haas-hot-standby.md) | Haasを先読みし、録音の間もモデルを保持する | 承認 | 2026-11-02 |
 | [035](035-readback-never-lowers-auto-enter.md) | 読み返しは自動 Enter を早めるためだけに使い、読めない入力欄より送られにくくしない | 承認 | 2026-11-24 |
+| [036](036-haas-ja-dialogue-q4.md) | Haasの既定モデルにHaas-ja-v1.0-dialogue Q4_Kを採用する | 承認 | 2026-11-27 |
